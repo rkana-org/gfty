@@ -135,7 +135,56 @@ impl ColorMapping {
     }
 }
 
-pub fn recolor_svg(source: &str, mapping: &BTreeMap<String, u32>) -> String {
+#[derive(Debug, Clone)]
+pub struct PreviewPalette {
+    by_filament: BTreeMap<u32, String>,
+    by_color: BTreeMap<String, u32>,
+}
+
+impl PreviewPalette {
+    pub fn new(filaments: impl IntoIterator<Item = u32>) -> Result<Self> {
+        let filaments: BTreeSet<_> = filaments.into_iter().collect();
+        if filaments.len() > 0x01_00_00_00 {
+            bail!("a preview cannot represent more than 2^24 distinct filaments");
+        }
+
+        let mut by_filament = BTreeMap::new();
+        let mut by_color = BTreeMap::new();
+        for filament in filaments {
+            let mut candidate = fallback_preview_rgb(filament);
+            while by_color.contains_key(&format!("{candidate:06x}")) {
+                // This odd step visits every 24-bit value before repeating.
+                candidate = candidate.wrapping_add(0x9e_37_79) & 0x00ff_ffff;
+            }
+            let color = format!("{candidate:06x}");
+            by_color.insert(color.clone(), filament);
+            by_filament.insert(filament, color);
+        }
+        Ok(Self {
+            by_filament,
+            by_color,
+        })
+    }
+
+    pub fn color(&self, filament: u32) -> &str {
+        self.by_filament
+            .get(&filament)
+            .map(String::as_str)
+            .expect("palette contains every rendered filament")
+    }
+
+    pub fn filament(&self, red: u8, green: u8, blue: u8) -> Option<u32> {
+        self.by_color
+            .get(&format!("{red:02x}{green:02x}{blue:02x}"))
+            .copied()
+    }
+}
+
+pub fn recolor_svg(
+    source: &str,
+    mapping: &BTreeMap<String, u32>,
+    palette: &PreviewPalette,
+) -> String {
     let mut result = String::with_capacity(source.len());
     let bytes = source.as_bytes();
     let mut index = 0;
@@ -163,7 +212,7 @@ pub fn recolor_svg(source: &str, mapping: &BTreeMap<String, u32>) -> String {
                     && let Some(filament) = mapping.get(&normalized)
                 {
                     result.push('#');
-                    result.push_str(&filament_preview_color(*filament));
+                    result.push_str(palette.color(*filament));
                     index += digit_count + 1;
                     continue;
                 }
@@ -176,15 +225,15 @@ pub fn recolor_svg(source: &str, mapping: &BTreeMap<String, u32>) -> String {
     result
 }
 
-pub fn filament_preview_color(filament: u32) -> String {
-    const COLORS: [&str; 8] = [
-        "000000", "0000ff", "00a000", "ff0000", "ff00ff", "00c0c0", "ff8000", "808080",
+fn fallback_preview_rgb(filament: u32) -> u32 {
+    const COLORS: [u32; 8] = [
+        0x000000, 0x0000ff, 0x00a000, 0xff0000, 0xff00ff, 0x00c0c0, 0xff8000, 0x808080,
     ];
     // Give higher filament IDs stable, visually varied fallback colors for previews.
     COLORS
         .get(filament as usize)
-        .map(|value| (*value).to_owned())
-        .unwrap_or_else(|| format!("{:06x}", filament.wrapping_mul(2_654_435_761) & 0x00ff_ffff))
+        .copied()
+        .unwrap_or_else(|| filament.wrapping_mul(2_654_435_761) & 0x00ff_ffff)
 }
 
 pub fn discover_colors(svg: &str) -> Result<BTreeSet<String>> {
@@ -246,12 +295,28 @@ mod tests {
     #[test]
     fn recolors_short_and_long_hex_values() {
         let mapping = BTreeMap::from([("ffffff".to_owned(), 3)]);
+        let palette = PreviewPalette::new([3]).unwrap();
         assert_eq!(
             recolor_svg(
                 r##"<path fill="#fff"/><path style="fill:#FFFFFF"/>"##,
-                &mapping
+                &mapping,
+                &palette,
             ),
             r##"<path fill="#ff0000"/><path style="fill:#ff0000"/>"##
+        );
+    }
+
+    #[test]
+    fn palettes_are_reversible_and_resolve_collisions() {
+        // 0 and 2^24 have the same 24-bit fallback before collision resolution.
+        let palette = PreviewPalette::new([0, 0x01_00_00_00]).unwrap();
+        assert_eq!(palette.filament(0, 0, 0), Some(0));
+        let high_color = palette.color(0x01_00_00_00);
+        assert_ne!(high_color, "000000");
+        let rgb = u32::from_str_radix(high_color, 16).unwrap();
+        assert_eq!(
+            palette.filament((rgb >> 16) as u8, (rgb >> 8) as u8, rgb as u8),
+            Some(0x01_00_00_00)
         );
     }
 

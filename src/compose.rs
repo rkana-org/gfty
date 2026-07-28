@@ -1,4 +1,4 @@
-use std::fs;
+use std::{collections::BTreeSet, fs};
 
 use anyhow::{Context, Result};
 use xmltree::{Element, EmitterConfig, XMLNode};
@@ -10,33 +10,82 @@ use crate::{
     text::{TextRun, parse_colored_text},
 };
 
+pub struct RenderedLabel {
+    pub svg: String,
+    pub palette: crate::color::PreviewPalette,
+    pub size_mm: [f64; 2],
+}
+
 pub fn render_label_svg(label: &LoadedLabel, system_fonts: bool) -> Result<String> {
+    Ok(render_label(label, system_fonts)?.svg)
+}
+
+pub fn render_label(label: &LoadedLabel, system_fonts: bool) -> Result<RenderedLabel> {
     label.validate()?;
     let template_path = label.template_path();
     let source = fs::read_to_string(&template_path)
         .with_context(|| format!("failed to read template {}", template_path.display()))?;
+    let template = TemplateInfo::load(&template_path)?;
     let template_colors = crate::color::ColorMapping::load(&template_path)?;
+    let palette = collect_palette(label, &template_colors)?;
     let recolored_template =
-        crate::color::recolor_svg(&source, &template_colors.source_to_filament);
+        crate::color::recolor_svg(&source, &template_colors.source_to_filament, &palette);
     let mut root = Element::parse(recolored_template.as_bytes()).context("invalid template XML")?;
 
-    compose_text_and_remove_boxes(&mut root, label)?;
+    compose_text_and_remove_boxes(&mut root, label, &palette)?;
     root.children.extend(
-        compose_icons(label, system_fonts)?
+        compose_icons(label, system_fonts, &palette)?
             .into_iter()
             .map(XMLNode::Element),
     );
     let composed = serialize_element(&root)?;
 
-    crate::svg::normalize_svg(
+    let svg = crate::svg::normalize_svg(
         &composed,
         template_path.parent().expect("template has a parent"),
         &label.project_root,
         system_fonts,
-    )
+    )?;
+    Ok(RenderedLabel {
+        svg,
+        palette,
+        size_mm: [template.width_mm, template.height_mm],
+    })
 }
 
-fn compose_icons(label: &LoadedLabel, system_fonts: bool) -> Result<Vec<Element>> {
+fn collect_palette(
+    label: &LoadedLabel,
+    template_colors: &crate::color::ColorMapping,
+) -> Result<crate::color::PreviewPalette> {
+    let mut filaments: BTreeSet<u32> = template_colors
+        .source_to_filament
+        .values()
+        .copied()
+        .collect();
+    for value in label.config.text.values() {
+        filaments.extend(
+            parse_colored_text(&value.content)?
+                .into_iter()
+                .map(|run| run.filament),
+        );
+    }
+    for definition in label.config.icon.values() {
+        filaments.extend(
+            crate::color::ColorMapping::load(&label.icon_path(definition))?
+                .with_overrides(&definition.colors)?
+                .source_to_filament
+                .values()
+                .copied(),
+        );
+    }
+    crate::color::PreviewPalette::new(filaments)
+}
+
+fn compose_icons(
+    label: &LoadedLabel,
+    system_fonts: bool,
+    palette: &crate::color::PreviewPalette,
+) -> Result<Vec<Element>> {
     let template = TemplateInfo::load(&label.template_path())?;
     let mut result = Vec::new();
     let mut instance_index = 0usize;
@@ -83,7 +132,7 @@ fn compose_icons(label: &LoadedLabel, system_fonts: bool) -> Result<Vec<Element>
             let colors = crate::color::ColorMapping::load(&path)?
                 .with_overrides(&definition.colors)
                 .with_context(|| format!("invalid colors for icon {}", path.display()))?;
-            let recolored = crate::color::recolor_svg(&source, &colors.source_to_filament);
+            let recolored = crate::color::recolor_svg(&source, &colors.source_to_filament, palette);
             let normalized = crate::svg::normalize_svg_with_prefix(
                 &recolored,
                 path.parent().expect("icon has a parent"),
@@ -108,7 +157,7 @@ fn compose_icons(label: &LoadedLabel, system_fonts: bool) -> Result<Vec<Element>
             let inherited_fill = colors
                 .source_to_filament
                 .get("000000")
-                .map(|filament| crate::color::filament_preview_color(*filament))
+                .map(|filament| palette.color(*filament).to_owned())
                 .unwrap_or_else(|| "000000".to_owned());
 
             let namespace = normalized_root.namespace.clone();
@@ -143,9 +192,13 @@ fn compose_icons(label: &LoadedLabel, system_fonts: bool) -> Result<Vec<Element>
     Ok(result)
 }
 
-fn compose_text_and_remove_boxes(root: &mut Element, label: &LoadedLabel) -> Result<()> {
+fn compose_text_and_remove_boxes(
+    root: &mut Element,
+    label: &LoadedLabel,
+    palette: &crate::color::PreviewPalette,
+) -> Result<()> {
     remove_icon_boxes(root);
-    apply_text_fields(root, label)
+    apply_text_fields(root, label, palette)
 }
 
 fn remove_icon_boxes(element: &mut Element) {
@@ -161,7 +214,11 @@ fn remove_icon_boxes(element: &mut Element) {
     }
 }
 
-fn apply_text_fields(element: &mut Element, label: &LoadedLabel) -> Result<()> {
+fn apply_text_fields(
+    element: &mut Element,
+    label: &LoadedLabel,
+    palette: &crate::color::PreviewPalette,
+) -> Result<()> {
     if let Some(field) = element
         .attributes
         .get("id")
@@ -169,21 +226,25 @@ fn apply_text_fields(element: &mut Element, label: &LoadedLabel) -> Result<()> {
         && let Some(value) = label.config.text.get(field)
     {
         let runs = parse_colored_text(&value.content)?;
-        if !replace_first_text_tspan(element, &runs) {
-            replace_with_runs(element, &runs);
+        if !replace_first_text_tspan(element, &runs, palette) {
+            replace_with_runs(element, &runs, palette);
         }
         return Ok(());
     }
 
     for child in &mut element.children {
         if let Some(child) = child.as_mut_element() {
-            apply_text_fields(child, label)?;
+            apply_text_fields(child, label, palette)?;
         }
     }
     Ok(())
 }
 
-fn replace_first_text_tspan(element: &mut Element, runs: &[TextRun]) -> bool {
+fn replace_first_text_tspan(
+    element: &mut Element,
+    runs: &[TextRun],
+    palette: &crate::color::PreviewPalette,
+) -> bool {
     for child in &mut element.children {
         let Some(child) = child.as_mut_element() else {
             continue;
@@ -194,17 +255,21 @@ fn replace_first_text_tspan(element: &mut Element, runs: &[TextRun]) -> bool {
                 .iter()
                 .any(|node| matches!(node, XMLNode::Text(_) | XMLNode::CData(_)))
         {
-            replace_with_runs(child, runs);
+            replace_with_runs(child, runs, palette);
             return true;
         }
-        if replace_first_text_tspan(child, runs) {
+        if replace_first_text_tspan(child, runs, palette) {
             return true;
         }
     }
     false
 }
 
-fn replace_with_runs(element: &mut Element, runs: &[TextRun]) {
+fn replace_with_runs(
+    element: &mut Element,
+    runs: &[TextRun],
+    palette: &crate::color::PreviewPalette,
+) {
     let namespace = element.namespace.clone();
     element.children = runs
         .iter()
@@ -212,7 +277,7 @@ fn replace_with_runs(element: &mut Element, runs: &[TextRun]) {
             let mut tspan = svg_element("tspan", namespace.clone());
             tspan.attributes.insert(
                 "fill".to_owned(),
-                format!("#{}", crate::color::filament_preview_color(run.filament)),
+                format!("#{}", palette.color(run.filament)),
             );
             tspan.children.push(XMLNode::Text(run.text.clone()));
             XMLNode::Element(tspan)
@@ -271,7 +336,9 @@ mod tests {
                 .as_slice(),
         )
         .unwrap();
-        compose_text_and_remove_boxes(&mut root, &label_with_text(r#"A{\<&\>}B"#)).unwrap();
+        let palette = crate::color::PreviewPalette::new([0, 1]).unwrap();
+        compose_text_and_remove_boxes(&mut root, &label_with_text(r#"A{\<&\>}B"#), &palette)
+            .unwrap();
         let output = serialize_element(&root).unwrap();
 
         assert!(!output.contains("icons-main"));
