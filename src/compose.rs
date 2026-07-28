@@ -1,21 +1,14 @@
 use std::fs;
 
-use anyhow::{Context, Result, bail};
-use roxmltree::Document;
+use anyhow::{Context, Result};
+use xmltree::{Element, EmitterConfig, XMLNode};
 
 use crate::{
     config::{IconPlacement, LoadedLabel, parse_length_mm},
     layout::RowItem,
     template::TemplateInfo,
-    text::parse_colored_text,
+    text::{TextRun, parse_colored_text},
 };
-
-#[derive(Debug)]
-struct Replacement {
-    start: usize,
-    end: usize,
-    value: String,
-}
 
 pub fn render_label_svg(label: &LoadedLabel, system_fonts: bool) -> Result<String> {
     label.validate()?;
@@ -25,14 +18,16 @@ pub fn render_label_svg(label: &LoadedLabel, system_fonts: bool) -> Result<Strin
     let template_colors = crate::color::ColorMapping::load(&template_path)?;
     let recolored_template =
         crate::color::recolor_svg(&source, &template_colors.source_to_filament);
-    let mut composed = compose_text_and_remove_boxes(&recolored_template, label)?;
-    let icons = compose_icons(label, system_fonts)?;
-    if !icons.is_empty() {
-        let insertion = composed
-            .rfind("</svg>")
-            .context("template has no closing svg element")?;
-        composed.insert_str(insertion, &icons);
-    }
+    let mut root = Element::parse(recolored_template.as_bytes()).context("invalid template XML")?;
+
+    compose_text_and_remove_boxes(&mut root, label)?;
+    root.children.extend(
+        compose_icons(label, system_fonts)?
+            .into_iter()
+            .map(XMLNode::Element),
+    );
+    let composed = serialize_element(&root)?;
+
     crate::svg::normalize_svg(
         &composed,
         template_path.parent().expect("template has a parent"),
@@ -41,9 +36,9 @@ pub fn render_label_svg(label: &LoadedLabel, system_fonts: bool) -> Result<Strin
     )
 }
 
-fn compose_icons(label: &LoadedLabel, system_fonts: bool) -> Result<String> {
+fn compose_icons(label: &LoadedLabel, system_fonts: bool) -> Result<Vec<Element>> {
     let template = TemplateInfo::load(&label.template_path())?;
-    let mut markup = String::new();
+    let mut result = Vec::new();
     let mut instance_index = 0usize;
 
     for (box_name, entries) in &label.config.icons {
@@ -96,139 +91,192 @@ fn compose_icons(label: &LoadedLabel, system_fonts: bool) -> Result<String> {
                 system_fonts,
                 Some(format!("icon-{instance_index}-")),
             )?;
-            let document = Document::parse(&normalized).context("invalid normalized icon SVG")?;
-            let root = document.root_element();
-            let normalized_width: f64 = root
-                .attribute("width")
+            let mut normalized_root =
+                Element::parse(normalized.as_bytes()).context("invalid normalized icon SVG")?;
+            let normalized_width: f64 = normalized_root
+                .attributes
+                .get("width")
                 .context("normalized icon has no width")?
                 .parse()
                 .context("normalized icon width is not numeric")?;
-            let normalized_height: f64 = root
-                .attribute("height")
+            let normalized_height: f64 = normalized_root
+                .attributes
+                .get("height")
                 .context("normalized icon has no height")?
                 .parse()
                 .context("normalized icon height is not numeric")?;
-            let (start, end) = inner_range(&normalized, root)?;
-            let inner = &normalized[start..end];
             let inherited_fill = colors
                 .source_to_filament
                 .get("000000")
                 .map(|filament| crate::color::filament_preview_color(*filament))
                 .unwrap_or_else(|| "000000".to_owned());
-            markup.push_str(&format!(
-                "<svg x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" viewBox=\"0 0 {normalized_width} {normalized_height}\"><g fill=\"#{inherited_fill}\">{inner}</g></svg>",
-                placement.x, placement.y, placement.width, placement.height
-            ));
+
+            let namespace = normalized_root.namespace.clone();
+            let mut group = svg_element("g", namespace.clone());
+            group
+                .attributes
+                .insert("fill".to_owned(), format!("#{inherited_fill}"));
+            group.children = std::mem::take(&mut normalized_root.children);
+
+            let mut nested_svg = svg_element("svg", namespace);
+            nested_svg
+                .attributes
+                .insert("x".to_owned(), placement.x.to_string());
+            nested_svg
+                .attributes
+                .insert("y".to_owned(), placement.y.to_string());
+            nested_svg
+                .attributes
+                .insert("width".to_owned(), placement.width.to_string());
+            nested_svg
+                .attributes
+                .insert("height".to_owned(), placement.height.to_string());
+            nested_svg.attributes.insert(
+                "viewBox".to_owned(),
+                format!("0 0 {normalized_width} {normalized_height}"),
+            );
+            nested_svg.children.push(XMLNode::Element(group));
+            result.push(nested_svg);
             instance_index += 1;
         }
-    }
-    Ok(markup)
-}
-
-fn compose_text_and_remove_boxes(source: &str, label: &LoadedLabel) -> Result<String> {
-    let document = Document::parse(source).context("invalid template XML")?;
-    let mut replacements = Vec::new();
-
-    for node in document.descendants().filter(|node| node.is_element()) {
-        let Some(id) = node.attribute("id") else {
-            continue;
-        };
-        if let Some(field) = id.strip_prefix("text-")
-            && let Some(value) = label.config.text.get(field)
-        {
-            let target = node
-                .descendants()
-                .find(|child| {
-                    child.is_element()
-                        && child.tag_name().name() == "tspan"
-                        && child.children().any(|grandchild| grandchild.is_text())
-                })
-                .unwrap_or(node);
-            let (start, end) = inner_range(source, target)?;
-            let runs = parse_colored_text(&value.content)?;
-            let mut markup = String::new();
-            for run in runs {
-                markup.push_str(&format!(
-                    "<tspan fill=\"#{}\">{}</tspan>",
-                    crate::color::filament_preview_color(run.filament),
-                    escape_xml(&run.text)
-                ));
-            }
-            replacements.push(Replacement {
-                start,
-                end,
-                value: markup,
-            });
-        }
-
-        if id.starts_with("icons-") {
-            let range = node.range();
-            replacements.push(Replacement {
-                start: range.start,
-                end: range.end,
-                value: String::new(),
-            });
-        }
-    }
-
-    replacements.sort_by_key(|replacement| std::cmp::Reverse(replacement.start));
-    let mut result = source.to_owned();
-    let mut previous_start = source.len();
-    for replacement in replacements {
-        if replacement.end > previous_start {
-            bail!(
-                "overlapping template replacements around byte {}",
-                replacement.start
-            );
-        }
-        result.replace_range(replacement.start..replacement.end, &replacement.value);
-        previous_start = replacement.start;
     }
     Ok(result)
 }
 
-fn inner_range(source: &str, node: roxmltree::Node<'_, '_>) -> Result<(usize, usize)> {
-    let range = node.range();
-    let fragment = &source[range.clone()];
-    let open_end = fragment
-        .find('>')
-        .with_context(|| format!("malformed element at byte {}", range.start))?;
-    let close_start = fragment.rfind("</").with_context(|| {
-        format!(
-            "text element at byte {} cannot be self-closing",
-            range.start
-        )
-    })?;
-    Ok((range.start + open_end + 1, range.start + close_start))
+fn compose_text_and_remove_boxes(root: &mut Element, label: &LoadedLabel) -> Result<()> {
+    remove_icon_boxes(root);
+    apply_text_fields(root, label)
 }
 
-fn escape_xml(value: &str) -> String {
-    value
-        .replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
-        .replace('"', "&quot;")
-        .replace('\'', "&apos;")
+fn remove_icon_boxes(element: &mut Element) {
+    element.children.retain(|node| {
+        node.as_element()
+            .and_then(|child| child.attributes.get("id"))
+            .is_none_or(|id| !id.starts_with("icons-"))
+    });
+    for child in &mut element.children {
+        if let Some(child) = child.as_mut_element() {
+            remove_icon_boxes(child);
+        }
+    }
+}
+
+fn apply_text_fields(element: &mut Element, label: &LoadedLabel) -> Result<()> {
+    if let Some(field) = element
+        .attributes
+        .get("id")
+        .and_then(|id| id.strip_prefix("text-"))
+        && let Some(value) = label.config.text.get(field)
+    {
+        let runs = parse_colored_text(&value.content)?;
+        if !replace_first_text_tspan(element, &runs) {
+            replace_with_runs(element, &runs);
+        }
+        return Ok(());
+    }
+
+    for child in &mut element.children {
+        if let Some(child) = child.as_mut_element() {
+            apply_text_fields(child, label)?;
+        }
+    }
+    Ok(())
+}
+
+fn replace_first_text_tspan(element: &mut Element, runs: &[TextRun]) -> bool {
+    for child in &mut element.children {
+        let Some(child) = child.as_mut_element() else {
+            continue;
+        };
+        if child.name == "tspan"
+            && child
+                .children
+                .iter()
+                .any(|node| matches!(node, XMLNode::Text(_) | XMLNode::CData(_)))
+        {
+            replace_with_runs(child, runs);
+            return true;
+        }
+        if replace_first_text_tspan(child, runs) {
+            return true;
+        }
+    }
+    false
+}
+
+fn replace_with_runs(element: &mut Element, runs: &[TextRun]) {
+    let namespace = element.namespace.clone();
+    element.children = runs
+        .iter()
+        .map(|run| {
+            let mut tspan = svg_element("tspan", namespace.clone());
+            tspan.attributes.insert(
+                "fill".to_owned(),
+                format!("#{}", crate::color::filament_preview_color(run.filament)),
+            );
+            tspan.children.push(XMLNode::Text(run.text.clone()));
+            XMLNode::Element(tspan)
+        })
+        .collect();
+}
+
+fn svg_element(name: &str, namespace: Option<String>) -> Element {
+    let mut element = Element::new(name);
+    element.namespace = namespace;
+    element
+}
+
+fn serialize_element(element: &Element) -> Result<String> {
+    let mut output = Vec::new();
+    element
+        .write_with_config(
+            &mut output,
+            EmitterConfig::new()
+                .write_document_declaration(false)
+                .perform_indent(false),
+        )
+        .context("failed to serialize composed SVG")?;
+    String::from_utf8(output).context("composed SVG is not UTF-8")
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use std::{collections::BTreeMap, path::PathBuf};
 
-    #[test]
-    fn finds_inner_ranges() {
-        let source = r#"<svg><text id="text-x"><tspan x="1">old</tspan></text></svg>"#;
-        let document = Document::parse(source).unwrap();
-        let tspan = document
-            .descendants()
-            .find(|node| node.has_tag_name("tspan"))
-            .unwrap();
-        let (start, end) = inner_range(source, tspan).unwrap();
-        assert_eq!(&source[start..end], "old");
+    use super::*;
+    use crate::config::{LabelConfig, TextValue};
+
+    fn label_with_text(content: &str) -> LoadedLabel {
+        LoadedLabel {
+            path: PathBuf::from("label.toml"),
+            project_root: PathBuf::from("."),
+            config: LabelConfig {
+                template: "template.svg".to_owned(),
+                text: BTreeMap::from([(
+                    "main".to_owned(),
+                    TextValue {
+                        content: content.to_owned(),
+                    },
+                )]),
+                icon: BTreeMap::new(),
+                icons: BTreeMap::new(),
+            },
+        }
     }
 
     #[test]
-    fn escapes_xml_text() {
-        assert_eq!(escape_xml("<&>\"'"), "&lt;&amp;&gt;&quot;&apos;");
+    fn creates_text_nodes_and_removes_icon_boxes() {
+        let mut root = Element::parse(
+            br#"<svg xmlns="http://www.w3.org/2000/svg"><text id="text-main"><tspan x="1">old</tspan></text><g><rect id="icons-main"/></g></svg>"#
+                .as_slice(),
+        )
+        .unwrap();
+        compose_text_and_remove_boxes(&mut root, &label_with_text(r#"A{\<&\>}B"#)).unwrap();
+        let output = serialize_element(&root).unwrap();
+
+        assert!(!output.contains("icons-main"));
+        assert!(output.contains("fill=\"#0000ff\""));
+        assert!(output.contains("&lt;&amp;&gt;"));
+        roxmltree::Document::parse(&output).unwrap();
     }
 }
