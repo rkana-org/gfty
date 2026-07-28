@@ -84,6 +84,7 @@ impl LoadedLabel {
     pub fn validate(&self) -> Result<()> {
         ensure_file(&self.template_path(), "template")?;
         let template = crate::template::TemplateInfo::load(&self.template_path())?;
+        crate::color::ColorMapping::load(&self.template_path())?;
 
         for (field, value) in &self.config.text {
             if !template.text_fields.contains_key(field) {
@@ -96,6 +97,9 @@ impl LoadedLabel {
         for (name, icon) in &self.config.icon {
             ensure_file(&self.icon_path(icon), &format!("icon alias {name:?}"))?;
             validate_color_overrides(name, &icon.colors)?;
+            crate::color::ColorMapping::load(&self.icon_path(icon))?
+                .with_overrides(&icon.colors)
+                .with_context(|| format!("invalid colors for icon alias {name:?}"))?;
         }
 
         for (box_name, entries) in &self.config.icons {
