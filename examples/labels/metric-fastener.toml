@@ -1,0 +1,20 @@
+template = "basic-label.svg"
+
+[text.main]
+# Plain text is filament 0, braces are 1, and brackets are 2.
+content = 'M{3}x[10]'
+
+[icon.bolt]
+src = "bolt.svg"
+
+[icon.nut]
+src = "nut.svg"
+
+[[icons.fasteners]]
+icon = "bolt"
+
+[[icons.fasteners]]
+spacer = "1mm"
+
+[[icons.fasteners]]
+icon = "nut"

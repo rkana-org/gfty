@@ -1,0 +1,28 @@
+template = "basic-label.svg"
+
+[text.main]
+# Explicit !N{} scopes support arbitrary filament IDs; angle brackets use 3.
+content = '!5{M4} <HEX>'
+
+[icon.bolt]
+src = "bolt.svg"
+
+# Numeric overrides target resolved sidecar indices; exact hex wins when both apply.
+[icon.bolt.colors]
+"0" = 3
+"#ff0000" = 5
+
+[icon.nut]
+src = "nut.svg"
+
+[icon.nut.colors]
+"0" = 1
+
+[[icons.fasteners]]
+icon = "nut"
+
+[[icons.fasteners]]
+spacer = "0.5mm"
+
+[[icons.fasteners]]
+icon = "bolt"

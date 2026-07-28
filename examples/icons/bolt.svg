@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg"
+     width="10mm"
+     height="10mm"
+     viewBox="0 0 10 10">
+  <!-- Dark body plus a separately mapped red tip. -->
+  <rect x="3.8" y="2" width="2.4" height="6.2" rx="0.5" fill="#202020"/>
+  <path d="M2 1.2 H8 L7 3.4 H3 Z" fill="#202020"/>
+  <path d="M3.8 8.2 H6.2 L5 9.6 Z" fill="#ff0000"/>
+</svg>

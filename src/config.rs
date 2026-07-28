@@ -238,6 +238,17 @@ mod tests {
     }
 
     #[test]
+    fn bundled_examples_validate() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+        for name in ["metric-fastener.toml", "custom-colors.toml"] {
+            LoadedLabel::load(&root.join("examples/labels").join(name))
+                .unwrap()
+                .validate()
+                .unwrap();
+        }
+    }
+
+    #[test]
     fn parses_lengths() {
         assert_eq!(parse_length_mm("2mm").unwrap(), 2.0);
         assert_eq!(parse_length_mm(" 2.5 cm ").unwrap(), 25.0);
