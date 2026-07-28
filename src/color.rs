@@ -180,6 +180,7 @@ pub fn filament_preview_color(filament: u32) -> String {
     const COLORS: [&str; 8] = [
         "000000", "0000ff", "00a000", "ff0000", "ff00ff", "00c0c0", "ff8000", "808080",
     ];
+    // Give higher filament IDs stable, visually varied fallback colors for previews.
     COLORS
         .get(filament as usize)
         .map(|value| (*value).to_owned())
