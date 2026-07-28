@@ -25,10 +25,30 @@ gfty-label quick --template TEMPLATE --text ID CONTENT --icon BOX ICON
 gfty-label watch LABEL --svg PREVIEW.svg --json FILLS.json
 ```
 
-`validate` and `render` are implemented. Rendering resolves bundled/project
+All four design workflows are implemented. Rendering resolves bundled/project
 fonts, converts text and SVG primitives to paths with `usvg`, applies filament
-colors, and lays out icons without implicit gaps. `export`, `quick`, and `watch`
-are currently placeholders.
+colors, and lays out icons without implicit gaps. Export produces centered,
+physical-millimeter contours grouped by filament for Onshape.
+
+`quick` runs from anywhere below a project root and treats template/icon paths
+as suffixes below `templates/` and `icons/` respectively:
+
+```sh
+gfty-label quick \
+  --template label-1x1.svg \
+  --text main 'M{3}x[10]' \
+  --icon fasteners screws/pointy.svg \
+  --svg preview.svg \
+  --json label.json
+```
+
+`watch` performs an initial build, then watches the label TOML, its template,
+icons, sidecars, and project fonts. Failed rebuilds are reported without
+stopping the watcher:
+
+```sh
+gfty-label watch labels/m3.toml --svg preview.svg --json label.json
+```
 
 ## Template contract
 
@@ -78,3 +98,41 @@ over numeric resolved-index overrides.
 By default, fonts are loaded recursively from the project `fonts/` directory
 and from the font directories bundled by the Nix package. Pass `--system-fonts`
 to additionally scan host fonts.
+
+## Onshape JSON
+
+`export` and `quick --json` emit compact structured geometry. Coordinates are
+millimeters, centered on the template viewport, with SVG's downward Y axis
+converted to an upward Y axis. Filament indices remain arbitrary non-negative
+integers.
+
+```json
+{
+  "size": [42.0, 21.0],
+  "parts": [
+    {
+      "filament": 0,
+      "shapes": [
+        {
+          "contours": [
+            {
+              "start": [-21.0, 10.5],
+              "closed": true,
+              "segments": [{ "type": "L", "to": [21.0, 10.5] }]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "instances": [[0.0, 0.0]]
+}
+```
+
+Each shape corresponds to one filled rendered path. Segment types are `L` for
+lines and `C` for cubic Beziers. The single-label exporter places one instance
+at the origin; a future plate-layout stage can replace `instances` with label
+center points without duplicating geometry.
+
+Plate/grid generation remains intentionally postponed. It will require labels
+on one plate to share the same physical viewport dimensions.

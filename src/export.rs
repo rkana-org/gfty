@@ -57,6 +57,9 @@ pub fn export_rendered(rendered: &RenderedLabel) -> Result<ExportDocument> {
         &mut by_filament,
     )?;
 
+    if by_filament.is_empty() {
+        bail!("rendered label contains no filled geometry to export");
+    }
     let parts = by_filament
         .into_iter()
         .map(|(filament, shapes)| Part { filament, shapes })
