@@ -83,6 +83,15 @@ impl LoadedLabel {
 
     pub fn validate(&self) -> Result<()> {
         ensure_file(&self.template_path(), "template")?;
+        let template = crate::template::TemplateInfo::load(&self.template_path())?;
+
+        for (field, value) in &self.config.text {
+            if !template.text_fields.contains_key(field) {
+                bail!("label config references unknown text field {field:?}");
+            }
+            crate::text::parse_colored_text(&value.content)
+                .with_context(|| format!("invalid colored text in field {field:?}"))?;
+        }
 
         for (name, icon) in &self.config.icon {
             ensure_file(&self.icon_path(icon), &format!("icon alias {name:?}"))?;
@@ -92,6 +101,9 @@ impl LoadedLabel {
         for (box_name, entries) in &self.config.icons {
             if box_name.starts_with("icons-") {
                 bail!("icon box {box_name:?} must omit the template's `icons-` prefix");
+            }
+            if !template.icon_boxes.contains_key(box_name) {
+                bail!("label config references unknown icon box {box_name:?}");
             }
             for entry in entries {
                 match entry {

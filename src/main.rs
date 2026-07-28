@@ -1,5 +1,6 @@
 mod cli;
 mod config;
+mod template;
 mod text;
 
 use anyhow::Result;
