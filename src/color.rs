@@ -135,6 +135,57 @@ impl ColorMapping {
     }
 }
 
+pub fn recolor_svg(source: &str, mapping: &BTreeMap<String, u32>) -> String {
+    let mut result = String::with_capacity(source.len());
+    let bytes = source.as_bytes();
+    let mut index = 0;
+    while index < bytes.len() {
+        if bytes[index] == b'#' {
+            let available = bytes.len() - index - 1;
+            let digit_count = if available >= 6
+                && bytes[index + 1..index + 7]
+                    .iter()
+                    .all(u8::is_ascii_hexdigit)
+            {
+                6
+            } else if available >= 3
+                && bytes[index + 1..index + 4]
+                    .iter()
+                    .all(u8::is_ascii_hexdigit)
+            {
+                3
+            } else {
+                0
+            };
+            if digit_count > 0 {
+                let token = &source[index + 1..index + digit_count + 1];
+                if let Some(normalized) = normalize_hex_color(token)
+                    && let Some(filament) = mapping.get(&normalized)
+                {
+                    result.push('#');
+                    result.push_str(&filament_preview_color(*filament));
+                    index += digit_count + 1;
+                    continue;
+                }
+            }
+        }
+        let character = source[index..].chars().next().expect("valid UTF-8");
+        result.push(character);
+        index += character.len_utf8();
+    }
+    result
+}
+
+pub fn filament_preview_color(filament: u32) -> String {
+    const COLORS: [&str; 8] = [
+        "000000", "0000ff", "00a000", "ff0000", "ff00ff", "00c0c0", "ff8000", "808080",
+    ];
+    COLORS
+        .get(filament as usize)
+        .map(|value| (*value).to_owned())
+        .unwrap_or_else(|| format!("{:06x}", filament.wrapping_mul(2_654_435_761) & 0x00ff_ffff))
+}
+
 pub fn discover_colors(svg: &str) -> Result<BTreeSet<String>> {
     let document = Document::parse(svg).context("invalid SVG XML")?;
     let mut result = BTreeSet::new();
@@ -189,6 +240,18 @@ mod tests {
         assert_eq!(mapping["000000"], 0);
         assert_eq!(mapping["0000ff"], 1);
         assert_eq!(mapping["ff0000"], 2);
+    }
+
+    #[test]
+    fn recolors_short_and_long_hex_values() {
+        let mapping = BTreeMap::from([("ffffff".to_owned(), 3)]);
+        assert_eq!(
+            recolor_svg(
+                r##"<path fill="#fff"/><path style="fill:#FFFFFF"/>"##,
+                &mapping
+            ),
+            r##"<path fill="#ff0000"/><path style="fill:#ff0000"/>"##
+        );
     }
 
     #[test]

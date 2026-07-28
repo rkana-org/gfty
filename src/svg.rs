@@ -10,6 +10,16 @@ pub fn normalize_svg(
     project_root: &Path,
     system_fonts: bool,
 ) -> Result<String> {
+    normalize_svg_with_prefix(source, resources_dir, project_root, system_fonts, None)
+}
+
+pub fn normalize_svg_with_prefix(
+    source: &str,
+    resources_dir: &Path,
+    project_root: &Path,
+    system_fonts: bool,
+    id_prefix: Option<String>,
+) -> Result<String> {
     let mut options = usvg::Options {
         resources_dir: Some(resources_dir.to_owned()),
         ..usvg::Options::default()
@@ -33,6 +43,7 @@ pub fn normalize_svg(
 
     let tree = usvg::Tree::from_str(source, &options).context("failed to normalize SVG")?;
     Ok(tree.to_string(&usvg::WriteOptions {
+        id_prefix,
         preserve_text: false,
         coordinates_precision: 8,
         transforms_precision: 8,

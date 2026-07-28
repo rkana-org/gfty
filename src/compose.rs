@@ -3,7 +3,12 @@ use std::fs;
 use anyhow::{Context, Result, bail};
 use roxmltree::Document;
 
-use crate::{config::LoadedLabel, text::parse_colored_text};
+use crate::{
+    config::{IconPlacement, LoadedLabel, parse_length_mm},
+    layout::RowItem,
+    template::TemplateInfo,
+    text::parse_colored_text,
+};
 
 #[derive(Debug)]
 struct Replacement {
@@ -14,20 +19,107 @@ struct Replacement {
 
 pub fn render_label_svg(label: &LoadedLabel, system_fonts: bool) -> Result<String> {
     label.validate()?;
-    if label.config.icons.values().any(|items| !items.is_empty()) {
-        bail!("icon composition is not implemented yet");
-    }
-
     let template_path = label.template_path();
     let source = fs::read_to_string(&template_path)
         .with_context(|| format!("failed to read template {}", template_path.display()))?;
-    let composed = compose_text_and_remove_boxes(&source, label)?;
+    let mut composed = compose_text_and_remove_boxes(&source, label)?;
+    let icons = compose_icons(label, system_fonts)?;
+    if !icons.is_empty() {
+        let insertion = composed
+            .rfind("</svg>")
+            .context("template has no closing svg element")?;
+        composed.insert_str(insertion, &icons);
+    }
     crate::svg::normalize_svg(
         &composed,
         template_path.parent().expect("template has a parent"),
         &label.project_root,
         system_fonts,
     )
+}
+
+fn compose_icons(label: &LoadedLabel, system_fonts: bool) -> Result<String> {
+    let template = TemplateInfo::load(&label.template_path())?;
+    let mut markup = String::new();
+    let mut instance_index = 0usize;
+
+    for (box_name, entries) in &label.config.icons {
+        let icon_box = template
+            .icon_boxes
+            .get(box_name)
+            .with_context(|| format!("unknown icon box {box_name:?}"))?;
+        let mut row = Vec::new();
+        let mut icon_details = Vec::new();
+        for entry in entries {
+            match entry {
+                IconPlacement::Icon { icon } => {
+                    let definition = label
+                        .config
+                        .icon
+                        .get(icon)
+                        .with_context(|| format!("unknown icon alias {icon:?}"))?;
+                    let path = label.icon_path(definition);
+                    let info = TemplateInfo::load(&path)?;
+                    row.push(RowItem::Icon {
+                        name: icon.clone(),
+                        aspect_ratio: info.view_box.width / info.view_box.height,
+                    });
+                    icon_details.push((definition, path));
+                }
+                IconPlacement::Spacer { spacer } => row.push(RowItem::Spacer {
+                    width: parse_length_mm(spacer)? * template.view_box.width / template.width_mm,
+                }),
+            }
+        }
+
+        let placed = crate::layout::layout_icon_row(
+            icon_box.x,
+            icon_box.y,
+            icon_box.width,
+            icon_box.height,
+            &row,
+        )?;
+        for (placement, (definition, path)) in placed.iter().zip(icon_details) {
+            let source = fs::read_to_string(&path)
+                .with_context(|| format!("failed to read icon {}", path.display()))?;
+            let colors = crate::color::ColorMapping::load(&path)?
+                .with_overrides(&definition.colors)
+                .with_context(|| format!("invalid colors for icon {}", path.display()))?;
+            let recolored = crate::color::recolor_svg(&source, &colors.source_to_filament);
+            let normalized = crate::svg::normalize_svg_with_prefix(
+                &recolored,
+                path.parent().expect("icon has a parent"),
+                &label.project_root,
+                system_fonts,
+                Some(format!("icon-{instance_index}-")),
+            )?;
+            let document = Document::parse(&normalized).context("invalid normalized icon SVG")?;
+            let root = document.root_element();
+            let normalized_width: f64 = root
+                .attribute("width")
+                .context("normalized icon has no width")?
+                .parse()
+                .context("normalized icon width is not numeric")?;
+            let normalized_height: f64 = root
+                .attribute("height")
+                .context("normalized icon has no height")?
+                .parse()
+                .context("normalized icon height is not numeric")?;
+            let (start, end) = inner_range(&normalized, root)?;
+            let inner = &normalized[start..end];
+            let inherited_fill = colors
+                .source_to_filament
+                .get("000000")
+                .map(|filament| crate::color::filament_preview_color(*filament))
+                .unwrap_or_else(|| "000000".to_owned());
+            markup.push_str(&format!(
+                "<svg x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" viewBox=\"0 0 {normalized_width} {normalized_height}\"><g fill=\"#{inherited_fill}\">{inner}</g></svg>",
+                placement.x, placement.y, placement.width, placement.height
+            ));
+            instance_index += 1;
+        }
+    }
+    Ok(markup)
 }
 
 fn compose_text_and_remove_boxes(source: &str, label: &LoadedLabel) -> Result<String> {
@@ -55,7 +147,7 @@ fn compose_text_and_remove_boxes(source: &str, label: &LoadedLabel) -> Result<St
             for run in runs {
                 markup.push_str(&format!(
                     "<tspan fill=\"#{}\">{}</tspan>",
-                    preview_color(run.filament),
+                    crate::color::filament_preview_color(run.filament),
                     escape_xml(&run.text)
                 ));
             }
@@ -105,16 +197,6 @@ fn inner_range(source: &str, node: roxmltree::Node<'_, '_>) -> Result<(usize, us
         )
     })?;
     Ok((range.start + open_end + 1, range.start + close_start))
-}
-
-fn preview_color(filament: u32) -> String {
-    const COLORS: [&str; 8] = [
-        "000000", "0000ff", "00a000", "ff0000", "ff00ff", "00c0c0", "ff8000", "808080",
-    ];
-    COLORS
-        .get(filament as usize)
-        .map(|value| (*value).to_owned())
-        .unwrap_or_else(|| format!("{:06x}", filament.wrapping_mul(2_654_435_761) & 0x00ff_ffff))
 }
 
 fn escape_xml(value: &str) -> String {
