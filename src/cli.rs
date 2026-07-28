@@ -52,6 +52,29 @@ pub enum Command {
         json: Option<PathBuf>,
     },
 
+    /// Arrange saved labels into a fixed-column plate grid.
+    Plate {
+        /// Number of columns in the fixed-width grid.
+        #[arg(long)]
+        columns: usize,
+
+        #[arg(long, default_value = "0mm")]
+        column_gap: String,
+
+        #[arg(long, default_value = "0mm")]
+        row_gap: String,
+
+        #[arg(long)]
+        svg: Option<PathBuf>,
+
+        #[arg(long)]
+        json: Option<PathBuf>,
+
+        /// Labels in top-left, row-major order. Repeat a path to repeat a label.
+        #[arg(required = true)]
+        labels: Vec<PathBuf>,
+    },
+
     /// Rebuild a saved label whenever project inputs change.
     Watch {
         label: PathBuf,

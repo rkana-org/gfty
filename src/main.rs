@@ -4,6 +4,7 @@ mod compose;
 mod config;
 mod export;
 mod layout;
+mod plate;
 mod quick;
 mod svg;
 mod template;
@@ -56,6 +57,27 @@ fn main() -> Result<()> {
             if let Some(output) = json {
                 write_json(&output, &export::export_rendered(&rendered)?)?;
                 println!("{}", output.display());
+            }
+        }
+        Command::Plate {
+            columns,
+            column_gap,
+            row_gap,
+            svg,
+            json,
+            labels,
+        } => {
+            if svg.is_none() && json.is_none() {
+                anyhow::bail!("plate needs at least one of --svg or --json");
+            }
+            let output = plate::build_plate(&labels, columns, &column_gap, &row_gap, system_fonts)?;
+            if let Some(path) = svg {
+                std::fs::write(&path, output.svg)?;
+                println!("{}", path.display());
+            }
+            if let Some(path) = json {
+                write_json(&path, &output.document)?;
+                println!("{}", path.display());
             }
         }
         Command::Watch { label, svg, json } => {
