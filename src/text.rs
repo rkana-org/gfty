@@ -62,13 +62,13 @@ impl Parser<'_> {
                 continue;
             }
 
-            if c == '!' {
-                if let Some((child_filament, after_open)) = self.explicit_color()? {
-                    self.flush(filament, &mut plain);
-                    self.offset = after_open;
-                    self.parse_region(child_filament, Some('}'))?;
-                    continue;
-                }
+            if c == '!'
+                && let Some((child_filament, after_open)) = self.explicit_color()?
+            {
+                self.flush(filament, &mut plain);
+                self.offset = after_open;
+                self.parse_region(child_filament, Some('}'))?;
+                continue;
             }
 
             plain.push(c);
