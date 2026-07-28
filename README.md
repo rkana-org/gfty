@@ -23,6 +23,7 @@ gfty-label validate LABEL
 gfty-label render LABEL --output PREVIEW.svg
 gfty-label export LABEL --output FILLS.json
 gfty-label quick --template TEMPLATE --text ID CONTENT --icon BOX ICON
+gfty-label plate --columns N [OPTIONS] LABEL...
 gfty-label watch LABEL --svg PREVIEW.svg --json FILLS.json
 ```
 
@@ -42,6 +43,25 @@ gfty-label quick \
   --svg preview.svg \
   --json label.json
 ```
+
+`plate` takes label TOML paths directly on the command line; no plate config
+file is needed. Repeat a path to repeat that label:
+
+```sh
+gfty-label plate \
+  --columns 4 \
+  --column-gap 0mm \
+  --row-gap 0mm \
+  --svg plate.svg \
+  --json plate.json \
+  labels/m3.toml labels/m3.toml labels/m4.toml
+```
+
+Labels are placed in argument order, row-major from the top left, without
+rotation. The final incomplete row is left-aligned and the plate retains its
+full fixed-column width. Every label must have exactly the same physical
+viewport dimensions. Geometry is translated into plate coordinates and merged
+by filament ID; `instances` records the corresponding label centers.
 
 `watch` performs an initial build, then watches the label TOML, its template,
 icons, sidecars, and project fonts. Failed rebuilds are reported without
@@ -132,11 +152,8 @@ integers.
 
 Each shape corresponds to one filled rendered path. Segment types are `L` for
 lines and `C` for cubic Beziers. The single-label exporter places one instance
-at the origin; a future plate-layout stage can replace `instances` with label
-center points without duplicating geometry.
-
-Plate/grid generation remains intentionally postponed. It will require labels
-on one plate to share the same physical viewport dimensions.
+at the origin. The `plate` command emits the full plate size, flattened placed
+geometry, and one center point per label.
 
 ## Onshape FeatureScripts
 
