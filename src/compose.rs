@@ -22,7 +22,10 @@ pub fn render_label_svg(label: &LoadedLabel, system_fonts: bool) -> Result<Strin
     let template_path = label.template_path();
     let source = fs::read_to_string(&template_path)
         .with_context(|| format!("failed to read template {}", template_path.display()))?;
-    let mut composed = compose_text_and_remove_boxes(&source, label)?;
+    let template_colors = crate::color::ColorMapping::load(&template_path)?;
+    let recolored_template =
+        crate::color::recolor_svg(&source, &template_colors.source_to_filament);
+    let mut composed = compose_text_and_remove_boxes(&recolored_template, label)?;
     let icons = compose_icons(label, system_fonts)?;
     if !icons.is_empty() {
         let insertion = composed
