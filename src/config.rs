@@ -71,6 +71,14 @@ impl LoadedLabel {
         })
     }
 
+    pub fn from_config(config: LabelConfig, project_root: PathBuf) -> Self {
+        Self {
+            path: project_root.join("<quick>"),
+            project_root,
+            config,
+        }
+    }
+
     pub fn template_path(&self) -> PathBuf {
         self.project_root
             .join("templates")
@@ -171,7 +179,7 @@ fn ensure_file(path: &Path, description: &str) -> Result<()> {
     Ok(())
 }
 
-fn find_project_root(start: &Path) -> Result<PathBuf> {
+pub fn find_project_root(start: &Path) -> Result<PathBuf> {
     for directory in start.ancestors() {
         if directory.join("project.toml").is_file() {
             return Ok(directory.to_owned());

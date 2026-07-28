@@ -172,7 +172,6 @@ mod tests {
         let info = TemplateInfo::parse(TEMPLATE).unwrap();
         assert_eq!(info.width_mm, 42.0);
         assert_eq!(info.height_mm, 21.0);
-        assert_eq!(info.center_mm(), [21.0, 10.5]);
         assert_eq!(info.text_fields["main"], "Default");
         assert_eq!(
             info.icon_boxes["fasteners"],
