@@ -8,6 +8,7 @@ mod quick;
 mod svg;
 mod template;
 mod text;
+mod watch;
 
 use anyhow::Result;
 use clap::Parser;
@@ -57,7 +58,9 @@ fn main() -> Result<()> {
                 println!("{}", output.display());
             }
         }
-        Command::Watch { .. } => anyhow::bail!("watch is not implemented yet"),
+        Command::Watch { label, svg, json } => {
+            watch::watch_label(&label, svg.as_deref(), json.as_deref(), system_fonts)?;
+        }
     }
     Ok(())
 }
