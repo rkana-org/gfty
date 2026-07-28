@@ -56,6 +56,10 @@
                 name = "RUST_SRC_PATH";
                 value = "${pkgs.rustPlatform.rustLibSrc}";
               }
+              {
+                name = "GFTY_LABEL_FONT_DIRS";
+                value = "${pkgs.dejavu_fonts}:${pkgs.liberation_ttf}";
+              }
             ];
           };
 

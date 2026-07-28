@@ -1,6 +1,13 @@
 {
   lib,
   rustPlatform,
+  makeWrapper,
+  dejavu_fonts,
+  liberation_ttf,
+  fonts ? [
+    dejavu_fonts
+    liberation_ttf
+  ],
 }:
 rustPlatform.buildRustPackage {
   pname = "gfty-label";
@@ -8,6 +15,12 @@ rustPlatform.buildRustPackage {
   src = lib.cleanSource ./.;
 
   cargoLock.lockFile = ./Cargo.lock;
+
+  nativeBuildInputs = [ makeWrapper ];
+  postFixup = ''
+    wrapProgram $out/bin/gfty-label \
+      --set GFTY_LABEL_FONT_DIRS ${lib.escapeShellArg (lib.concatStringsSep ":" (map toString fonts))}
+  '';
 
   meta = {
     description = "File-based Gridfinity label composer and Onshape exporter";
