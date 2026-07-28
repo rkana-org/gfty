@@ -13,6 +13,7 @@ templates/
 icons/
 labels/
 fonts/
+featurescript/
 ```
 
 ## Commands
@@ -136,3 +137,18 @@ center points without duplicating geometry.
 
 Plate/grid generation remains intentionally postponed. It will require labels
 on one plate to share the same physical viewport dimensions.
+
+## Onshape FeatureScripts
+
+`featurescript/gfty_label_importer.fs` consumes exported JSON and builds one
+solid named `part-<filament>` per filament. Filament numbers are zero-padded to
+the width of the largest index. Each solid receives a full-viewport, 1 mm helper
+plate behind the artwork so disconnected islands remain one STEP part. JSON may
+be pasted or read from a Part Studio string variable.
+
+`featurescript/gfty_label_instances.fs` patterns a selected set of prototype
+filament parts to the center points in `instances`, without rotation. The
+prototype must be centered at the selected layout plane origin. An `[0, 0]`
+instance keeps the prototype; if no origin instance exists, the prototype is
+deleted after copies are made. This feature also supports pasted JSON or a
+Part Studio string variable.
