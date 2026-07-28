@@ -110,10 +110,6 @@ impl TemplateInfo {
             icon_boxes,
         })
     }
-
-    pub fn center_mm(&self) -> [f64; 2] {
-        [self.width_mm / 2.0, self.height_mm / 2.0]
-    }
 }
 
 fn parse_view_box(value: &str) -> Result<ViewBox> {

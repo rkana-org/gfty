@@ -2,6 +2,7 @@ mod cli;
 mod color;
 mod compose;
 mod config;
+mod export;
 mod layout;
 mod svg;
 mod template;
@@ -27,7 +28,15 @@ fn main() -> Result<()> {
             std::fs::write(&output, svg)?;
             println!("{}", output.display());
         }
-        Command::Export { .. } => anyhow::bail!("export is not implemented yet"),
+        Command::Export { label, output } => {
+            let loaded = config::LoadedLabel::load(&label)?;
+            let rendered = compose::render_label(&loaded, system_fonts)?;
+            let document = export::export_rendered(&rendered)?;
+            let mut json = serde_json::to_vec(&document)?;
+            json.push(b'\n');
+            std::fs::write(&output, json)?;
+            println!("{}", output.display());
+        }
         Command::Quick { .. } => anyhow::bail!("quick is not implemented yet"),
         Command::Watch { .. } => anyhow::bail!("watch is not implemented yet"),
     }
