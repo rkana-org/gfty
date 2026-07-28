@@ -21,13 +21,27 @@ pub fn render_label_svg(label: &LoadedLabel, system_fonts: bool) -> Result<Strin
 }
 
 pub fn render_label(label: &LoadedLabel, system_fonts: bool) -> Result<RenderedLabel> {
+    let palette = crate::color::PreviewPalette::new(label_filaments(label)?)?;
+    render_label_with_palette(label, system_fonts, palette)
+}
+
+pub fn label_filaments(label: &LoadedLabel) -> Result<BTreeSet<u32>> {
+    label.validate()?;
+    let template_colors = crate::color::ColorMapping::load(&label.template_path())?;
+    collect_filaments(label, &template_colors)
+}
+
+pub fn render_label_with_palette(
+    label: &LoadedLabel,
+    system_fonts: bool,
+    palette: crate::color::PreviewPalette,
+) -> Result<RenderedLabel> {
     label.validate()?;
     let template_path = label.template_path();
     let source = fs::read_to_string(&template_path)
         .with_context(|| format!("failed to read template {}", template_path.display()))?;
     let template = TemplateInfo::load(&template_path)?;
     let template_colors = crate::color::ColorMapping::load(&template_path)?;
-    let palette = collect_palette(label, &template_colors)?;
     let recolored_template =
         crate::color::recolor_svg(&source, &template_colors.source_to_filament, &palette);
     let mut root = Element::parse(recolored_template.as_bytes()).context("invalid template XML")?;
@@ -53,10 +67,10 @@ pub fn render_label(label: &LoadedLabel, system_fonts: bool) -> Result<RenderedL
     })
 }
 
-fn collect_palette(
+fn collect_filaments(
     label: &LoadedLabel,
     template_colors: &crate::color::ColorMapping,
-) -> Result<crate::color::PreviewPalette> {
+) -> Result<BTreeSet<u32>> {
     let mut filaments: BTreeSet<u32> = template_colors
         .source_to_filament
         .values()
@@ -78,7 +92,7 @@ fn collect_palette(
                 .copied(),
         );
     }
-    crate::color::PreviewPalette::new(filaments)
+    Ok(filaments)
 }
 
 fn compose_icons(

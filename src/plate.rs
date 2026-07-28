@@ -29,13 +29,25 @@ pub fn build_plate(
     let column_gap = crate::config::parse_length_mm(column_gap).context("invalid column gap")?;
     let row_gap = crate::config::parse_length_mm(row_gap).context("invalid row gap")?;
 
-    let mut rendered = Vec::new();
-    let mut project_roots = Vec::new();
-    for path in label_paths {
-        let label = crate::config::LoadedLabel::load(path.as_ref())?;
-        project_roots.push(label.project_root.clone());
-        rendered.push(crate::compose::render_label(&label, system_fonts)?);
+    let labels = label_paths
+        .iter()
+        .map(|path| crate::config::LoadedLabel::load(path.as_ref()))
+        .collect::<Result<Vec<_>>>()?;
+    let mut filaments = std::collections::BTreeSet::new();
+    for label in &labels {
+        filaments.extend(crate::compose::label_filaments(label)?);
     }
+    let palette = crate::color::PreviewPalette::new(filaments)?;
+    let project_roots = labels
+        .iter()
+        .map(|label| label.project_root.clone())
+        .collect::<Vec<_>>();
+    let rendered = labels
+        .iter()
+        .map(|label| {
+            crate::compose::render_label_with_palette(label, system_fonts, palette.clone())
+        })
+        .collect::<Result<Vec<_>>>()?;
 
     let cell_size = rendered[0].size_mm;
     for (index, label) in rendered.iter().enumerate().skip(1) {
