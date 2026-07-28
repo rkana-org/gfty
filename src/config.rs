@@ -106,22 +106,40 @@ impl LoadedLabel {
             if box_name.starts_with("icons-") {
                 bail!("icon box {box_name:?} must omit the template's `icons-` prefix");
             }
-            if !template.icon_boxes.contains_key(box_name) {
-                bail!("label config references unknown icon box {box_name:?}");
-            }
+            let icon_box = template.icon_boxes.get(box_name).with_context(|| {
+                format!("label config references unknown icon box {box_name:?}")
+            })?;
+            let mut row = Vec::new();
             for entry in entries {
                 match entry {
                     IconPlacement::Icon { icon } => {
-                        if !self.config.icon.contains_key(icon) {
-                            bail!("icon box {box_name:?} references unknown icon alias {icon:?}");
-                        }
+                        let definition = self.config.icon.get(icon).with_context(|| {
+                            format!("icon box {box_name:?} references unknown icon alias {icon:?}")
+                        })?;
+                        let icon_info =
+                            crate::template::TemplateInfo::load(&self.icon_path(definition))?;
+                        row.push(crate::layout::RowItem::Icon {
+                            name: icon.clone(),
+                            aspect_ratio: icon_info.view_box.width / icon_info.view_box.height,
+                        });
                     }
                     IconPlacement::Spacer { spacer } => {
-                        crate::config::parse_length_mm(spacer)
+                        let width_mm = crate::config::parse_length_mm(spacer)
                             .with_context(|| format!("invalid spacer in icon box {box_name:?}"))?;
+                        row.push(crate::layout::RowItem::Spacer {
+                            width: width_mm * template.view_box.width / template.width_mm,
+                        });
                     }
                 }
             }
+            crate::layout::layout_icon_row(
+                icon_box.x,
+                icon_box.y,
+                icon_box.width,
+                icon_box.height,
+                &row,
+            )
+            .with_context(|| format!("icons do not fit in box {box_name:?}"))?;
         }
 
         Ok(())

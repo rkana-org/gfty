@@ -1,6 +1,7 @@
 mod cli;
 mod color;
 mod config;
+mod layout;
 mod template;
 mod text;
 
