@@ -63,7 +63,8 @@ impl LoadedLabel {
             .with_context(|| format!("failed to read label {}", path.display()))?;
         let config: LabelConfig = toml::from_str(&source)
             .with_context(|| format!("failed to parse label {}", path.display()))?;
-        let project_root = find_project_root(path.parent().expect("label has a parent"))?;
+        let project_root = find_project_root(path.parent().expect("label has a parent"))
+            .with_context(|| format!("failed to locate project for label {}", path.display()))?;
         Ok(Self {
             path,
             project_root,
@@ -92,7 +93,12 @@ impl LoadedLabel {
     pub fn validate(&self) -> Result<()> {
         ensure_file(&self.template_path(), "template")?;
         let template = crate::template::TemplateInfo::load(&self.template_path())?;
-        crate::color::ColorMapping::load(&self.template_path())?;
+        crate::color::ColorMapping::load(&self.template_path()).with_context(|| {
+            format!(
+                "invalid template colors or sidecar for {}",
+                self.template_path().display()
+            )
+        })?;
 
         for (field, value) in &self.config.text {
             if !template.text_fields.contains_key(field) {
@@ -107,7 +113,12 @@ impl LoadedLabel {
             validate_color_overrides(name, &icon.colors)?;
             crate::color::ColorMapping::load(&self.icon_path(icon))?
                 .with_overrides(&icon.colors)
-                .with_context(|| format!("invalid colors for icon alias {name:?}"))?;
+                .with_context(|| {
+                    format!(
+                        "invalid colors for icon alias {name:?} at {}",
+                        self.icon_path(icon).display()
+                    )
+                })?;
         }
 
         for (box_name, entries) in &self.config.icons {

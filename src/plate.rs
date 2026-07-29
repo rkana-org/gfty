@@ -31,11 +31,18 @@ pub fn build_plate(
 
     let labels = label_paths
         .iter()
-        .map(|path| crate::config::LoadedLabel::load(path.as_ref()))
+        .map(|path| {
+            crate::config::LoadedLabel::load(path.as_ref())
+                .with_context(|| format!("failed to load plate label {}", path.as_ref().display()))
+        })
         .collect::<Result<Vec<_>>>()?;
     let mut filaments = std::collections::BTreeSet::new();
     for label in &labels {
-        filaments.extend(crate::compose::label_filaments(label)?);
+        filaments.extend(
+            crate::compose::label_filaments(label).with_context(|| {
+                format!("failed to inspect filaments in {}", label.path.display())
+            })?,
+        );
     }
     let palette = crate::color::PreviewPalette::new(filaments)?;
     let project_roots = labels
@@ -46,6 +53,7 @@ pub fn build_plate(
         .iter()
         .map(|label| {
             crate::compose::render_label_with_palette(label, system_fonts, palette.clone())
+                .with_context(|| format!("failed to render plate label {}", label.path.display()))
         })
         .collect::<Result<Vec<_>>>()?;
 
@@ -110,8 +118,9 @@ fn grid_layout(
 
 fn combine_documents(rendered: &[RenderedLabel], layout: &GridLayout) -> Result<ExportDocument> {
     let mut by_filament = BTreeMap::<u32, Vec<Shape>>::new();
-    for (label, center) in rendered.iter().zip(&layout.centers) {
-        let document = crate::export::export_rendered(label)?;
+    for (index, (label, center)) in rendered.iter().zip(&layout.centers).enumerate() {
+        let document = crate::export::export_rendered(label)
+            .with_context(|| format!("failed to export plate label at index {index}"))?;
         for part in document.parts {
             let shapes = by_filament.entry(part.filament).or_default();
             for mut shape in part.shapes {
@@ -180,7 +189,8 @@ fn combine_svgs(
             project_root,
             false,
             Some(format!("plate-{index}-")),
-        )?;
+        )
+        .with_context(|| format!("failed to normalize plate preview label at index {index}"))?;
         let mut label_root =
             Element::parse(prefixed.as_bytes()).context("invalid rendered label SVG")?;
         let source_width = label_root

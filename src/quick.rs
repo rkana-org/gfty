@@ -14,8 +14,10 @@ pub fn build_quick_label(
     icons: &[String],
 ) -> Result<LoadedLabel> {
     let current_dir = env::current_dir().context("failed to determine current directory")?;
-    let project_root = crate::config::find_project_root(&current_dir)?;
-    let template = project_relative_path(template, &project_root.join("templates"), "template")?;
+    let project_root = crate::config::find_project_root(&current_dir)
+        .with_context(|| format!("failed to find project root from {}", current_dir.display()))?;
+    let template = project_relative_path(template, &project_root.join("templates"), "template")
+        .with_context(|| format!("failed to resolve template {}", template.display()))?;
 
     let mut text_fields = BTreeMap::new();
     for pair in pairs(text, "--text")? {
@@ -37,7 +39,8 @@ pub fn build_quick_label(
     let mut placements = BTreeMap::<String, Vec<IconPlacement>>::new();
     for (index, pair) in pairs(icons, "--icon")?.enumerate() {
         let [box_name, source] = pair;
-        let source = project_relative_path(Path::new(source), &project_root.join("icons"), "icon")?;
+        let source = project_relative_path(Path::new(source), &project_root.join("icons"), "icon")
+            .with_context(|| format!("failed to resolve icon {source:?}"))?;
         let alias = format!("quick-{index}");
         definitions.insert(
             alias.clone(),

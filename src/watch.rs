@@ -18,10 +18,12 @@ pub fn watch_label(
         bail!("watch needs at least one of --svg or --json");
     }
 
-    let initial = crate::config::LoadedLabel::load(label_path)?;
+    let initial = crate::config::LoadedLabel::load(label_path)
+        .with_context(|| format!("failed to load label {}", label_path.display()))?;
     let project_root = initial.project_root.clone();
-    let mut inputs = watch_inputs(&initial)?;
-    rebuild(label_path, svg_output, json_output, system_fonts)?;
+    let mut inputs = watch_inputs(&initial).context("failed to collect watch inputs")?;
+    rebuild(label_path, svg_output, json_output, system_fonts)
+        .context("initial watched build failed")?;
 
     let ignored_outputs: Vec<_> = [svg_output, json_output]
         .into_iter()
@@ -80,15 +82,18 @@ fn rebuild(
     json_output: Option<&Path>,
     system_fonts: bool,
 ) -> Result<()> {
-    let label = crate::config::LoadedLabel::load(label_path)?;
-    let rendered = crate::compose::render_label(&label, system_fonts)?;
+    let label = crate::config::LoadedLabel::load(label_path)
+        .with_context(|| format!("failed to reload label {}", label_path.display()))?;
+    let rendered = crate::compose::render_label(&label, system_fonts)
+        .with_context(|| format!("failed to render label {}", label.path.display()))?;
     if let Some(path) = svg_output {
         fs::write(path, &rendered.svg)
             .with_context(|| format!("failed to write SVG {}", path.display()))?;
     }
     if let Some(path) = json_output {
-        let document = crate::export::export_rendered(&rendered)?;
-        let mut json = serde_json::to_vec(&document)?;
+        let document = crate::export::export_rendered(&rendered)
+            .with_context(|| format!("failed to export label {}", label.path.display()))?;
+        let mut json = serde_json::to_vec(&document).context("failed to serialize Onshape JSON")?;
         json.push(b'\n');
         fs::write(path, json)
             .with_context(|| format!("failed to write JSON {}", path.display()))?;

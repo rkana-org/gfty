@@ -31,6 +31,7 @@ impl ColorMapping {
         let sidecar = svg_path.with_extension("toml");
         if sidecar.is_file() {
             Self::from_sidecar(&colors, &sidecar)
+                .with_context(|| format!("invalid color sidecar {}", sidecar.display()))
         } else {
             Ok(Self {
                 source_to_filament: colors

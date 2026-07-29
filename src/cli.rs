@@ -15,17 +15,17 @@ pub struct Cli {
 
 #[derive(Debug, Subcommand)]
 pub enum Command {
-    /// Validate a saved label and all of its references.
+    /// Validate a label and all of its references.
     Validate { label: PathBuf },
 
-    /// Render a saved label as a preview SVG.
+    /// Render a label as a preview SVG.
     Render {
         label: PathBuf,
         #[arg(short, long)]
         output: PathBuf,
     },
 
-    /// Export a saved label as compact Onshape JSON.
+    /// Export a label as compact Onshape JSON.
     Export {
         label: PathBuf,
         #[arg(short, long)]
@@ -48,11 +48,24 @@ pub enum Command {
         #[arg(long)]
         svg: Option<PathBuf>,
 
-        #[arg(long)]
+        /// Write JSON to PATH, or to stdout when PATH is omitted.
+        #[arg(long, num_args = 0..=1, default_missing_value = "-", value_name = "PATH")]
         json: Option<PathBuf>,
     },
 
-    /// Arrange saved labels into a fixed-column plate grid.
+    /// List template suffixes below the current project root.
+    ListTemplates,
+
+    /// List icon suffixes below the current project root.
+    ListIcons,
+
+    /// List label paths below the current project root.
+    ListLabels,
+
+    /// List templates, icons, and labels below the current project root.
+    List,
+
+    /// Arrange labels into a fixed-column plate grid.
     Plate {
         /// Number of columns in the fixed-width grid.
         #[arg(long)]
@@ -75,7 +88,7 @@ pub enum Command {
         labels: Vec<PathBuf>,
     },
 
-    /// Rebuild a saved label whenever project inputs change.
+    /// Rebuild a label whenever project inputs change.
     Watch {
         label: PathBuf,
 

@@ -21,13 +21,24 @@ pub fn render_label_svg(label: &LoadedLabel, system_fonts: bool) -> Result<Strin
 }
 
 pub fn render_label(label: &LoadedLabel, system_fonts: bool) -> Result<RenderedLabel> {
-    let palette = crate::color::PreviewPalette::new(label_filaments(label)?)?;
+    let filaments = label_filaments(label)
+        .with_context(|| format!("failed to collect filaments for {}", label.path.display()))?;
+    let palette =
+        crate::color::PreviewPalette::new(filaments).context("failed to create preview palette")?;
     render_label_with_palette(label, system_fonts, palette)
 }
 
 pub fn label_filaments(label: &LoadedLabel) -> Result<BTreeSet<u32>> {
-    label.validate()?;
-    let template_colors = crate::color::ColorMapping::load(&label.template_path())?;
+    label
+        .validate()
+        .with_context(|| format!("invalid label {}", label.path.display()))?;
+    let template_colors =
+        crate::color::ColorMapping::load(&label.template_path()).with_context(|| {
+            format!(
+                "failed to load colors for {}",
+                label.template_path().display()
+            )
+        })?;
     collect_filaments(label, &template_colors)
 }
 
@@ -36,30 +47,41 @@ pub fn render_label_with_palette(
     system_fonts: bool,
     palette: crate::color::PreviewPalette,
 ) -> Result<RenderedLabel> {
-    label.validate()?;
+    label
+        .validate()
+        .with_context(|| format!("invalid label {}", label.path.display()))?;
     let template_path = label.template_path();
     let source = fs::read_to_string(&template_path)
         .with_context(|| format!("failed to read template {}", template_path.display()))?;
-    let template = TemplateInfo::load(&template_path)?;
-    let template_colors = crate::color::ColorMapping::load(&template_path)?;
+    let template = TemplateInfo::load(&template_path)
+        .with_context(|| format!("failed to load template {}", template_path.display()))?;
+    let template_colors = crate::color::ColorMapping::load(&template_path).with_context(|| {
+        format!(
+            "failed to load template colors for {}",
+            template_path.display()
+        )
+    })?;
     let recolored_template =
         crate::color::recolor_svg(&source, &template_colors.source_to_filament, &palette);
     let mut root = Element::parse(recolored_template.as_bytes()).context("invalid template XML")?;
 
-    compose_text_and_remove_boxes(&mut root, label, &palette)?;
+    compose_text_and_remove_boxes(&mut root, label, &palette)
+        .with_context(|| format!("failed to compose template {}", template_path.display()))?;
     root.children.extend(
-        compose_icons(label, system_fonts, &palette)?
+        compose_icons(label, system_fonts, &palette)
+            .with_context(|| format!("failed to compose icons for {}", label.path.display()))?
             .into_iter()
             .map(XMLNode::Element),
     );
-    let composed = serialize_element(&root)?;
+    let composed = serialize_element(&root).context("failed to serialize composed label")?;
 
     let svg = crate::svg::normalize_svg(
         &composed,
         template_path.parent().expect("template has a parent"),
         &label.project_root,
         system_fonts,
-    )?;
+    )
+    .with_context(|| format!("failed to normalize template {}", template_path.display()))?;
     Ok(RenderedLabel {
         svg,
         palette,
@@ -76,17 +98,26 @@ fn collect_filaments(
         .values()
         .copied()
         .collect();
-    for value in label.config.text.values() {
+    for (field, value) in &label.config.text {
         filaments.extend(
-            parse_colored_text(&value.content)?
+            parse_colored_text(&value.content)
+                .with_context(|| format!("invalid colored text in field {field:?}"))?
                 .into_iter()
                 .map(|run| run.filament),
         );
     }
-    for definition in label.config.icon.values() {
+    for (alias, definition) in &label.config.icon {
+        let path = label.icon_path(definition);
         filaments.extend(
-            crate::color::ColorMapping::load(&label.icon_path(definition))?
-                .with_overrides(&definition.colors)?
+            crate::color::ColorMapping::load(&path)
+                .with_context(|| {
+                    format!(
+                        "failed to load colors for icon alias {alias:?} at {}",
+                        path.display()
+                    )
+                })?
+                .with_overrides(&definition.colors)
+                .with_context(|| format!("invalid color overrides for icon alias {alias:?}"))?
                 .source_to_filament
                 .values()
                 .copied(),
@@ -100,7 +131,12 @@ fn compose_icons(
     system_fonts: bool,
     palette: &crate::color::PreviewPalette,
 ) -> Result<Vec<Element>> {
-    let template = TemplateInfo::load(&label.template_path())?;
+    let template = TemplateInfo::load(&label.template_path()).with_context(|| {
+        format!(
+            "failed to load template {}",
+            label.template_path().display()
+        )
+    })?;
     let mut result = Vec::new();
     let mut instance_index = 0usize;
 
@@ -120,7 +156,8 @@ fn compose_icons(
                         .get(icon)
                         .with_context(|| format!("unknown icon alias {icon:?}"))?;
                     let path = label.icon_path(definition);
-                    let info = TemplateInfo::load(&path)?;
+                    let info = TemplateInfo::load(&path)
+                        .with_context(|| format!("failed to inspect icon {}", path.display()))?;
                     row.push(RowItem::Icon {
                         name: icon.clone(),
                         aspect_ratio: info.view_box.width / info.view_box.height,
@@ -128,7 +165,10 @@ fn compose_icons(
                     icon_details.push((definition, path));
                 }
                 IconPlacement::Spacer { spacer } => row.push(RowItem::Spacer {
-                    width: parse_length_mm(spacer)? * template.view_box.width / template.width_mm,
+                    width: parse_length_mm(spacer)
+                        .with_context(|| format!("invalid spacer in icon box {box_name:?}"))?
+                        * template.view_box.width
+                        / template.width_mm,
                 }),
             }
         }
@@ -139,11 +179,13 @@ fn compose_icons(
             icon_box.width,
             icon_box.height,
             &row,
-        )?;
+        )
+        .with_context(|| format!("failed to lay out icon box {box_name:?}"))?;
         for (placement, (definition, path)) in placed.iter().zip(icon_details) {
             let source = fs::read_to_string(&path)
                 .with_context(|| format!("failed to read icon {}", path.display()))?;
-            let colors = crate::color::ColorMapping::load(&path)?
+            let colors = crate::color::ColorMapping::load(&path)
+                .with_context(|| format!("failed to load colors for icon {}", path.display()))?
                 .with_overrides(&definition.colors)
                 .with_context(|| format!("invalid colors for icon {}", path.display()))?;
             let recolored = crate::color::recolor_svg(&source, &colors.source_to_filament, palette);
@@ -153,7 +195,8 @@ fn compose_icons(
                 &label.project_root,
                 system_fonts,
                 Some(format!("icon-{instance_index}-")),
-            )?;
+            )
+            .with_context(|| format!("failed to normalize icon {}", path.display()))?;
             let mut normalized_root =
                 Element::parse(normalized.as_bytes()).context("invalid normalized icon SVG")?;
             let normalized_width: f64 = normalized_root
@@ -239,7 +282,8 @@ fn apply_text_fields(
         .and_then(|id| id.strip_prefix("text-"))
         && let Some(value) = label.config.text.get(field)
     {
-        let runs = parse_colored_text(&value.content)?;
+        let runs = parse_colored_text(&value.content)
+            .with_context(|| format!("invalid colored text in field {field:?}"))?;
         if !replace_first_text_tspan(element, &runs, palette) {
             replace_with_runs(element, &runs, palette);
         }
