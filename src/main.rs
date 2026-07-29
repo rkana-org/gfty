@@ -159,9 +159,14 @@ fn main() -> Result<()> {
             json,
             labels,
         } => {
-            if svg.is_none() && json.is_none() {
-                anyhow::bail!("plate needs at least one of --svg or --json");
-            }
+            // With no explicit output option, mirror export and quick --json
+            // by writing compact JSON to stdout.
+            let json = if svg.is_none() && json.is_none() {
+                Some(std::path::PathBuf::from("-"))
+            } else {
+                json
+            };
+            let json_to_stdout = json.as_deref().is_some_and(is_stdout_path);
             let output =
                 plate::build_plate(&labels, &dimensions, &column_gap, &row_gap, system_fonts)
                     .context("failed to generate plate")?;
@@ -169,7 +174,10 @@ fn main() -> Result<()> {
             if let Some(path) = svg {
                 std::fs::write(&path, output.svg)
                     .with_context(|| format!("failed to write plate SVG {}", path.display()))?;
-                println!("Generated plate SVG: {}", path.display());
+                print_success(
+                    json_to_stdout,
+                    format_args!("Generated plate SVG: {}", path.display()),
+                );
             }
             if let Some(path) = json {
                 let stdout = write_json(&path, &output.document)?;

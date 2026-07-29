@@ -48,7 +48,8 @@ pub enum Command {
     /// Export a label as compact Onshape JSON.
     Export {
         label: PathBuf,
-        #[arg(short, long)]
+        /// Write JSON to PATH; defaults to stdout.
+        #[arg(short, long, default_value = "-")]
         output: PathBuf,
     },
 
@@ -100,7 +101,8 @@ pub enum Command {
         #[arg(long)]
         svg: Option<PathBuf>,
 
-        #[arg(long)]
+        /// Write JSON to PATH, or to stdout when PATH is omitted.
+        #[arg(long, num_args = 0..=1, default_missing_value = "-", value_name = "PATH")]
         json: Option<PathBuf>,
 
         /// Labels in top-left, row-major order. Repeat a path to repeat a label.

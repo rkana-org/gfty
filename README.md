@@ -21,7 +21,7 @@ featurescript/
 ```text
 gfty-label validate LABEL
 gfty-label render LABEL --output PREVIEW.svg
-gfty-label export LABEL --output FILLS.json
+gfty-label export LABEL [--output FILLS.json]
 gfty-label quick --template TEMPLATE --text ID CONTENT --icon BOX ICON
 gfty-label list-templates
 gfty-label list-icons
@@ -48,9 +48,11 @@ gfty-label quick \
   --json label.json
 ```
 
-Omit the path after `--json` to write compact JSON to stdout, for example:
+`export` writes compact JSON to stdout by default. `quick --json` also uses
+stdout when its optional path is omitted:
 
 ```sh
+gfty-label export labels/m3.toml | wl-copy
 gfty-label quick --template label-1x1.svg --text main M3 --json | wl-copy
 ```
 
@@ -58,9 +60,12 @@ The `list-*` commands print sorted paths relative to the project root, including
 `templates/`, `icons/`, or `labels/`. `list` prints all three groups together.
 
 `plate` takes label TOML paths directly on the command line; no plate config
-file is needed. Repeat a path to repeat that label:
+file is needed. Repeat a path to repeat that label. With no `--svg` or `--json`
+option, plate JSON goes to stdout; `--json` without a path does the same:
 
 ```sh
+gfty-label plate --dimensions 200mm 250mm labels/*.toml | wl-copy
+
 gfty-label plate \
   --dimensions 200mm 250mm \
   --svg plate.svg \

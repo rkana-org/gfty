@@ -98,18 +98,29 @@ export const gftyLabelInstances = defineFeature(function(context is Context, id 
             throw regenError("The artwork connector +Z must point out of the label and the bottom connector must be behind it.",
                              ["artworkMateConnector", "bottomMateConnector"]);
 
+        // Make every coincident prototype copy before any boolean modifies a
+        // layer. qPatternInstances then gives each filament an isolated query,
+        // even when several instances use the same identity transform.
+        const prototypeLayers = patternPrototypeLayers(context, id + "prototypeLayers",
+                                                        definition.prototypePart, data,
+                                                        artworkCSys, definition.unitScale);
+        // A robust user query can track patterned descendants. Explicitly
+        // subtract every pattern instance so only the selected source is
+        // removed, never a generated filament layer. Do this before booleans
+        // modify the copied identities.
+        opDeleteBodies(context, id + "deletePrototype", {
+                "entities" : qSubtraction(definition.prototypePart,
+                                           qCreatedBy(id + "prototypeLayers", EntityType.BODY))
+        });
+
         const nameWidth = filamentNameWidth(data.filaments);
         for (var filamentIndex = 0; filamentIndex < size(data.filaments); filamentIndex += 1)
         {
             const filament = data.filaments[filamentIndex];
             buildFilamentInstances(context, id + ("filament" ~ filamentIndex), definition,
-                                   data, filament, artworkCSys, bottomOffset,
-                                   nameWidth, faultyParameter);
+                                   data, filament, prototypeLayers[filamentIndex],
+                                   artworkCSys, bottomOffset, nameWidth, faultyParameter);
         }
-
-        opDeleteBodies(context, id + "deletePrototype", {
-                "entities" : definition.prototypePart
-        });
 
         if (definition.debugLabelInstances)
             println("GFTY label instances: labels=" ~ size(data.labels) ~
@@ -244,31 +255,52 @@ function containsNumber(values is array, target is number) returns boolean
     return false;
 }
 
-function buildFilamentInstances(context is Context, id is Id, definition is map,
-                                data is map, filament is number, artworkCSys is CoordSystem,
-                                bottomOffset is ValueWithUnits, nameWidth is number,
-                                faultyParameter is string)
+function patternPrototypeLayers(context is Context, id is Id, prototype is Query,
+                                data is map, artworkCSys is CoordSystem,
+                                unitScale is ValueWithUnits) returns array
 {
     var transforms = [];
     var instanceNames = [];
-    for (var labelIndex = 0; labelIndex < size(data.labels); labelIndex += 1)
+    var namesByFilament = [];
+    for (var filamentIndex = 0; filamentIndex < size(data.filaments); filamentIndex += 1)
     {
-        const offset = labelOffset(artworkCSys, data.labels[labelIndex].center, definition.unitScale);
-        transforms = append(transforms, transform(offset));
-        instanceNames = append(instanceNames, "label" ~ labelIndex);
+        var filamentNames = [];
+        for (var labelIndex = 0; labelIndex < size(data.labels); labelIndex += 1)
+        {
+            const instanceName = "f" ~ filamentIndex ~ "_label" ~ labelIndex;
+            const offset = labelOffset(artworkCSys, data.labels[labelIndex].center, unitScale);
+            transforms = append(transforms, transform(offset));
+            instanceNames = append(instanceNames, instanceName);
+            filamentNames = append(filamentNames, instanceName);
+        }
+        namesByFilament = append(namesByFilament, filamentNames);
     }
 
-    const patternId = id + "prototypePattern";
-    opPattern(context, patternId, {
-            "entities" : definition.prototypePart,
+    opPattern(context, id, {
+            "entities" : prototype,
             "transforms" : transforms,
             "instanceNames" : instanceNames,
             "copyPropertiesAndAttributes" : true
     });
-    const prototypeCopies = qBodyType(qCreatedBy(patternId, EntityType.BODY), BodyType.SOLID);
-    if (isQueryEmpty(context, prototypeCopies))
-        throw regenError("Could not copy the prototype label part.", ["prototypePart"]);
 
+    var layers = [];
+    for (var filamentIndex = 0; filamentIndex < size(namesByFilament); filamentIndex += 1)
+    {
+        const layer = qBodyType(qPatternInstances(id, namesByFilament[filamentIndex], EntityType.BODY),
+                                BodyType.SOLID);
+        if (size(evaluateQuery(context, layer)) != size(data.labels))
+            throw regenError("Could not create one prototype copy per label and filament.",
+                             ["prototypePart"]);
+        layers = append(layers, layer);
+    }
+    return layers;
+}
+
+function buildFilamentInstances(context is Context, id is Id, definition is map,
+                                data is map, filament is number, prototypeCopies is Query,
+                                artworkCSys is CoordSystem, bottomOffset is ValueWithUnits,
+                                nameWidth is number, faultyParameter is string)
+{
     var artworkBodies = [];
     for (var labelIndex = 0; labelIndex < size(data.labels); labelIndex += 1)
     {
