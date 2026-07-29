@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use anyhow::{Context, Result, bail};
-use serde::Serialize;
+use serde::{Serialize, ser::SerializeStruct};
 use usvg::{Node, Paint, tiny_skia_path::PathSegment};
 
 use crate::{color::PreviewPalette, compose::RenderedLabel};
@@ -19,9 +19,62 @@ pub struct Part {
     pub shapes: Vec<Shape>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug)]
 pub struct Shape {
     pub contours: Vec<Contour>,
+}
+
+impl Serialize for Shape {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let mut shape = serializer.serialize_struct("Shape", 1)?;
+        shape.serialize_field("path", &format_path(&self.contours))?;
+        shape.end()
+    }
+}
+
+fn format_path(contours: &[Contour]) -> String {
+    let mut tokens = Vec::new();
+    for contour in contours {
+        if contour.segments.is_empty() {
+            continue;
+        }
+        tokens.push("M".to_owned());
+        push_point(&mut tokens, contour.start);
+        for segment in &contour.segments {
+            match segment {
+                Segment::Line { to } => {
+                    tokens.push("L".to_owned());
+                    push_point(&mut tokens, *to);
+                }
+                Segment::Cubic { c1, c2, to } => {
+                    tokens.push("C".to_owned());
+                    push_point(&mut tokens, *c1);
+                    push_point(&mut tokens, *c2);
+                    push_point(&mut tokens, *to);
+                }
+            }
+        }
+        tokens.push("Z".to_owned());
+    }
+    tokens.join(" ")
+}
+
+fn push_point(tokens: &mut Vec<String>, point: [f64; 2]) {
+    tokens.push(format_number(point[0]));
+    tokens.push(format_number(point[1]));
+}
+
+fn format_number(value: f64) -> String {
+    if value.abs() < 0.0000005 {
+        return "0".to_owned();
+    }
+    // Nanometer-scale coordinate precision is ample for label geometry and
+    // keeps pasted FeatureScript JSON compact.
+    let value = format!("{value:.6}");
+    value.trim_end_matches('0').trim_end_matches('.').to_owned()
 }
 
 #[derive(Debug, Serialize)]
@@ -236,5 +289,9 @@ mod tests {
             _ => panic!("expected line"),
         }
         assert_eq!(output.instances, vec![[0.0, 0.0]]);
+        let json = serde_json::to_value(&output).unwrap();
+        let shape = &json["parts"][0]["shapes"][0];
+        assert!(shape.get("contours").is_none());
+        assert_eq!(shape["path"], "M -12.7 6.35 L 12.7 6.35 L 12.7 -6.35 Z");
     }
 }

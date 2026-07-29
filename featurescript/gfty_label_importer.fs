@@ -140,13 +140,19 @@ function buildFilamentPart(context is Context, id is Id, sketchPlane is Plane, n
     for (var shapeIndex = 0; shapeIndex < size(part.shapes); shapeIndex += 1)
     {
         const shape = part.shapes[shapeIndex];
-        if (!(shape is map) || !(shape.contours is array) || size(shape.contours) == 0)
-            throw regenError("Every shape needs a non-empty contours array.", [faultyParameter]);
+        if (!(shape is map) ||
+            !((shape.path is string && shape.path != "") ||
+              (shape.contours is array && size(shape.contours) > 0)))
+            throw regenError("Every shape needs a non-empty path string.", [faultyParameter]);
 
         const sketchId = id + ("shapeSketch" ~ shapeIndex);
         var sketch = newSketchOnPlane(context, sketchId, { "sketchPlane" : sketchPlane });
-        addContoursToSketch(sketch, "s" ~ shapeIndex ~ "_", shape.contours,
+        if (shape.path is string)
+            addPathToSketch(sketch, "s" ~ shapeIndex ~ "_", shape.path,
                             definition.unitScale, faultyParameter);
+        else
+            addContoursToSketch(sketch, "s" ~ shapeIndex ~ "_", shape.contours,
+                                definition.unitScale, faultyParameter);
         skSolve(sketch);
         const regions = qSketchRegion(sketchId, true);
         if (isQueryEmpty(context, regions))
@@ -205,6 +211,100 @@ function buildHelperPlate(context is Context, id is Id, sketchPlane is Plane, no
     return qCreatedBy(id + "Extrude", EntityType.BODY);
 }
 
+// Parse the compact absolute path notation emitted by gfty-label. This is
+// deliberately smaller than a general SVG parser: only M, L, C, and Z are
+// accepted, and every command must be written explicitly.
+function addPathToSketch(sketch is Sketch, prefix is string, pathData is string,
+                         unitScale is ValueWithUnits, faultyParameter is string)
+{
+    const tokens = splitByRegexp(pathData, "[,\\t\\n\\r ]+");
+    var tokenIndex = 0;
+    var contourIndex = -1;
+    var segmentIndex = 0;
+    var current;
+    var startPoint;
+    var hasOpenContour = false;
+
+    while (tokenIndex < size(tokens))
+    {
+        const command = tokens[tokenIndex];
+        tokenIndex += 1;
+        if (command == "M")
+        {
+            if (hasOpenContour)
+                throw regenError("Path contour is missing Z before the next M.", [faultyParameter]);
+            const parsed = pathPoint(tokens, tokenIndex, unitScale, "move point", faultyParameter);
+            tokenIndex = parsed.next;
+            current = parsed.point;
+            startPoint = parsed.point;
+            contourIndex += 1;
+            segmentIndex = 0;
+            hasOpenContour = true;
+        }
+        else if (command == "L")
+        {
+            if (!hasOpenContour)
+                throw regenError("Path L command must follow M.", [faultyParameter]);
+            const parsed = pathPoint(tokens, tokenIndex, unitScale, "line end", faultyParameter);
+            tokenIndex = parsed.next;
+            if (!tolerantEquals(current, parsed.point))
+                skLineSegment(sketch, prefix ~ "c" ~ contourIndex ~ "_" ~ segmentIndex,
+                              { "start" : current, "end" : parsed.point });
+            current = parsed.point;
+            segmentIndex += 1;
+        }
+        else if (command == "C")
+        {
+            if (!hasOpenContour)
+                throw regenError("Path C command must follow M.", [faultyParameter]);
+            const first = pathPoint(tokens, tokenIndex, unitScale, "Bezier control 1", faultyParameter);
+            const second = pathPoint(tokens, first.next, unitScale, "Bezier control 2", faultyParameter);
+            const end = pathPoint(tokens, second.next, unitScale, "Bezier end", faultyParameter);
+            tokenIndex = end.next;
+            skBezier(sketch, prefix ~ "c" ~ contourIndex ~ "_" ~ segmentIndex,
+                     { "points" : [current, first.point, second.point, end.point] });
+            current = end.point;
+            segmentIndex += 1;
+        }
+        else if (command == "Z")
+        {
+            if (!hasOpenContour)
+                throw regenError("Path Z command must follow M.", [faultyParameter]);
+            if (!tolerantEquals(current, startPoint))
+                skLineSegment(sketch, prefix ~ "close" ~ contourIndex,
+                              { "start" : current, "end" : startPoint });
+            hasOpenContour = false;
+        }
+        else
+            throw regenError("Unsupported path token \"" ~ command ~ "\". Expected M, L, C, or Z.", [faultyParameter]);
+    }
+
+    if (hasOpenContour)
+        throw regenError("Path contour is missing its closing Z.", [faultyParameter]);
+    if (contourIndex < 0)
+        throw regenError("Shape path contains no contours.", [faultyParameter]);
+}
+
+function pathPoint(tokens is array, index is number, unitScale is ValueWithUnits,
+                   label is string, faultyParameter is string) returns map
+{
+    if (index + 1 >= size(tokens))
+        throw regenError("Path is missing coordinates for " ~ label ~ ".", [faultyParameter]);
+    var x;
+    var y;
+    try
+    {
+        x = stringToNumber(tokens[index]);
+        y = stringToNumber(tokens[index + 1]);
+    }
+    catch
+    {
+        throw regenError("Path has an invalid number for " ~ label ~ ".", [faultyParameter]);
+    }
+    return { "point" : vector(x, y) * unitScale, "next" : index + 2 };
+}
+
+// Kept for compatibility with early structured-contour exports.
 function addContoursToSketch(sketch is Sketch, prefix is string, contours is array,
                              unitScale is ValueWithUnits, faultyParameter is string)
 {

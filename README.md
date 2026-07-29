@@ -23,6 +23,10 @@ gfty-label validate LABEL
 gfty-label render LABEL --output PREVIEW.svg
 gfty-label export LABEL --output FILLS.json
 gfty-label quick --template TEMPLATE --text ID CONTENT --icon BOX ICON
+gfty-label list-templates
+gfty-label list-icons
+gfty-label list-labels
+gfty-label list
 gfty-label plate --columns N [OPTIONS] LABEL...
 gfty-label watch LABEL --svg PREVIEW.svg --json FILLS.json
 ```
@@ -30,7 +34,7 @@ gfty-label watch LABEL --svg PREVIEW.svg --json FILLS.json
 All four design workflows are implemented. Rendering resolves bundled/project
 fonts, converts text and SVG primitives to paths with `usvg`, applies filament
 colors, and lays out icons without implicit gaps. Export produces centered,
-physical-millimeter contours grouped by filament for Onshape.
+physical-millimeter paths grouped by filament for Onshape.
 
 `quick` runs from anywhere below a project root and treats template/icon paths
 as suffixes below `templates/` and `icons/` respectively:
@@ -43,6 +47,16 @@ gfty-label quick \
   --svg preview.svg \
   --json label.json
 ```
+
+Omit the path after `--json` to write compact JSON to stdout, for example:
+
+```sh
+gfty-label quick --template label-1x1.svg --text main M3 --json | wl-copy
+```
+
+The `list-*` commands print sorted project-relative entries. Template and icon
+lists use the suffixes accepted by label TOML; label paths include `labels/`.
+`list` prints all three groups together.
 
 `plate` takes label TOML paths directly on the command line; no plate config
 file is needed. Repeat a path to repeat that label:
@@ -135,13 +149,7 @@ integers.
       "filament": 0,
       "shapes": [
         {
-          "contours": [
-            {
-              "start": [-21.0, 10.5],
-              "closed": true,
-              "segments": [{ "type": "L", "to": [21.0, 10.5] }]
-            }
-          ]
+          "path": "M -21 10.5 L 21 10.5 L 21 -10.5 L -21 -10.5 Z"
         }
       ]
     }
@@ -150,10 +158,11 @@ integers.
 }
 ```
 
-Each shape corresponds to one filled rendered path. Segment types are `L` for
-lines and `C` for cubic Beziers. The single-label exporter places one instance
-at the origin. The `plate` command emits the full plate size, flattened placed
-geometry, and one center point per label.
+Each shape corresponds to one filled rendered path. The compact path notation
+uses absolute `M`, `L`, and `C` commands plus `Z`; it is intentionally not the
+full SVG path grammar. The single-label exporter places one instance at the
+origin. The `plate` command emits the full plate size, flattened placed geometry,
+and one center point per label.
 
 ## Onshape FeatureScripts
 
