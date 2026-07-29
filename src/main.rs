@@ -31,35 +31,43 @@ fn main() {
 fn run() -> Result<()> {
     let cli = Cli::parse();
     let system_fonts = cli.system_fonts;
+    let list_preview = cli.preview;
     let preview_options = terminal_preview::PreviewOptions {
         mode: cli.terminal_preview,
         width: cli.terminal_preview_width,
     };
     match cli.command {
         Command::Validate { label } => {
-            let loaded = config::LoadedLabel::load(&label)
-                .with_context(|| format!("failed to load label {}", label.display()))?;
-            compose::render_label_svg(&loaded, system_fonts)
-                .with_context(|| format!("failed to validate label {}", loaded.path.display()))?;
-            println!(
-                "{} {}",
-                "valid".green().bold(),
-                loaded.path.display().to_string().cyan()
-            );
+            validate_labels(label.as_deref(), system_fonts)?;
         }
         Command::Render { label, output } => {
             let loaded = config::LoadedLabel::load(&label)
                 .with_context(|| format!("failed to load label {}", label.display()))?;
             let svg = compose::render_label_svg(&loaded, system_fonts)
                 .with_context(|| format!("failed to render label {}", loaded.path.display()))?;
-            std::fs::write(&output, &svg)
-                .with_context(|| format!("failed to write SVG {}", output.display()))?;
-            try_preview(
-                &svg,
-                &loaded.path.display().to_string(),
-                preview_options,
-                false,
-            );
+            if let Some(output) = output {
+                std::fs::write(&output, &svg)
+                    .with_context(|| format!("failed to write SVG {}", output.display()))?;
+                try_preview(
+                    &svg,
+                    &loaded.path.display().to_string(),
+                    preview_options,
+                    false,
+                );
+            } else {
+                let shown = terminal_preview::show_svg(
+                    &svg,
+                    &loaded.path.display().to_string(),
+                    preview_options,
+                    false,
+                )
+                .context("failed to render SVG in the terminal")?;
+                if !shown {
+                    anyhow::bail!(
+                        "terminal preview is unavailable; use --output PATH or select a supported terminal preview mode"
+                    );
+                }
+            }
         }
         Command::Export { label, output } => {
             let loaded = config::LoadedLabel::load(&label)
@@ -102,63 +110,75 @@ fn run() -> Result<()> {
         Command::ListTemplates => {
             let entries = list::discover()?;
             list::print_templates(&entries, false);
-            preview_entries(
-                &entries,
-                &entries.templates,
-                EntryKind::Svg,
-                system_fonts,
-                preview_options,
-            );
+            if list_preview {
+                preview_entries(
+                    &entries,
+                    &entries.templates,
+                    EntryKind::Svg,
+                    system_fonts,
+                    preview_options,
+                );
+            }
         }
         Command::ListIcons => {
             let entries = list::discover()?;
             print_values(&entries.icons);
-            preview_entries(
-                &entries,
-                &entries.icons,
-                EntryKind::Svg,
-                system_fonts,
-                preview_options,
-            );
+            if list_preview {
+                preview_entries(
+                    &entries,
+                    &entries.icons,
+                    EntryKind::Svg,
+                    system_fonts,
+                    preview_options,
+                );
+            }
         }
         Command::ListLabels => {
             let entries = list::discover()?;
             print_values(&entries.labels);
-            preview_entries(
-                &entries,
-                &entries.labels,
-                EntryKind::Label,
-                system_fonts,
-                preview_options,
-            );
+            if list_preview {
+                preview_entries(
+                    &entries,
+                    &entries.labels,
+                    EntryKind::Label,
+                    system_fonts,
+                    preview_options,
+                );
+            }
         }
         Command::List => {
             let entries = list::discover()?;
-            println!("{}", "Templates:".bold().blue());
+            println!("{}", "Templates:".bold().green());
             list::print_templates(&entries, true);
-            preview_entries(
-                &entries,
-                &entries.templates,
-                EntryKind::Svg,
-                system_fonts,
-                preview_options,
-            );
+            if list_preview {
+                preview_entries(
+                    &entries,
+                    &entries.templates,
+                    EntryKind::Svg,
+                    system_fonts,
+                    preview_options,
+                );
+            }
             list::print_group("Icons", &entries.icons);
-            preview_entries(
-                &entries,
-                &entries.icons,
-                EntryKind::Svg,
-                system_fonts,
-                preview_options,
-            );
+            if list_preview {
+                preview_entries(
+                    &entries,
+                    &entries.icons,
+                    EntryKind::Svg,
+                    system_fonts,
+                    preview_options,
+                );
+            }
             list::print_group("Labels", &entries.labels);
-            preview_entries(
-                &entries,
-                &entries.labels,
-                EntryKind::Label,
-                system_fonts,
-                preview_options,
-            );
+            if list_preview {
+                preview_entries(
+                    &entries,
+                    &entries.labels,
+                    EntryKind::Label,
+                    system_fonts,
+                    preview_options,
+                );
+            }
         }
         Command::Plate {
             dimensions,
@@ -201,6 +221,46 @@ fn run() -> Result<()> {
     Ok(())
 }
 
+fn validate_labels(label: Option<&std::path::Path>, system_fonts: bool) -> Result<()> {
+    let labels: Vec<(String, std::path::PathBuf)> = if let Some(label) = label {
+        vec![(label.display().to_string(), label.to_owned())]
+    } else {
+        let entries = list::discover()?;
+        entries
+            .labels
+            .iter()
+            .map(|path| (path.clone(), entries.root.join(path)))
+            .collect()
+    };
+
+    let total = labels.len();
+    let mut valid = 0usize;
+    for (display, path) in labels {
+        let result = config::LoadedLabel::load(&path)
+            .with_context(|| format!("failed to load label {}", path.display()))
+            .and_then(|loaded| {
+                compose::render_label_svg(&loaded, system_fonts)
+                    .with_context(|| format!("failed to validate label {}", loaded.path.display()))
+            });
+        match result {
+            Ok(_) => valid += 1,
+            Err(error) => {
+                eprintln!("{} {}", "error:".red().bold(), display.bold());
+                eprintln!("  {error:#}");
+            }
+        }
+    }
+
+    let summary = format!("{valid}/{total} valid").bold();
+    if valid == total {
+        eprintln!("{} {summary}", "Finished".green().bold());
+    } else {
+        eprintln!("{} {summary}", "Failed".red().bold());
+        std::process::exit(1);
+    }
+    Ok(())
+}
+
 fn write_json(path: &std::path::Path, document: &export::ExportDocument) -> Result<()> {
     let mut json = serde_json::to_vec(document).context("failed to serialize Onshape JSON")?;
     json.push(b'\n');
@@ -228,7 +288,7 @@ enum EntryKind {
 
 fn print_values(values: &[String]) {
     for value in values {
-        println!("{}", value.cyan());
+        println!("{value}");
     }
 }
 

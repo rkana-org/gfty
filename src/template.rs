@@ -22,12 +22,27 @@ pub struct TemplateInfo {
     pub icon_boxes: BTreeMap<String, IconBox>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IconDirection {
+    Horizontal,
+    Vertical,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IconAlignment {
+    Start,
+    Center,
+    End,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct IconBox {
     pub x: f64,
     pub y: f64,
     pub width: f64,
     pub height: f64,
+    pub direction: IconDirection,
+    pub alignment: IconAlignment,
 }
 
 impl TemplateInfo {
@@ -144,11 +159,39 @@ fn parse_icon_box(node: roxmltree::Node<'_, '_>) -> Result<IconBox> {
             None => default.with_context(|| format!("icon box is missing {name}")),
         }
     };
+    let direction = match node
+        .attribute("data-gfty-direction")
+        .unwrap_or("horizontal")
+    {
+        "horizontal" => IconDirection::Horizontal,
+        "vertical" => IconDirection::Vertical,
+        value => bail!(
+            "icon box has invalid data-gfty-direction={value:?}; expected horizontal or vertical"
+        ),
+    };
+    let alignment = match (
+        direction,
+        node.attribute("data-gfty-align").unwrap_or("center"),
+    ) {
+        (_, "center") => IconAlignment::Center,
+        (IconDirection::Horizontal, "start" | "left")
+        | (IconDirection::Vertical, "start" | "top") => IconAlignment::Start,
+        (IconDirection::Horizontal, "end" | "right")
+        | (IconDirection::Vertical, "end" | "bottom") => IconAlignment::End,
+        (IconDirection::Horizontal, value) => bail!(
+            "horizontal icon box has invalid data-gfty-align={value:?}; expected left, center, or right"
+        ),
+        (IconDirection::Vertical, value) => bail!(
+            "vertical icon box has invalid data-gfty-align={value:?}; expected top, center, or bottom"
+        ),
+    };
     let result = IconBox {
         x: number("x", Some(0.0))?,
         y: number("y", Some(0.0))?,
         width: number("width", None)?,
         height: number("height", None)?,
+        direction,
+        alignment,
     };
     if result.width <= 0.0 || result.height <= 0.0 {
         bail!("icon box width and height must be positive");
@@ -179,9 +222,25 @@ mod tests {
                 x: 4.0,
                 y: 24.0,
                 width: 76.0,
-                height: 14.0
+                height: 14.0,
+                direction: IconDirection::Horizontal,
+                alignment: IconAlignment::Center,
             }
         );
+    }
+
+    #[test]
+    fn parses_vertical_icon_box_alignment() {
+        let template = TEMPLATE.replace(
+            "width=\"76\" height=\"14\"",
+            "width=\"76\" height=\"14\" data-gfty-direction=\"vertical\" data-gfty-align=\"top\"",
+        );
+        let info = TemplateInfo::parse(&template).unwrap();
+        assert_eq!(
+            info.icon_boxes["fasteners"].direction,
+            IconDirection::Vertical
+        );
+        assert_eq!(info.icon_boxes["fasteners"].alignment, IconAlignment::Start);
     }
 
     #[test]

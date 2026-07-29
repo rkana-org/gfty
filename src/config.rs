@@ -187,20 +187,20 @@ impl LoadedLabel {
                     IconPlacement::Spacer { spacer } => {
                         let width_mm = crate::config::parse_length_mm(spacer)
                             .with_context(|| format!("invalid spacer in icon box {box_name:?}"))?;
-                        row.push(crate::layout::RowItem::Spacer {
-                            width: width_mm * template.view_box.width / template.width_mm,
-                        });
+                        let size = match icon_box.direction {
+                            crate::template::IconDirection::Horizontal => {
+                                width_mm * template.view_box.width / template.width_mm
+                            }
+                            crate::template::IconDirection::Vertical => {
+                                width_mm * template.view_box.height / template.height_mm
+                            }
+                        };
+                        row.push(crate::layout::RowItem::Spacer { size });
                     }
                 }
             }
-            crate::layout::layout_icon_row(
-                icon_box.x,
-                icon_box.y,
-                icon_box.width,
-                icon_box.height,
-                &row,
-            )
-            .with_context(|| format!("icons do not fit in box {box_name:?}"))?;
+            crate::layout::layout_icons(icon_box, &row)
+                .with_context(|| format!("icons do not fit in box {box_name:?}"))?;
         }
 
         Ok(())

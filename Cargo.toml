@@ -8,6 +8,7 @@ license = "MIT"
 [dependencies]
 anyhow = "1.0"
 clap = { version = "4.5", features = ["derive"] }
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
 colored = "3.1"
 notify = "8.2"
 image = { version = "0.25", default-features = false }

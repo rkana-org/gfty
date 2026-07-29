@@ -280,12 +280,12 @@ mod tests {
     fn combines_local_label_documents_with_centers_and_filaments() {
         let rendered = [
             RenderedLabel {
-                svg: r##"<svg xmlns="http://www.w3.org/2000/svg" width="10" height="5"><path fill="#000000" d="M0 0H10V5H0Z"/></svg>"##.to_owned(),
+                svg: r##"<svg xmlns="http://www.w3.org/2000/svg" width="10" height="5"><path fill="#eaeaea" d="M0 0H10V5H0Z"/></svg>"##.to_owned(),
                 palette: crate::color::PreviewPalette::new([0, 2]).unwrap(),
                 size_mm: [10.0, 5.0],
             },
             RenderedLabel {
-                svg: r##"<svg xmlns="http://www.w3.org/2000/svg" width="10" height="5"><path fill="#00a000" d="M0 0H10V5H0Z"/></svg>"##.to_owned(),
+                svg: r##"<svg xmlns="http://www.w3.org/2000/svg" width="10" height="5"><path fill="#a7d293" d="M0 0H10V5H0Z"/></svg>"##.to_owned(),
                 palette: crate::color::PreviewPalette::new([0, 2]).unwrap(),
                 size_mm: [10.0, 5.0],
             },

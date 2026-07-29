@@ -79,12 +79,12 @@ fn collect_recursive(
 }
 
 pub fn print_group(name: &str, values: &[String]) {
-    println!("{}", format!("{name}:").bold().blue());
+    println!("{}", format!("{name}:").bold().green());
     if values.is_empty() {
         println!("  {}", "(none)".dimmed());
     } else {
         for value in values {
-            println!("  {}", value.cyan());
+            println!("  {value}");
         }
     }
 }
@@ -98,7 +98,7 @@ pub fn print_templates(entries: &ProjectEntries, grouped: bool) {
     }
 
     for value in &entries.templates {
-        println!("{path_indent}{}", value.cyan());
+        println!("{path_indent}{}", value.bold());
         match crate::template::TemplateInfo::load(&entries.root.join(value)) {
             Ok(info) => {
                 println!(
@@ -112,11 +112,7 @@ pub fn print_templates(entries: &ProjectEntries, grouped: bool) {
                     "text:",
                     info.text_fields.keys().map(String::as_str),
                 );
-                print_names(
-                    detail_indent,
-                    "icon boxes:",
-                    info.icon_boxes.keys().map(String::as_str),
-                );
+                print_icon_boxes(detail_indent, &info.icon_boxes);
             }
             Err(error) => println!(
                 "{detail_indent}{} {error:#}",
@@ -131,8 +127,48 @@ fn print_names<'a>(indent: &str, label: &str, names: impl Iterator<Item = &'a st
     if names.is_empty() {
         println!("{indent}{} {}", label.dimmed(), "(none)".dimmed());
     } else {
-        println!("{indent}{} {}", label.dimmed(), names.join(", ").yellow());
+        println!("{indent}{} {}", label.dimmed(), names.join(", ").bold());
     }
+}
+
+fn print_icon_boxes(
+    indent: &str,
+    boxes: &std::collections::BTreeMap<String, crate::template::IconBox>,
+) {
+    if boxes.is_empty() {
+        println!("{indent}{} {}", "icon boxes:".dimmed(), "(none)".dimmed());
+        return;
+    }
+    let values = boxes
+        .iter()
+        .map(|(name, icon_box)| {
+            let direction = match icon_box.direction {
+                crate::template::IconDirection::Horizontal => "horizontal",
+                crate::template::IconDirection::Vertical => "vertical",
+            };
+            let alignment = match (icon_box.direction, icon_box.alignment) {
+                (_, crate::template::IconAlignment::Center) => "center",
+                (
+                    crate::template::IconDirection::Horizontal,
+                    crate::template::IconAlignment::Start,
+                ) => "left",
+                (
+                    crate::template::IconDirection::Horizontal,
+                    crate::template::IconAlignment::End,
+                ) => "right",
+                (
+                    crate::template::IconDirection::Vertical,
+                    crate::template::IconAlignment::Start,
+                ) => "top",
+                (crate::template::IconDirection::Vertical, crate::template::IconAlignment::End) => {
+                    "bottom"
+                }
+            };
+            format!("{name} ({direction}, {alignment})")
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+    println!("{indent}{} {}", "icon boxes:".dimmed(), values.bold());
 }
 
 fn compact_number(value: f64) -> String {

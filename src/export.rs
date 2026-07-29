@@ -290,7 +290,7 @@ mod tests {
     #[test]
     fn exports_centered_mm_contours_by_filament() {
         let rendered = RenderedLabel {
-            svg: r##"<svg xmlns="http://www.w3.org/2000/svg" width="96" height="48"><path fill="#ff0000" d="M0 0 L96 0 L96 48 Z"/></svg>"##.to_owned(),
+            svg: r##"<svg xmlns="http://www.w3.org/2000/svg" width="96" height="48"><path fill="#8aaed6" d="M0 0 L96 0 L96 48 Z"/></svg>"##.to_owned(),
             palette: PreviewPalette::new([3]).unwrap(),
             size_mm: [25.4, 12.7],
         };
@@ -315,7 +315,7 @@ mod tests {
     #[test]
     fn applies_viewbox_and_nested_affine_transforms_via_usvg() {
         let rendered = RenderedLabel {
-            svg: r##"<svg xmlns="http://www.w3.org/2000/svg" width="200" height="100" viewBox="0 0 100 50"><g transform="translate(20 10)"><g transform="rotate(90)"><g transform="scale(2 3)"><path fill="#ff0000" d="M1 1 L3 1 L3 2 Z"/></g></g></g></svg>"##.to_owned(),
+            svg: r##"<svg xmlns="http://www.w3.org/2000/svg" width="200" height="100" viewBox="0 0 100 50"><g transform="translate(20 10)"><g transform="rotate(90)"><g transform="scale(2 3)"><path fill="#8aaed6" d="M1 1 L3 1 L3 2 Z"/></g></g></g></svg>"##.to_owned(),
             palette: PreviewPalette::new([3]).unwrap(),
             size_mm: [20.0, 10.0],
         };

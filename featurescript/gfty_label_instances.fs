@@ -18,14 +18,16 @@ export const GFTY_CONNECTOR_PLATE_THICKNESS = 1 * millimeter;
 // Stable display colors make coincident filament parts distinguishable in the
 // Part Studio. They are only appearances, not physical material assignments.
 export const GFTY_FILAMENT_APPEARANCES = [
-        color(0.12, 0.12, 0.12),
-        color(0.15, 0.35, 0.95),
-        color(0.10, 0.65, 0.25),
-        color(0.92, 0.18, 0.16),
-        color(0.80, 0.20, 0.80),
-        color(0.10, 0.70, 0.72),
-        color(1.00, 0.50, 0.05),
-        color(0.55, 0.55, 0.55)
+        color(234 / 255, 234 / 255, 234 / 255), // #EAEAEA
+        color(67 / 255, 72 / 255, 77 / 255),    // #43484D
+        color(167 / 255, 210 / 255, 147 / 255), // #A7D293
+        color(138 / 255, 174 / 255, 214 / 255), // #8AAED6
+        color(225 / 255, 146 / 255, 122 / 255), // #E1927A
+        color(245 / 255, 213 / 255, 120 / 255), // #F5D578
+        color(167 / 255, 149 / 255, 210 / 255), // #A795D2
+        color(137 / 255, 218 / 255, 211 / 255), // #89DAD3
+        color(234 / 255, 185 / 255, 125 / 255), // #EAB97D
+        color(153 / 255, 148 / 255, 135 / 255)  // #999487
     ];
 
 annotation { "Feature Type Name" : "GFTY Label Instances",

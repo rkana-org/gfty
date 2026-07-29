@@ -2,7 +2,7 @@ use std::{
     fs,
     path::{Path, PathBuf},
     sync::mpsc,
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use anyhow::{Context, Result, bail};
@@ -24,9 +24,6 @@ pub fn watch_label(
         .with_context(|| format!("failed to load label {}", label_path.display()))?;
     let project_root = initial.project_root.clone();
     let mut inputs = watch_inputs(&initial).context("failed to collect watch inputs")?;
-    let initial_svg = rebuild(label_path, svg_output, json_output, system_fonts)
-        .context("initial watched build failed")?;
-    show_preview(&initial_svg, label_path, preview_options, false);
 
     let ignored_outputs: Vec<_> = [svg_output, json_output]
         .into_iter()
@@ -42,11 +39,26 @@ pub fn watch_label(
         .watch(&project_root, RecursiveMode::Recursive)
         .with_context(|| format!("failed to watch {}", project_root.display()))?;
 
-    eprintln!(
-        "{} {}",
-        "watching".blue().bold(),
-        project_root.display().to_string().cyan()
+    let mut preview = match crate::terminal_preview::PreviewSession::new(preview_options) {
+        Ok(preview) => Some(preview),
+        Err(error) => {
+            eprintln!("{} {error:#}", "Preview unavailable".yellow().bold());
+            None
+        }
+    };
+    let mut rebuild_count = 1usize;
+    let started = Instant::now();
+    let initial_svg = rebuild(label_path, svg_output, json_output, system_fonts)
+        .context("initial watched build failed")?;
+    redraw(
+        preview.as_mut(),
+        &initial_svg,
+        label_path,
+        &project_root,
+        rebuild_count,
+        started.elapsed(),
     );
+
     loop {
         let first = receiver.recv().context("filesystem watcher stopped")?;
         let mut events = vec![first];
@@ -69,6 +81,8 @@ pub fn watch_label(
             continue;
         }
 
+        rebuild_count += 1;
+        let started = Instant::now();
         match rebuild(label_path, svg_output, json_output, system_fonts) {
             Ok(svg) => {
                 if let Ok(label) = crate::config::LoadedLabel::load(label_path)
@@ -76,10 +90,21 @@ pub fn watch_label(
                 {
                     inputs = updated;
                 }
-                show_preview(&svg, label_path, preview_options, true);
-                eprintln!("{}", "rebuilt".green().bold());
+                redraw(
+                    preview.as_mut(),
+                    &svg,
+                    label_path,
+                    &project_root,
+                    rebuild_count,
+                    started.elapsed(),
+                );
             }
-            Err(error) => eprintln!("{} {error:#}", "rebuild failed:".red().bold()),
+            Err(error) => {
+                clear_preview(preview.as_mut());
+                print_watch_header(&project_root);
+                print_rebuild_status("Failed", rebuild_count, started.elapsed(), false);
+                eprintln!("{} {error:#}", "error:".red().bold());
+            }
         }
     }
 }
@@ -109,16 +134,62 @@ fn rebuild(
     Ok(rendered.svg)
 }
 
-fn show_preview(
+fn redraw(
+    preview: Option<&mut crate::terminal_preview::PreviewSession>,
     svg: &str,
     label_path: &Path,
-    options: crate::terminal_preview::PreviewOptions,
-    clear: bool,
+    project_root: &Path,
+    rebuild_count: usize,
+    elapsed: Duration,
 ) {
-    if let Err(error) =
-        crate::terminal_preview::show_svg(svg, &label_path.display().to_string(), options, clear)
+    let mut preview = preview;
+    clear_preview(preview.as_deref_mut());
+    print_watch_header(project_root);
+    print_rebuild_status("Rebuilt", rebuild_count, elapsed, true);
+    if let Some(preview) = preview
+        && let Err(error) = preview.show_svg(svg, &label_path.display().to_string(), false)
     {
-        eprintln!("{} {error:#}", "terminal preview failed:".yellow().bold());
+        eprintln!("{} {error:#}", "Preview failed".yellow().bold());
+    }
+}
+
+fn clear_preview(preview: Option<&mut crate::terminal_preview::PreviewSession>) {
+    if let Some(preview) = preview
+        && let Err(error) = preview.clear()
+    {
+        eprintln!("{} {error:#}", "Clear failed".yellow().bold());
+    }
+}
+
+fn print_watch_header(project_root: &Path) {
+    eprintln!(
+        "{} {}",
+        "Watching".green().bold(),
+        project_root.display().to_string().bold()
+    );
+}
+
+fn print_rebuild_status(action: &str, count: usize, elapsed: Duration, success: bool) {
+    let action = if success {
+        action.green().bold()
+    } else {
+        action.red().bold()
+    };
+    let timestamp = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+    eprintln!(
+        "{} {} {} in {}",
+        action,
+        format!("#{count}").bold(),
+        timestamp.blue(),
+        format_duration(elapsed).yellow()
+    );
+}
+
+fn format_duration(duration: Duration) -> String {
+    if duration.as_secs() > 0 {
+        format!("{:.2}s", duration.as_secs_f64())
+    } else {
+        format!("{}ms", duration.as_millis())
     }
 }
 

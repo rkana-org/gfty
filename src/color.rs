@@ -227,8 +227,9 @@ pub fn recolor_svg(
 }
 
 fn fallback_preview_rgb(filament: u32) -> u32 {
-    const COLORS: [u32; 8] = [
-        0x000000, 0x0000ff, 0x00a000, 0xff0000, 0xff00ff, 0x00c0c0, 0xff8000, 0x808080,
+    const COLORS: [u32; 10] = [
+        0xeaeaea, 0x43484d, 0xa7d293, 0x8aaed6, 0xe1927a, 0xf5d578, 0xa795d2, 0x89dad3, 0xeab97d,
+        0x999487,
     ];
     // Give higher filament IDs stable, visually varied fallback colors for previews.
     COLORS
@@ -303,21 +304,21 @@ mod tests {
                 &mapping,
                 &palette,
             ),
-            r##"<path fill="#ff0000"/><path style="fill:#ff0000"/>"##
+            r##"<path fill="#8aaed6"/><path style="fill:#8aaed6"/>"##
         );
     }
 
     #[test]
     fn palettes_are_reversible_and_resolve_collisions() {
-        // 0 and 2^24 have the same 24-bit fallback before collision resolution.
-        let palette = PreviewPalette::new([0, 0x01_00_00_00]).unwrap();
-        assert_eq!(palette.filament(0, 0, 0), Some(0));
-        let high_color = palette.color(0x01_00_00_00);
-        assert_ne!(high_color, "000000");
-        let rgb = u32::from_str_radix(high_color, 16).unwrap();
+        // Multiples of 2^24 have the same hashed fallback before collision resolution.
+        let palette = PreviewPalette::new([0x01_00_00_00, 0x02_00_00_00]).unwrap();
+        assert_eq!(palette.filament(0, 0, 0), Some(0x01_00_00_00));
+        let second_color = palette.color(0x02_00_00_00);
+        assert_ne!(second_color, "000000");
+        let rgb = u32::from_str_radix(second_color, 16).unwrap();
         assert_eq!(
             palette.filament((rgb >> 16) as u8, (rgb >> 8) as u8, rgb as u8),
-            Some(0x01_00_00_00)
+            Some(0x02_00_00_00)
         );
     }
 

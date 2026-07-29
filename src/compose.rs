@@ -170,23 +170,24 @@ fn compose_icons(
                     });
                     icon_details.push(resolved);
                 }
-                IconPlacement::Spacer { spacer } => row.push(RowItem::Spacer {
-                    width: parse_length_mm(spacer)
-                        .with_context(|| format!("invalid spacer in icon box {box_name:?}"))?
-                        * template.view_box.width
-                        / template.width_mm,
-                }),
+                IconPlacement::Spacer { spacer } => {
+                    let millimeters = parse_length_mm(spacer)
+                        .with_context(|| format!("invalid spacer in icon box {box_name:?}"))?;
+                    let size = match icon_box.direction {
+                        crate::template::IconDirection::Horizontal => {
+                            millimeters * template.view_box.width / template.width_mm
+                        }
+                        crate::template::IconDirection::Vertical => {
+                            millimeters * template.view_box.height / template.height_mm
+                        }
+                    };
+                    row.push(RowItem::Spacer { size });
+                }
             }
         }
 
-        let placed = crate::layout::layout_icon_row(
-            icon_box.x,
-            icon_box.y,
-            icon_box.width,
-            icon_box.height,
-            &row,
-        )
-        .with_context(|| format!("failed to lay out icon box {box_name:?}"))?;
+        let placed = crate::layout::layout_icons(icon_box, &row)
+            .with_context(|| format!("failed to lay out icon box {box_name:?}"))?;
         for (placement, resolved) in placed.iter().zip(icon_details) {
             let source = fs::read_to_string(&resolved.path)
                 .with_context(|| format!("failed to read icon {}", resolved.path.display()))?;
@@ -441,7 +442,7 @@ mod tests {
         let output = serialize_element(&root).unwrap();
 
         assert!(!output.contains("icons-main"));
-        assert!(output.contains("fill=\"#0000ff\""));
+        assert!(output.contains("fill=\"#43484d\""));
         assert!(output.contains("&lt;&amp;&gt;"));
         roxmltree::Document::parse(&output).unwrap();
     }

@@ -29,20 +29,25 @@ pub struct Cli {
     #[arg(long, global = true, default_value_t = 60)]
     pub terminal_preview_width: u16,
 
+    /// Show previews while running a list command.
+    #[arg(long, global = true)]
+    pub preview: bool,
+
     #[command(subcommand)]
     pub command: Command,
 }
 
 #[derive(Debug, Subcommand)]
 pub enum Command {
-    /// Validate a label and all of its references.
-    Validate { label: PathBuf },
+    /// Validate one label, or every label below labels/ when omitted.
+    Validate { label: Option<PathBuf> },
 
     /// Render a label as a preview SVG.
     Render {
         label: PathBuf,
+        /// Write SVG to PATH; when omitted, render only in the terminal.
         #[arg(short, long)]
-        output: PathBuf,
+        output: Option<PathBuf>,
     },
 
     /// Export a label as compact Onshape JSON.

@@ -19,14 +19,14 @@ featurescript/
 ## Commands
 
 ```text
-gfty-label validate LABEL
-gfty-label render LABEL --output PREVIEW.svg
+gfty-label validate [LABEL]
+gfty-label render LABEL [--output PREVIEW.svg]
 gfty-label export LABEL [--output FILLS.json]
 gfty-label quick --template TEMPLATE --text ID CONTENT --icon BOX ICON [--save LABEL.toml]
-gfty-label list-templates
-gfty-label list-icons
-gfty-label list-labels
-gfty-label list
+gfty-label list-templates [--preview]
+gfty-label list-icons [--preview]
+gfty-label list-labels [--preview]
+gfty-label list [--preview]
 gfty-label plate --dimensions WIDTH HEIGHT [OPTIONS] LABEL...
 gfty-label watch LABEL --svg PREVIEW.svg --json FILLS.json
 ```
@@ -64,7 +64,8 @@ gfty-label quick --template label-1x1.svg --text main M3 --json | wl-copy
 The `list-*` commands print sorted paths relative to the project root, including
 `templates/`, `icons/`, or `labels/`. `list` prints all three groups together.
 Template listings also show detected physical size, text field names, and icon
-box names.
+box direction/alignment. Listings only render terminal thumbnails when
+`--preview` is supplied.
 
 `plate` takes label TOML paths directly on the command line; no plate config
 file is needed. Repeat a path to repeat that label. With no `--svg` or `--json`
@@ -96,6 +97,11 @@ stopping the watcher:
 gfty-label watch labels/m3.toml --svg preview.svg --json label.json
 ```
 
+`validate LABEL` checks one label. With no path, it validates every TOML below
+`labels/`, prints only failures, and finishes with an `X/N valid` summary.
+`render LABEL` writes an SVG when `--output` is supplied; without it, the label
+is rendered directly in a supported interactive terminal.
+
 ## Template contract
 
 Templates need physical `width`/`height`, a `viewBox`, unique `<text>` elements
@@ -103,6 +109,23 @@ named `text-*`, and unique icon-box `<rect>` elements named `icons-*`. TOML uses
 the suffix only (`text-main` becomes `text.main`). The viewport center is the
 label origin. Template, icon-box, and icon transforms are preserved through
 composition and resolved by `usvg` before JSON coordinates are exported.
+
+Icon content is centered horizontally by default. Set layout attributes on an
+`icons-*` rectangle to control flow and alignment:
+
+```xml
+<!-- A left-aligned horizontal row. -->
+<rect id="icons-tools" x="4" y="4" width="70" height="14"
+      data-gfty-direction="horizontal" data-gfty-align="left"/>
+
+<!-- A vertical list ordered from top to bottom and aligned to the top. -->
+<rect id="icons-status" x="4" y="4" width="14" height="70"
+      data-gfty-direction="vertical" data-gfty-align="top"/>
+```
+
+Horizontal alignment accepts `left`, `center`, or `right`; vertical alignment
+accepts `top`, `center`, or `bottom`. Icons retain their order and aspect ratio,
+spacers act along the selected direction, and no implicit gaps are added.
 
 ```toml
 template = "label-1x1.svg"
@@ -168,14 +191,15 @@ a terminal, so JSON and list pipelines remain clean.
 ```sh
 gfty-label --terminal-preview auto render labels/m3.toml -o /tmp/m3.svg
 gfty-label --terminal-preview graphics watch labels/m3.toml --svg /tmp/m3.svg
-gfty-label --terminal-preview symbols list-labels
+gfty-label --terminal-preview symbols list-labels --preview
 gfty-label --terminal-preview never list
 ```
 
-Use `--terminal-preview-width N` to control thumbnail width. Watch mode redraws
-the terminal after successful rebuilds. Interactive status and listing output
-uses restrained ANSI colors when supported; colors are disabled for redirected
-output and when `NO_COLOR` is set.
+Use `--terminal-preview-width N` to control thumbnail width. Watch mode clears
+before its initial preview and every rebuild, then prints the rebuild counter,
+local timestamp, and elapsed render time before the preview. Interactive status
+uses Cargo-like action coloring when supported; ordinary text stays uncolored.
+Colors are disabled for redirected output and when `NO_COLOR` is set.
 
 ## Onshape JSON
 
@@ -240,7 +264,9 @@ have higher priority. The original selected prototype is deleted after copies
 are generated. By default, the feature also assigns a stable display appearance
 to each filament ID so coincident parts are distinguishable in Onshape. These
 are appearance colors only, not physical material assignments, and can be
-disabled with **Assign filament appearances**.
+disabled with **Assign filament appearances**. The default palette, repeated for
+higher IDs, is `#EAEAEA`, `#43484D`, `#A7D293`, `#8AAED6`, `#E1927A`,
+`#F5D578`, `#A795D2`, `#89DAD3`, `#EAB97D`, and `#999487`.
 
 `featurescript/gfty_label_importer.fs` is retained only for legacy version 1
 JSON and is not part of the current workflow.

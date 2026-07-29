@@ -45,6 +45,24 @@ impl PreviewSession {
         })
     }
 
+    pub fn clear(&mut self) -> Result<bool> {
+        if !self.options.enabled() {
+            return Ok(false);
+        }
+        #[cfg(unix)]
+        {
+            let Some(unix) = &mut self.unix else {
+                return Ok(false);
+            };
+            unix.clear()?;
+            Ok(true)
+        }
+        #[cfg(not(unix))]
+        {
+            Ok(false)
+        }
+    }
+
     pub fn show_svg(&mut self, svg: &str, label: &str, clear: bool) -> Result<bool> {
         if !self.options.enabled() {
             return Ok(false);
@@ -108,6 +126,17 @@ impl UnixPreviewSession {
             dimensions,
             wininfo,
         }))
+    }
+
+    fn clear(&mut self) -> Result<()> {
+        use std::io::Write;
+
+        self.terminal
+            .write_all(b"\x1b[2J\x1b[H")
+            .context("failed to clear terminal preview")?;
+        self.terminal
+            .flush()
+            .context("failed to flush terminal preview")
     }
 
     fn show_tree(
