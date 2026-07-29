@@ -132,6 +132,19 @@ fn watch_inputs(label: &crate::config::LoadedLabel) -> Result<WatchInputs> {
         files.push(absolute_path(&icon)?);
         files.push(absolute_path(&icon.with_extension("toml"))?);
     }
+    for entries in label.config.icons.values() {
+        for entry in entries {
+            if let crate::config::IconPlacement::Icon { icon } = entry {
+                let resolved = label
+                    .resolve_icon(icon)
+                    .with_context(|| format!("failed to resolve watched icon {icon:?}"))?;
+                files.push(absolute_path(&resolved.path)?);
+                files.push(absolute_path(&resolved.path.with_extension("toml"))?);
+            }
+        }
+    }
+    files.sort();
+    files.dedup();
     let fonts = label.project_root.join("fonts");
     let directories = vec![absolute_path(&fonts)?];
     Ok(WatchInputs { files, directories })

@@ -97,15 +97,8 @@ template = "label-1x1.svg"
 [text.main]
 content = 'M{3}x[10]'
 
-[icon.pointy]
-src = "screws/pointy.svg"
-
-[icon.pointy.colors]
-"0" = 1
-"#ff0000" = 5
-
 [[icons.fasteners]]
-icon = "pointy"
+icon = "icons/screws/pointy.svg"
 
 [[icons.fasteners]]
 spacer = "1mm"
@@ -115,6 +108,22 @@ Text starts at filament 0. `{}`, `[]`, and `<>` select filaments 1, 2, and 3;
 `!N{}` selects any non-negative filament ID. Scopes nest and restore their
 parent color. Escape markup characters with a backslash, for example `\{`,
 `\!`, and `\\`.
+
+An `icon` value ending in `.svg` is a filesystem path relative to the project
+root and needs no declaration. Values without that suffix are aliases declared
+under `[icon.NAME]`; use an alias when label-local settings are needed:
+
+```toml
+[icon.pointy]
+src = "screws/pointy.svg"
+
+[icon.pointy.colors]
+"0" = 1
+"#ff0000" = 5
+
+[[icons.fasteners]]
+icon = "pointy"
+```
 
 An icon sidecar is named after its SVG with a `.toml` extension:
 
@@ -133,7 +142,8 @@ By default, fonts are loaded recursively from the project `fonts/` directory
 and from the font directories bundled by the Nix package. The example works
 without `examples/fonts/` because `DejaVu Sans` is one of those Nix-bundled
 fonts—not because host fonts are scanned. Pass `--system-fonts` to additionally
-scan host fonts.
+scan host fonts. Rendering and validation fail with an actionable error when
+none of an SVG text element's requested font families is available.
 
 ## Terminal previews
 

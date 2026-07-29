@@ -106,22 +106,28 @@ fn collect_filaments(
                 .map(|run| run.filament),
         );
     }
-    for (alias, definition) in &label.config.icon {
-        let path = label.icon_path(definition);
-        filaments.extend(
-            crate::color::ColorMapping::load(&path)
-                .with_context(|| {
-                    format!(
-                        "failed to load colors for icon alias {alias:?} at {}",
-                        path.display()
-                    )
-                })?
-                .with_overrides(&definition.colors)
-                .with_context(|| format!("invalid color overrides for icon alias {alias:?}"))?
-                .source_to_filament
-                .values()
-                .copied(),
-        );
+    for entries in label.config.icons.values() {
+        for entry in entries {
+            let IconPlacement::Icon { icon } = entry else {
+                continue;
+            };
+            let resolved = label
+                .resolve_icon(icon)
+                .with_context(|| format!("failed to resolve icon {icon:?}"))?;
+            filaments.extend(
+                resolved
+                    .color_mapping()
+                    .with_context(|| {
+                        format!(
+                            "failed to load colors for icon {icon:?} at {}",
+                            resolved.path.display()
+                        )
+                    })?
+                    .source_to_filament
+                    .values()
+                    .copied(),
+            );
+        }
     }
     Ok(filaments)
 }
@@ -150,19 +156,17 @@ fn compose_icons(
         for entry in entries {
             match entry {
                 IconPlacement::Icon { icon } => {
-                    let definition = label
-                        .config
-                        .icon
-                        .get(icon)
-                        .with_context(|| format!("unknown icon alias {icon:?}"))?;
-                    let path = label.icon_path(definition);
-                    let info = TemplateInfo::load(&path)
-                        .with_context(|| format!("failed to inspect icon {}", path.display()))?;
+                    let resolved = label
+                        .resolve_icon(icon)
+                        .with_context(|| format!("failed to resolve icon {icon:?}"))?;
+                    let info = TemplateInfo::load(&resolved.path).with_context(|| {
+                        format!("failed to inspect icon {}", resolved.path.display())
+                    })?;
                     row.push(RowItem::Icon {
                         name: icon.clone(),
                         aspect_ratio: info.view_box.width / info.view_box.height,
                     });
-                    icon_details.push((definition, path));
+                    icon_details.push(resolved);
                 }
                 IconPlacement::Spacer { spacer } => row.push(RowItem::Spacer {
                     width: parse_length_mm(spacer)
@@ -181,22 +185,21 @@ fn compose_icons(
             &row,
         )
         .with_context(|| format!("failed to lay out icon box {box_name:?}"))?;
-        for (placement, (definition, path)) in placed.iter().zip(icon_details) {
-            let source = fs::read_to_string(&path)
-                .with_context(|| format!("failed to read icon {}", path.display()))?;
-            let colors = crate::color::ColorMapping::load(&path)
-                .with_context(|| format!("failed to load colors for icon {}", path.display()))?
-                .with_overrides(&definition.colors)
-                .with_context(|| format!("invalid colors for icon {}", path.display()))?;
+        for (placement, resolved) in placed.iter().zip(icon_details) {
+            let source = fs::read_to_string(&resolved.path)
+                .with_context(|| format!("failed to read icon {}", resolved.path.display()))?;
+            let colors = resolved
+                .color_mapping()
+                .with_context(|| format!("invalid colors for icon {}", resolved.path.display()))?;
             let recolored = crate::color::recolor_svg(&source, &colors.source_to_filament, palette);
             let normalized = crate::svg::normalize_svg_with_prefix(
                 &recolored,
-                path.parent().expect("icon has a parent"),
+                resolved.path.parent().expect("icon has a parent"),
                 &label.project_root,
                 system_fonts,
                 Some(format!("icon-{instance_index}-")),
             )
-            .with_context(|| format!("failed to normalize icon {}", path.display()))?;
+            .with_context(|| format!("failed to normalize icon {}", resolved.path.display()))?;
             let mut normalized_root =
                 Element::parse(normalized.as_bytes()).context("invalid normalized icon SVG")?;
             let normalized_width: f64 = normalized_root

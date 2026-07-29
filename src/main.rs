@@ -31,8 +31,7 @@ fn main() -> Result<()> {
         Command::Validate { label } => {
             let loaded = config::LoadedLabel::load(&label)
                 .with_context(|| format!("failed to load label {}", label.display()))?;
-            loaded
-                .validate()
+            compose::render_label_svg(&loaded, system_fonts)
                 .with_context(|| format!("failed to validate label {}", loaded.path.display()))?;
             println!("Validated label: {}", loaded.path.display());
         }

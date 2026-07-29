@@ -21,6 +21,8 @@ nix run .# -- plate \
   examples/labels/custom-colors.toml
 ```
 
-The bolt uses an exhaustive color sidecar. `custom-colors.toml` demonstrates
-both resolved-index and exact-hex icon overrides, while the nut demonstrates
-automatic color indexing and an even-odd hole.
+`metric-fastener.toml` references project-relative SVG paths directly, without
+icon declarations. The bolt uses an exhaustive color sidecar.
+`custom-colors.toml` demonstrates aliases with both resolved-index and exact-hex
+icon overrides, while the nut demonstrates automatic color indexing and an
+even-odd hole.

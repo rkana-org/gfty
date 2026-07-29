@@ -54,6 +54,22 @@ pub struct LoadedLabel {
     pub config: LabelConfig,
 }
 
+#[derive(Debug)]
+pub struct ResolvedIcon<'a> {
+    pub path: PathBuf,
+    definition: Option<&'a IconDefinition>,
+}
+
+impl ResolvedIcon<'_> {
+    pub fn color_mapping(&self) -> Result<crate::color::ColorMapping> {
+        let mapping = crate::color::ColorMapping::load(&self.path)?;
+        match self.definition {
+            Some(definition) => mapping.with_overrides(&definition.colors),
+            None => Ok(mapping),
+        }
+    }
+}
+
 impl LoadedLabel {
     pub fn load(path: &Path) -> Result<Self> {
         let path = path
@@ -88,6 +104,26 @@ impl LoadedLabel {
 
     pub fn icon_path(&self, icon: &IconDefinition) -> PathBuf {
         self.project_root.join("icons").join(&icon.src)
+    }
+
+    /// A reference ending in `.svg` is a project-relative path. All other
+    /// references resolve through the label's `[icon.NAME]` declarations.
+    pub fn resolve_icon(&self, reference: &str) -> Result<ResolvedIcon<'_>> {
+        if reference.ends_with(".svg") {
+            return Ok(ResolvedIcon {
+                path: self.project_root.join(reference),
+                definition: None,
+            });
+        }
+        let definition = self.config.icon.get(reference).with_context(|| {
+            format!(
+                "unknown icon alias {reference:?}; use a project-relative path ending in .svg or declare [icon.{reference}]"
+            )
+        })?;
+        Ok(ResolvedIcon {
+            path: self.icon_path(definition),
+            definition: Some(definition),
+        })
     }
 
     pub fn validate(&self) -> Result<()> {
@@ -132,11 +168,17 @@ impl LoadedLabel {
             for entry in entries {
                 match entry {
                     IconPlacement::Icon { icon } => {
-                        let definition = self.config.icon.get(icon).with_context(|| {
-                            format!("icon box {box_name:?} references unknown icon alias {icon:?}")
+                        let resolved = self.resolve_icon(icon).with_context(|| {
+                            format!("invalid icon {icon:?} in icon box {box_name:?}")
                         })?;
-                        let icon_info =
-                            crate::template::TemplateInfo::load(&self.icon_path(definition))?;
+                        ensure_file(&resolved.path, &format!("icon {icon:?}"))?;
+                        resolved.color_mapping().with_context(|| {
+                            format!(
+                                "invalid colors for icon {icon:?} at {}",
+                                resolved.path.display()
+                            )
+                        })?;
+                        let icon_info = crate::template::TemplateInfo::load(&resolved.path)?;
                         row.push(crate::layout::RowItem::Icon {
                             name: icon.clone(),
                             aspect_ratio: icon_info.view_box.width / icon_info.view_box.height,
@@ -257,6 +299,35 @@ mod tests {
                 .validate()
                 .unwrap();
         }
+    }
+
+    #[test]
+    fn resolves_svg_paths_directly_and_other_names_as_aliases() {
+        let label = LoadedLabel::from_config(
+            LabelConfig {
+                template: "template.svg".to_owned(),
+                text: BTreeMap::new(),
+                icon: BTreeMap::from([(
+                    "nut".to_owned(),
+                    IconDefinition {
+                        src: "hardware/nut.svg".to_owned(),
+                        colors: BTreeMap::new(),
+                    },
+                )]),
+                icons: BTreeMap::new(),
+            },
+            PathBuf::from("/project"),
+        );
+
+        assert_eq!(
+            label.resolve_icon("icons/bolt.svg").unwrap().path,
+            PathBuf::from("/project/icons/bolt.svg")
+        );
+        assert_eq!(
+            label.resolve_icon("nut").unwrap().path,
+            PathBuf::from("/project/icons/hardware/nut.svg")
+        );
+        assert!(label.resolve_icon("bolt").is_err());
     }
 
     #[test]

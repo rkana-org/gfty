@@ -6,7 +6,7 @@ use std::{
 
 use anyhow::{Context, Result, bail};
 
-use crate::config::{IconDefinition, IconPlacement, LabelConfig, LoadedLabel, TextValue};
+use crate::config::{IconPlacement, LabelConfig, LoadedLabel, TextValue};
 
 pub fn build_quick_label(
     template: &Path,
@@ -35,31 +35,25 @@ pub fn build_quick_label(
         }
     }
 
-    let mut definitions = BTreeMap::new();
     let mut placements = BTreeMap::<String, Vec<IconPlacement>>::new();
-    for (index, pair) in pairs(icons, "--icon")?.enumerate() {
+    for pair in pairs(icons, "--icon")? {
         let [box_name, source] = pair;
         let source = project_relative_path(Path::new(source), &project_root.join("icons"), "icon")
             .with_context(|| format!("failed to resolve icon {source:?}"))?;
-        let alias = format!("quick-{index}");
-        definitions.insert(
-            alias.clone(),
-            IconDefinition {
-                src: path_to_toml_string(&source),
-                colors: BTreeMap::new(),
-            },
-        );
+        let reference = Path::new("icons").join(source);
         placements
             .entry(box_name.clone())
             .or_default()
-            .push(IconPlacement::Icon { icon: alias });
+            .push(IconPlacement::Icon {
+                icon: path_to_toml_string(&reference),
+            });
     }
 
     Ok(LoadedLabel::from_config(
         LabelConfig {
             template: path_to_toml_string(&template),
             text: text_fields,
-            icon: definitions,
+            icon: BTreeMap::new(),
             icons: placements,
         },
         project_root,
