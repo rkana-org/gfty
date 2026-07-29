@@ -17,10 +17,13 @@ rustPlatform.buildRustPackage {
 
   cargoLock.lockFile = ./Cargo.lock;
 
+  GFTY_LABEL_CHAFA = lib.getExe chafa;
+
   nativeBuildInputs = [ makeWrapper ];
   postFixup = ''
     wrapProgram $out/bin/gfty-label \
       --set GFTY_LABEL_FONT_DIRS ${lib.escapeShellArg (lib.concatStringsSep ":" (map toString fonts))} \
+      --set GFTY_LABEL_CHAFA ${lib.getExe chafa} \
       --prefix PATH : ${lib.makeBinPath [ chafa ]}
   '';
 

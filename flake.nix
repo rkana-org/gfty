@@ -61,6 +61,10 @@
                 name = "GFTY_LABEL_FONT_DIRS";
                 value = "${pkgs.dejavu_fonts}:${pkgs.liberation_ttf}";
               }
+              {
+                name = "GFTY_LABEL_CHAFA";
+                value = "${pkgs.lib.getExe pkgs.chafa}";
+              }
             ];
           };
 

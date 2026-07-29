@@ -63,7 +63,8 @@ fn show_svg_unix(svg: &str, label: &str, options: PreviewOptions, clear: bool) -
     }
     writeln!(terminal, "Preview: {label}").context("failed to write terminal preview label")?;
 
-    let mut command = Command::new("chafa");
+    let chafa = chafa_executable();
+    let mut command = Command::new(&chafa);
     command.args([
         "--probe=auto",
         "--probe-mode=ctty",
@@ -86,7 +87,12 @@ fn show_svg_unix(svg: &str, label: &str, options: PreviewOptions, clear: bool) -
         ))
         .stderr(Stdio::null())
         .spawn()
-        .context("failed to start chafa; ensure it is installed or use --terminal-preview never")?;
+        .with_context(|| {
+            format!(
+                "failed to start chafa at {}; run through Nix, install chafa, or use --terminal-preview never",
+                std::path::Path::new(&chafa).display()
+            )
+        })?;
     child
         .stdin
         .take()
@@ -98,6 +104,12 @@ fn show_svg_unix(svg: &str, label: &str, options: PreviewOptions, clear: bool) -
         bail!("chafa exited with status {status}");
     }
     Ok(true)
+}
+
+fn chafa_executable() -> std::ffi::OsString {
+    std::env::var_os("GFTY_LABEL_CHAFA")
+        .or_else(|| option_env!("GFTY_LABEL_CHAFA").map(std::ffi::OsString::from))
+        .unwrap_or_else(|| std::ffi::OsString::from("chafa"))
 }
 
 fn rasterize(svg: &str, width_cells: u16) -> Result<Vec<u8>> {
