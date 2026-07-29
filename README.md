@@ -54,9 +54,8 @@ Omit the path after `--json` to write compact JSON to stdout, for example:
 gfty-label quick --template label-1x1.svg --text main M3 --json | wl-copy
 ```
 
-The `list-*` commands print sorted project-relative entries. Template and icon
-lists use the suffixes accepted by label TOML; label paths include `labels/`.
-`list` prints all three groups together.
+The `list-*` commands print sorted paths relative to the project root, including
+`templates/`, `icons/`, or `labels/`. `list` prints all three groups together.
 
 `plate` takes label TOML paths directly on the command line; no plate config
 file is needed. Repeat a path to repeat that label:

@@ -53,10 +53,10 @@ pub enum Command {
         json: Option<PathBuf>,
     },
 
-    /// List template suffixes below the current project root.
+    /// List template paths below the current project root.
     ListTemplates,
 
-    /// List icon suffixes below the current project root.
+    /// List icon paths below the current project root.
     ListIcons,
 
     /// List label paths below the current project root.

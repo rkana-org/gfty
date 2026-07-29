@@ -13,9 +13,19 @@ pub fn discover() -> Result<ProjectEntries> {
     let current = std::env::current_dir().context("failed to determine current directory")?;
     let root = crate::config::find_project_root(&current)
         .with_context(|| format!("failed to find project root from {}", current.display()))?;
+    discover_from(&root)
+}
+
+fn discover_from(root: &Path) -> Result<ProjectEntries> {
     Ok(ProjectEntries {
-        templates: collect(&root.join("templates"), "svg")?,
-        icons: collect(&root.join("icons"), "svg")?,
+        templates: collect(&root.join("templates"), "svg")?
+            .into_iter()
+            .map(|path| format!("templates/{path}"))
+            .collect(),
+        icons: collect(&root.join("icons"), "svg")?
+            .into_iter()
+            .map(|path| format!("icons/{path}"))
+            .collect(),
         labels: collect(&root.join("labels"), "toml")?
             .into_iter()
             .map(|path| format!("labels/{path}"))
@@ -79,6 +89,21 @@ pub fn print_group(name: &str, values: &[String]) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn returns_project_relative_prefixed_paths() {
+        let temp = tempfile::tempdir().unwrap();
+        for directory in ["templates", "icons", "labels"] {
+            fs::create_dir(temp.path().join(directory)).unwrap();
+        }
+        fs::write(temp.path().join("templates/label.svg"), "").unwrap();
+        fs::write(temp.path().join("icons/icon.svg"), "").unwrap();
+        fs::write(temp.path().join("labels/example.toml"), "").unwrap();
+        let entries = discover_from(temp.path()).unwrap();
+        assert_eq!(entries.templates, ["templates/label.svg"]);
+        assert_eq!(entries.icons, ["icons/icon.svg"]);
+        assert_eq!(entries.labels, ["labels/example.toml"]);
+    }
 
     #[test]
     fn recursively_collects_sorted_matching_files() {
