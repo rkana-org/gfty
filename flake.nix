@@ -48,6 +48,7 @@
           devshells.default = {
             packages = [
               config.treefmt.build.wrapper
+              pkgs.chafa
               pkgs.rust-analyzer
             ];
             devshell.startup.pre-commit.text = config.pre-commit.installationScript;

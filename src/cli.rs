@@ -1,6 +1,18 @@
 use std::path::PathBuf;
 
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum TerminalPreviewMode {
+    /// Use Chafa's terminal detection, including symbol fallback.
+    Auto,
+    /// Only attempt a terminal pixel-graphics protocol.
+    Graphics,
+    /// Always use Unicode symbol rendering in an interactive terminal.
+    Symbols,
+    /// Disable terminal previews.
+    Never,
+}
 
 #[derive(Debug, Parser)]
 #[command(name = "gfty-label", version, about)]
@@ -8,6 +20,14 @@ pub struct Cli {
     /// Also make fonts installed on the host available to the renderer.
     #[arg(long, global = true)]
     pub system_fonts: bool,
+
+    /// Inline terminal preview mode.
+    #[arg(long, global = true, value_enum, default_value_t = TerminalPreviewMode::Auto)]
+    pub terminal_preview: TerminalPreviewMode,
+
+    /// Maximum terminal preview width in character cells.
+    #[arg(long, global = true, default_value_t = 60)]
+    pub terminal_preview_width: u16,
 
     #[command(subcommand)]
     pub command: Command,
@@ -65,16 +85,16 @@ pub enum Command {
     /// List templates, icons, and labels below the current project root.
     List,
 
-    /// Arrange labels into a fixed-column plate grid.
+    /// Arrange labels into a dimension-constrained plate grid.
     Plate {
-        /// Number of columns in the fixed-width grid.
-        #[arg(long)]
-        columns: usize,
+        /// Maximum plate width and height, for example: --dimensions 200mm 250mm.
+        #[arg(long, value_names = ["WIDTH", "HEIGHT"], num_args = 2, required = true)]
+        dimensions: Vec<String>,
 
-        #[arg(long, default_value = "0mm")]
+        #[arg(long, default_value = "5mm")]
         column_gap: String,
 
-        #[arg(long, default_value = "0mm")]
+        #[arg(long, default_value = "5mm")]
         row_gap: String,
 
         #[arg(long)]

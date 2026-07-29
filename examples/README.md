@@ -13,7 +13,7 @@ nix run .# -- export examples/labels/metric-fastener.toml \
   --output /tmp/metric-fastener.json
 
 nix run .# -- plate \
-  --columns 2 \
+  --dimensions 100mm 50mm \
   --column-gap 2mm \
   --svg /tmp/example-plate.svg \
   --json /tmp/example-plate.json \

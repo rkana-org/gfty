@@ -4,6 +4,7 @@ use anyhow::{Context, Result};
 
 #[derive(Debug)]
 pub struct ProjectEntries {
+    pub root: std::path::PathBuf,
     pub templates: Vec<String>,
     pub icons: Vec<String>,
     pub labels: Vec<String>,
@@ -18,6 +19,7 @@ pub fn discover() -> Result<ProjectEntries> {
 
 fn discover_from(root: &Path) -> Result<ProjectEntries> {
     Ok(ProjectEntries {
+        root: root.to_owned(),
         templates: collect(&root.join("templates"), "svg")?
             .into_iter()
             .map(|path| format!("templates/{path}"))

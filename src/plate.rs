@@ -15,7 +15,7 @@ pub struct PlateOutput {
 
 pub fn build_plate(
     label_paths: &[impl AsRef<Path>],
-    columns: usize,
+    dimensions: &[String],
     column_gap: &str,
     row_gap: &str,
     system_fonts: bool,
@@ -23,8 +23,15 @@ pub fn build_plate(
     if label_paths.is_empty() {
         bail!("plate needs at least one label");
     }
-    if columns == 0 {
-        bail!("plate columns must be greater than zero");
+    if dimensions.len() != 2 {
+        bail!("plate dimensions require width and height");
+    }
+    let maximum_size = [
+        crate::config::parse_length_mm(&dimensions[0]).context("invalid maximum plate width")?,
+        crate::config::parse_length_mm(&dimensions[1]).context("invalid maximum plate height")?,
+    ];
+    if maximum_size[0] <= 0.0 || maximum_size[1] <= 0.0 {
+        bail!("maximum plate dimensions must be positive");
     }
     let column_gap = crate::config::parse_length_mm(column_gap).context("invalid column gap")?;
     let row_gap = crate::config::parse_length_mm(row_gap).context("invalid row gap")?;
@@ -71,6 +78,30 @@ pub fn build_plate(
         }
     }
 
+    let maximum_columns = cells_that_fit(maximum_size[0], cell_size[0], column_gap);
+    let maximum_rows = cells_that_fit(maximum_size[1], cell_size[1], row_gap);
+    if maximum_columns == 0 || maximum_rows == 0 {
+        bail!(
+            "label viewport {} x {} mm does not fit maximum plate dimensions {} x {} mm",
+            cell_size[0],
+            cell_size[1],
+            maximum_size[0],
+            maximum_size[1]
+        );
+    }
+    let columns = maximum_columns.min(rendered.len());
+    let required_rows = rendered.len().div_ceil(columns);
+    if required_rows > maximum_rows {
+        bail!(
+            "{} labels need {} rows of {} columns, but only {} rows fit within {} x {} mm",
+            rendered.len(),
+            required_rows,
+            columns,
+            maximum_rows,
+            maximum_size[0],
+            maximum_size[1]
+        );
+    }
     let layout = grid_layout(rendered.len(), columns, cell_size, column_gap, row_gap);
     let document = combine_documents(&rendered, &layout)?;
     let svg = combine_svgs(&rendered, &project_roots, &layout)?;
@@ -82,6 +113,14 @@ struct GridLayout {
     size: [f64; 2],
     centers: Vec<[f64; 2]>,
     top_left: Vec<[f64; 2]>,
+}
+
+fn cells_that_fit(maximum: f64, cell: f64, gap: f64) -> usize {
+    if maximum < cell {
+        0
+    } else {
+        ((maximum + gap) / (cell + gap)).floor() as usize
+    }
 }
 
 fn grid_layout(
@@ -243,6 +282,13 @@ fn same_size(left: [f64; 2], right: [f64; 2]) -> bool {
 mod tests {
     use super::*;
     use crate::export::{Contour, Segment};
+
+    #[test]
+    fn computes_capacity_from_maximum_dimensions() {
+        assert_eq!(cells_that_fit(200.0, 42.0, 5.0), 4);
+        assert_eq!(cells_that_fit(42.0, 42.0, 5.0), 1);
+        assert_eq!(cells_that_fit(41.9, 42.0, 5.0), 0);
+    }
 
     #[test]
     fn lays_out_fixed_columns_from_top_left() {

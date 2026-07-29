@@ -27,7 +27,7 @@ gfty-label list-templates
 gfty-label list-icons
 gfty-label list-labels
 gfty-label list
-gfty-label plate --columns N [OPTIONS] LABEL...
+gfty-label plate --dimensions WIDTH HEIGHT [OPTIONS] LABEL...
 gfty-label watch LABEL --svg PREVIEW.svg --json FILLS.json
 ```
 
@@ -62,17 +62,17 @@ file is needed. Repeat a path to repeat that label:
 
 ```sh
 gfty-label plate \
-  --columns 4 \
-  --column-gap 0mm \
-  --row-gap 0mm \
+  --dimensions 200mm 250mm \
   --svg plate.svg \
   --json plate.json \
   labels/m3.toml labels/m3.toml labels/m4.toml
 ```
 
 Labels are placed in argument order, row-major from the top left, without
-rotation. The final incomplete row is left-aligned and the plate retains its
-full fixed-column width. Every label must have exactly the same physical
+rotation. The tool fits as many columns as possible within the maximum width,
+then verifies that all required rows fit the maximum height. The final incomplete
+row is left-aligned. Column and row gaps default to `5mm`; override them with
+`--column-gap` and `--row-gap`. Every label must have exactly the same physical
 viewport dimensions. Geometry is translated into plate coordinates and merged
 by filament ID; `instances` records the corresponding label centers.
 
@@ -130,8 +130,27 @@ starting at zero. Label-local overrides may be partial; exact hex overrides win
 over numeric resolved-index overrides.
 
 By default, fonts are loaded recursively from the project `fonts/` directory
-and from the font directories bundled by the Nix package. Pass `--system-fonts`
-to additionally scan host fonts.
+and from the font directories bundled by the Nix package. The example works
+without `examples/fonts/` because `DejaVu Sans` is one of those Nix-bundled
+fonts—not because host fonts are scanned. Pass `--system-fonts` to additionally
+scan host fonts.
+
+## Terminal previews
+
+Interactive commands rasterize rendered SVGs with `resvg` and display them via
+bundled `chafa`. Chafa can select Kitty, iTerm2, Sixel, or Unicode symbols based
+on terminal capabilities. Previews are skipped when stderr is not a terminal,
+so JSON and list pipelines remain clean.
+
+```sh
+gfty-label --terminal-preview auto render labels/m3.toml -o /tmp/m3.svg
+gfty-label --terminal-preview graphics watch labels/m3.toml --svg /tmp/m3.svg
+gfty-label --terminal-preview symbols list-labels
+gfty-label --terminal-preview never list
+```
+
+Use `--terminal-preview-width N` to control thumbnail width. Watch mode redraws
+the terminal after successful rebuilds.
 
 ## Onshape JSON
 

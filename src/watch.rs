@@ -13,6 +13,7 @@ pub fn watch_label(
     svg_output: Option<&Path>,
     json_output: Option<&Path>,
     system_fonts: bool,
+    preview_options: crate::terminal_preview::PreviewOptions,
 ) -> Result<()> {
     if svg_output.is_none() && json_output.is_none() {
         bail!("watch needs at least one of --svg or --json");
@@ -22,8 +23,9 @@ pub fn watch_label(
         .with_context(|| format!("failed to load label {}", label_path.display()))?;
     let project_root = initial.project_root.clone();
     let mut inputs = watch_inputs(&initial).context("failed to collect watch inputs")?;
-    rebuild(label_path, svg_output, json_output, system_fonts)
+    let initial_svg = rebuild(label_path, svg_output, json_output, system_fonts)
         .context("initial watched build failed")?;
+    show_preview(&initial_svg, label_path, preview_options, false);
 
     let ignored_outputs: Vec<_> = [svg_output, json_output]
         .into_iter()
@@ -63,12 +65,13 @@ pub fn watch_label(
         }
 
         match rebuild(label_path, svg_output, json_output, system_fonts) {
-            Ok(()) => {
+            Ok(svg) => {
                 if let Ok(label) = crate::config::LoadedLabel::load(label_path)
                     && let Ok(updated) = watch_inputs(&label)
                 {
                     inputs = updated;
                 }
+                show_preview(&svg, label_path, preview_options, true);
                 eprintln!("rebuilt");
             }
             Err(error) => eprintln!("rebuild failed: {error:#}"),
@@ -81,7 +84,7 @@ fn rebuild(
     svg_output: Option<&Path>,
     json_output: Option<&Path>,
     system_fonts: bool,
-) -> Result<()> {
+) -> Result<String> {
     let label = crate::config::LoadedLabel::load(label_path)
         .with_context(|| format!("failed to reload label {}", label_path.display()))?;
     let rendered = crate::compose::render_label(&label, system_fonts)
@@ -98,7 +101,20 @@ fn rebuild(
         fs::write(path, json)
             .with_context(|| format!("failed to write JSON {}", path.display()))?;
     }
-    Ok(())
+    Ok(rendered.svg)
+}
+
+fn show_preview(
+    svg: &str,
+    label_path: &Path,
+    options: crate::terminal_preview::PreviewOptions,
+    clear: bool,
+) {
+    if let Err(error) =
+        crate::terminal_preview::show_svg(svg, &label_path.display().to_string(), options, clear)
+    {
+        eprintln!("terminal preview failed: {error:#}");
+    }
 }
 
 #[derive(Debug)]

@@ -2,6 +2,7 @@
   lib,
   rustPlatform,
   makeWrapper,
+  chafa,
   dejavu_fonts,
   liberation_ttf,
   fonts ? [
@@ -19,7 +20,8 @@ rustPlatform.buildRustPackage {
   nativeBuildInputs = [ makeWrapper ];
   postFixup = ''
     wrapProgram $out/bin/gfty-label \
-      --set GFTY_LABEL_FONT_DIRS ${lib.escapeShellArg (lib.concatStringsSep ":" (map toString fonts))}
+      --set GFTY_LABEL_FONT_DIRS ${lib.escapeShellArg (lib.concatStringsSep ":" (map toString fonts))} \
+      --prefix PATH : ${lib.makeBinPath [ chafa ]}
   '';
 
   meta = {
