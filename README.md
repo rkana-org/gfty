@@ -140,8 +140,8 @@ over numeric resolved-index overrides.
 
 By default, fonts are loaded recursively from the project `fonts/` directory
 and from the font directories bundled by the Nix package. The example works
-without `examples/fonts/` because `DejaVu Sans` is one of those Nix-bundled
-fonts—not because host fonts are scanned. Pass `--system-fonts` to additionally
+without `examples/fonts/` because `DejaVu Sans` and `JetBrains Mono` are among
+the Nix-bundled fonts—not because host fonts are scanned. Pass `--system-fonts` to additionally
 scan host fonts. Rendering and validation fail with an actionable error when
 none of an SVG text element's requested font families is available.
 

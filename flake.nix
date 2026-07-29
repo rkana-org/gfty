@@ -58,7 +58,7 @@
               }
               {
                 name = "GFTY_LABEL_FONT_DIRS";
-                value = "${pkgs.dejavu_fonts}:${pkgs.liberation_ttf}";
+                value = "${pkgs.dejavu_fonts}:${pkgs.liberation_ttf}:${pkgs.jetbrains-mono}";
               }
             ];
           };

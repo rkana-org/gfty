@@ -4,9 +4,11 @@
   makeWrapper,
   dejavu_fonts,
   liberation_ttf,
+  jetbrains-mono,
   fonts ? [
     dejavu_fonts
     liberation_ttf
+    jetbrains-mono
   ],
 }:
 rustPlatform.buildRustPackage {
