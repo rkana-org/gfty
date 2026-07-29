@@ -4,7 +4,7 @@ use clap::{Parser, Subcommand, ValueEnum};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub enum TerminalPreviewMode {
-    /// Use Chafa's terminal detection, including symbol fallback.
+    /// Detect Kitty, iTerm2, or Sixel support, with a symbol fallback.
     Auto,
     /// Only attempt a terminal pixel-graphics protocol.
     Graphics,

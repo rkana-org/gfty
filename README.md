@@ -137,10 +137,10 @@ scan host fonts.
 
 ## Terminal previews
 
-Interactive commands rasterize rendered SVGs with `resvg` and display them via
-bundled `chafa`. Chafa can select Kitty, iTerm2, Sixel, or Unicode symbols based
-on terminal capabilities. Previews are skipped when stderr is not a terminal,
-so JSON and list pipelines remain clean.
+Interactive commands rasterize rendered SVGs with `resvg` and display them with
+the native Rust `rasteroid` encoder. It selects Kitty, iTerm2, Sixel, or Unicode
+symbols based on terminal capabilities. Previews are skipped when stderr is not
+a terminal, so JSON and list pipelines remain clean.
 
 ```sh
 gfty-label --terminal-preview auto render labels/m3.toml -o /tmp/m3.svg
