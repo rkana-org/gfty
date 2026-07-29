@@ -1,6 +1,6 @@
 use std::{
     collections::BTreeMap,
-    env,
+    env, fs,
     path::{Path, PathBuf},
 };
 
@@ -60,6 +60,13 @@ pub fn build_quick_label(
     ))
 }
 
+pub fn save_quick_label(label: &LoadedLabel, path: &Path) -> Result<()> {
+    let source =
+        toml::to_string_pretty(&label.config).context("failed to serialize quick label as TOML")?;
+    fs::write(path, source)
+        .with_context(|| format!("failed to save quick label TOML {}", path.display()))
+}
+
 fn pairs<'a>(values: &'a [String], option: &str) -> Result<impl Iterator<Item = &'a [String; 2]>> {
     let (pairs, remainder) = values.as_chunks::<2>();
     if !remainder.is_empty() {
@@ -115,5 +122,29 @@ mod tests {
             path_to_toml_string(Path::new(r"foo\bar.svg")),
             "foo/bar.svg"
         );
+    }
+
+    #[test]
+    fn saves_reusable_toml() {
+        let temp = tempfile::tempdir().unwrap();
+        let label = LoadedLabel::from_config(
+            LabelConfig {
+                template: "basic.svg".to_owned(),
+                text: BTreeMap::from([(
+                    "main".to_owned(),
+                    TextValue {
+                        content: "M{3}".to_owned(),
+                    },
+                )]),
+                icon: BTreeMap::new(),
+                icons: BTreeMap::new(),
+            },
+            temp.path().to_owned(),
+        );
+        let path = temp.path().join("saved.toml");
+        save_quick_label(&label, &path).unwrap();
+        let saved: LabelConfig = toml::from_str(&fs::read_to_string(path).unwrap()).unwrap();
+        assert_eq!(saved.template, "basic.svg");
+        assert_eq!(saved.text["main"].content, "M{3}");
     }
 }

@@ -1,6 +1,7 @@
 use std::{fs, path::Path};
 
 use anyhow::{Context, Result};
+use colored::Colorize;
 
 #[derive(Debug)]
 pub struct ProjectEntries {
@@ -78,14 +79,65 @@ fn collect_recursive(
 }
 
 pub fn print_group(name: &str, values: &[String]) {
-    println!("{name}:");
+    println!("{}", format!("{name}:").bold().blue());
     if values.is_empty() {
-        println!("  (none)");
+        println!("  {}", "(none)".dimmed());
     } else {
         for value in values {
-            println!("  {value}");
+            println!("  {}", value.cyan());
         }
     }
+}
+
+pub fn print_templates(entries: &ProjectEntries, grouped: bool) {
+    let path_indent = if grouped { "  " } else { "" };
+    let detail_indent = if grouped { "    " } else { "  " };
+    if entries.templates.is_empty() {
+        println!("{path_indent}{}", "(none)".dimmed());
+        return;
+    }
+
+    for value in &entries.templates {
+        println!("{path_indent}{}", value.cyan());
+        match crate::template::TemplateInfo::load(&entries.root.join(value)) {
+            Ok(info) => {
+                println!(
+                    "{detail_indent}{} {} × {} mm",
+                    "size:".dimmed(),
+                    compact_number(info.width_mm),
+                    compact_number(info.height_mm)
+                );
+                print_names(
+                    detail_indent,
+                    "text:",
+                    info.text_fields.keys().map(String::as_str),
+                );
+                print_names(
+                    detail_indent,
+                    "icon boxes:",
+                    info.icon_boxes.keys().map(String::as_str),
+                );
+            }
+            Err(error) => println!(
+                "{detail_indent}{} {error:#}",
+                "invalid template:".red().bold()
+            ),
+        }
+    }
+}
+
+fn print_names<'a>(indent: &str, label: &str, names: impl Iterator<Item = &'a str>) {
+    let names: Vec<_> = names.collect();
+    if names.is_empty() {
+        println!("{indent}{} {}", label.dimmed(), "(none)".dimmed());
+    } else {
+        println!("{indent}{} {}", label.dimmed(), names.join(", ").yellow());
+    }
+}
+
+fn compact_number(value: f64) -> String {
+    let value = format!("{value:.6}");
+    value.trim_end_matches('0').trim_end_matches('.').to_owned()
 }
 
 #[cfg(test)]

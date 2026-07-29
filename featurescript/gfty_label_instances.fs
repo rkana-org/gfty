@@ -15,6 +15,19 @@ export const GFTY_INSTANCE_LENGTH_BOUNDS = {
 // below the build plate and is not printed.
 export const GFTY_CONNECTOR_PLATE_THICKNESS = 1 * millimeter;
 
+// Stable display colors make coincident filament parts distinguishable in the
+// Part Studio. They are only appearances, not physical material assignments.
+export const GFTY_FILAMENT_APPEARANCES = [
+        color(0.12, 0.12, 0.12),
+        color(0.15, 0.35, 0.95),
+        color(0.10, 0.65, 0.25),
+        color(0.92, 0.18, 0.16),
+        color(0.80, 0.20, 0.80),
+        color(0.10, 0.70, 0.72),
+        color(1.00, 0.50, 0.05),
+        color(0.55, 0.55, 0.55)
+    ];
+
 annotation { "Feature Type Name" : "GFTY Label Instances",
              "Feature Type Description" : "Copy a label prototype per filament and label, add artwork, and connect multi-label color parts." }
 export const gftyLabelInstances = defineFeature(function(context is Context, id is Id, definition is map)
@@ -67,6 +80,11 @@ export const gftyLabelInstances = defineFeature(function(context is Context, id 
         annotation { "Name" : "Artwork depth", "Default" : 1 * millimeter }
         isLength(definition.depth, GFTY_INSTANCE_LENGTH_BOUNDS);
 
+        annotation { "Name" : "Assign filament appearances",
+                     "Default" : true,
+                     "Description" : "Give generated filament parts distinct display colors. This does not assign physical materials." }
+        definition.assignAppearances is boolean;
+
         annotation { "Name" : "Keep generated sketches", "Default" : false }
         definition.keepSketches is boolean;
 
@@ -103,7 +121,8 @@ export const gftyLabelInstances = defineFeature(function(context is Context, id 
         // even when several instances use the same identity transform.
         const prototypeLayers = patternPrototypeLayers(context, id + "prototypeLayers",
                                                         definition.prototypePart, data,
-                                                        artworkCSys, definition.unitScale);
+                                                        artworkCSys, definition.unitScale,
+                                                        definition.assignAppearances);
         // A robust user query can track patterned descendants. Explicitly
         // subtract every pattern instance so only the selected source is
         // removed, never a generated filament layer. Do this before booleans
@@ -257,7 +276,8 @@ function containsNumber(values is array, target is number) returns boolean
 
 function patternPrototypeLayers(context is Context, id is Id, prototype is Query,
                                 data is map, artworkCSys is CoordSystem,
-                                unitScale is ValueWithUnits) returns array
+                                unitScale is ValueWithUnits,
+                                assignAppearances is boolean) returns array
 {
     var transforms = [];
     var instanceNames = [];
@@ -280,7 +300,10 @@ function patternPrototypeLayers(context is Context, id is Id, prototype is Query
             "entities" : prototype,
             "transforms" : transforms,
             "instanceNames" : instanceNames,
-            "copyPropertiesAndAttributes" : true
+            // A copied user appearance can shadow FeatureScript-provided
+            // appearances. Preserve source properties only when automatic
+            // filament appearances are disabled.
+            "copyPropertiesAndAttributes" : !assignAppearances
     });
 
     var layers = [];
@@ -334,6 +357,12 @@ function buildFilamentInstances(context is Context, id is Id, definition is map,
             "propertyType" : PropertyType.NAME,
             "value" : "part-" ~ padNumber(filament, nameWidth)
     });
+    if (definition.assignAppearances)
+        setProperty(context, {
+                "entities" : baseBody,
+                "propertyType" : PropertyType.APPEARANCE,
+                "value" : GFTY_FILAMENT_APPEARANCES[filament % size(GFTY_FILAMENT_APPEARANCES)]
+        });
     opBoolean(context, id + "union", {
             "tools" : tools,
             "operationType" : BooleanOperationType.UNION

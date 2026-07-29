@@ -17,10 +17,18 @@ use std::io::{IsTerminal, Write};
 
 use anyhow::{Context, Result};
 use clap::Parser;
+use colored::Colorize;
 
 use crate::cli::{Cli, Command};
 
-fn main() -> Result<()> {
+fn main() {
+    if let Err(error) = run() {
+        eprintln!("{} {error:#}", "error:".red().bold());
+        std::process::exit(1);
+    }
+}
+
+fn run() -> Result<()> {
     let cli = Cli::parse();
     let system_fonts = cli.system_fonts;
     let preview_options = terminal_preview::PreviewOptions {
@@ -33,7 +41,11 @@ fn main() -> Result<()> {
                 .with_context(|| format!("failed to load label {}", label.display()))?;
             compose::render_label_svg(&loaded, system_fonts)
                 .with_context(|| format!("failed to validate label {}", loaded.path.display()))?;
-            println!("Validated label: {}", loaded.path.display());
+            println!(
+                "{} {}",
+                "valid".green().bold(),
+                loaded.path.display().to_string().cyan()
+            );
         }
         Command::Render { label, output } => {
             let loaded = config::LoadedLabel::load(&label)
@@ -42,7 +54,6 @@ fn main() -> Result<()> {
                 .with_context(|| format!("failed to render label {}", loaded.path.display()))?;
             std::fs::write(&output, &svg)
                 .with_context(|| format!("failed to write SVG {}", output.display()))?;
-            println!("Rendered SVG: {}", output.display());
             try_preview(
                 &svg,
                 &loaded.path.display().to_string(),
@@ -57,43 +68,40 @@ fn main() -> Result<()> {
                 .with_context(|| format!("failed to render label {}", loaded.path.display()))?;
             let document = export::export_rendered(&rendered)
                 .with_context(|| format!("failed to export label {}", loaded.path.display()))?;
-            let stdout = write_json(&output, &document)?;
-            print_success(stdout, format_args!("Exported JSON: {}", output.display()));
+            write_json(&output, &document)?;
         }
         Command::Quick {
             template,
             text,
             icon,
             svg,
+            save,
             json,
         } => {
-            if svg.is_none() && json.is_none() {
-                anyhow::bail!("quick needs at least one of --svg or --json");
+            if svg.is_none() && json.is_none() && save.is_none() {
+                anyhow::bail!("quick needs at least one of --svg, --json, or --save");
             }
             let loaded = quick::build_quick_label(&template, &text, &icon)
                 .context("failed to build quick label configuration")?;
             let rendered = compose::render_label(&loaded, system_fonts)
                 .context("failed to render quick label")?;
             try_preview(&rendered.svg, "quick label", preview_options, false);
-            let json_to_stdout = json.as_deref().is_some_and(is_stdout_path);
+            if let Some(output) = save {
+                quick::save_quick_label(&loaded, &output)?;
+            }
             if let Some(output) = svg {
                 std::fs::write(&output, &rendered.svg)
                     .with_context(|| format!("failed to write SVG {}", output.display()))?;
-                print_success(
-                    json_to_stdout,
-                    format_args!("Rendered SVG: {}", output.display()),
-                );
             }
             if let Some(output) = json {
                 let document =
                     export::export_rendered(&rendered).context("failed to export quick label")?;
-                let stdout = write_json(&output, &document)?;
-                print_success(stdout, format_args!("Exported JSON: {}", output.display()));
+                write_json(&output, &document)?;
             }
         }
         Command::ListTemplates => {
             let entries = list::discover()?;
-            print_values(&entries.templates);
+            list::print_templates(&entries, false);
             preview_entries(
                 &entries,
                 &entries.templates,
@@ -126,7 +134,8 @@ fn main() -> Result<()> {
         }
         Command::List => {
             let entries = list::discover()?;
-            list::print_group("Templates", &entries.templates);
+            println!("{}", "Templates:".bold().blue());
+            list::print_templates(&entries, true);
             preview_entries(
                 &entries,
                 &entries.templates,
@@ -166,7 +175,6 @@ fn main() -> Result<()> {
             } else {
                 json
             };
-            let json_to_stdout = json.as_deref().is_some_and(is_stdout_path);
             let output =
                 plate::build_plate(&labels, &dimensions, &column_gap, &row_gap, system_fonts)
                     .context("failed to generate plate")?;
@@ -174,17 +182,9 @@ fn main() -> Result<()> {
             if let Some(path) = svg {
                 std::fs::write(&path, output.svg)
                     .with_context(|| format!("failed to write plate SVG {}", path.display()))?;
-                print_success(
-                    json_to_stdout,
-                    format_args!("Generated plate SVG: {}", path.display()),
-                );
             }
             if let Some(path) = json {
-                let stdout = write_json(&path, &output.document)?;
-                print_success(
-                    stdout,
-                    format_args!("Generated plate JSON: {}", path.display()),
-                );
+                write_json(&path, &output.document)?;
             }
         }
         Command::Watch { label, svg, json } => {
@@ -201,7 +201,7 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-fn write_json(path: &std::path::Path, document: &export::ExportDocument) -> Result<bool> {
+fn write_json(path: &std::path::Path, document: &export::ExportDocument) -> Result<()> {
     let mut json = serde_json::to_vec(document).context("failed to serialize Onshape JSON")?;
     json.push(b'\n');
     if is_stdout_path(path) {
@@ -209,12 +209,11 @@ fn write_json(path: &std::path::Path, document: &export::ExportDocument) -> Resu
             .lock()
             .write_all(&json)
             .context("failed to write JSON to stdout")?;
-        Ok(true)
     } else {
         std::fs::write(path, json)
             .with_context(|| format!("failed to write JSON {}", path.display()))?;
-        Ok(false)
     }
+    Ok(())
 }
 
 fn is_stdout_path(path: &std::path::Path) -> bool {
@@ -229,7 +228,7 @@ enum EntryKind {
 
 fn print_values(values: &[String]) {
     for value in values {
-        println!("{value}");
+        println!("{}", value.cyan());
     }
 }
 
@@ -246,7 +245,7 @@ fn preview_entries(
     let mut preview = match terminal_preview::PreviewSession::new(options) {
         Ok(preview) => preview,
         Err(error) => {
-            eprintln!("Failed to initialize terminal previews: {error:#}");
+            eprintln!("{} {error:#}", "preview unavailable:".yellow().bold());
             return;
         }
     };
@@ -272,7 +271,11 @@ fn preview_entries(
                     })
                     .and_then(|tree| preview.show_tree(&tree, value, false).map(|_| ()));
                 if let Err(error) = result {
-                    eprintln!("Preview failed for {value}: {error:#}");
+                    eprintln!(
+                        "{} {}: {error:#}",
+                        "preview failed for".red().bold(),
+                        value.cyan()
+                    );
                 }
             }
             EntryKind::Label => {
@@ -285,7 +288,11 @@ fn preview_entries(
                     })
                     .and_then(|svg| preview.show_svg(&svg, value, false).map(|_| ()));
                 if let Err(error) = result {
-                    eprintln!("Preview failed for {value}: {error:#}");
+                    eprintln!(
+                        "{} {}: {error:#}",
+                        "preview failed for".red().bold(),
+                        value.cyan()
+                    );
                 }
             }
         }
@@ -294,14 +301,6 @@ fn preview_entries(
 
 fn try_preview(svg: &str, label: &str, options: terminal_preview::PreviewOptions, clear: bool) {
     if let Err(error) = terminal_preview::show_svg(svg, label, options, clear) {
-        eprintln!("Terminal preview failed: {error:#}");
-    }
-}
-
-fn print_success(use_stderr: bool, message: std::fmt::Arguments<'_>) {
-    if use_stderr {
-        eprintln!("{message}");
-    } else {
-        println!("{message}");
+        eprintln!("{} {error:#}", "terminal preview failed:".yellow().bold());
     }
 }

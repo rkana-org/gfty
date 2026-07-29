@@ -69,6 +69,10 @@ pub enum Command {
         #[arg(long)]
         svg: Option<PathBuf>,
 
+        /// Save this invocation as a reusable label TOML file.
+        #[arg(long, value_name = "PATH")]
+        save: Option<PathBuf>,
+
         /// Write JSON to PATH, or to stdout when PATH is omitted.
         #[arg(long, num_args = 0..=1, default_missing_value = "-", value_name = "PATH")]
         json: Option<PathBuf>,

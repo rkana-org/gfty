@@ -6,6 +6,7 @@ use std::{
 };
 
 use anyhow::{Context, Result, bail};
+use colored::Colorize;
 use notify::{Event, EventKind, RecursiveMode, Watcher};
 
 pub fn watch_label(
@@ -41,7 +42,11 @@ pub fn watch_label(
         .watch(&project_root, RecursiveMode::Recursive)
         .with_context(|| format!("failed to watch {}", project_root.display()))?;
 
-    eprintln!("watching {}", project_root.display());
+    eprintln!(
+        "{} {}",
+        "watching".blue().bold(),
+        project_root.display().to_string().cyan()
+    );
     loop {
         let first = receiver.recv().context("filesystem watcher stopped")?;
         let mut events = vec![first];
@@ -57,7 +62,7 @@ pub fn watch_label(
                         relevant = true;
                     }
                 }
-                Err(error) => eprintln!("watch error: {error}"),
+                Err(error) => eprintln!("{} {error}", "watch error:".red().bold()),
             }
         }
         if !relevant {
@@ -72,9 +77,9 @@ pub fn watch_label(
                     inputs = updated;
                 }
                 show_preview(&svg, label_path, preview_options, true);
-                eprintln!("rebuilt");
+                eprintln!("{}", "rebuilt".green().bold());
             }
-            Err(error) => eprintln!("rebuild failed: {error:#}"),
+            Err(error) => eprintln!("{} {error:#}", "rebuild failed:".red().bold()),
         }
     }
 }
@@ -113,7 +118,7 @@ fn show_preview(
     if let Err(error) =
         crate::terminal_preview::show_svg(svg, &label_path.display().to_string(), options, clear)
     {
-        eprintln!("terminal preview failed: {error:#}");
+        eprintln!("{} {error:#}", "terminal preview failed:".yellow().bold());
     }
 }
 

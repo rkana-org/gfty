@@ -22,7 +22,7 @@ featurescript/
 gfty-label validate LABEL
 gfty-label render LABEL --output PREVIEW.svg
 gfty-label export LABEL [--output FILLS.json]
-gfty-label quick --template TEMPLATE --text ID CONTENT --icon BOX ICON
+gfty-label quick --template TEMPLATE --text ID CONTENT --icon BOX ICON [--save LABEL.toml]
 gfty-label list-templates
 gfty-label list-icons
 gfty-label list-labels
@@ -44,9 +44,14 @@ gfty-label quick \
   --template label-1x1.svg \
   --text main 'M{3}x[10]' \
   --icon fasteners screws/pointy.svg \
+  --save labels/m3x10.toml \
   --svg preview.svg \
   --json label.json
 ```
+
+`quick --save PATH` stores the invocation as a normal reusable label TOML. It
+can be used by itself or together with SVG/JSON output; the label is fully
+rendered and validated before it is saved.
 
 `export` writes compact JSON to stdout by default. `quick --json` also uses
 stdout when its optional path is omitted:
@@ -58,6 +63,8 @@ gfty-label quick --template label-1x1.svg --text main M3 --json | wl-copy
 
 The `list-*` commands print sorted paths relative to the project root, including
 `templates/`, `icons/`, or `labels/`. `list` prints all three groups together.
+Template listings also show detected physical size, text field names, and icon
+box names.
 
 `plate` takes label TOML paths directly on the command line; no plate config
 file is needed. Repeat a path to repeat that label. With no `--svg` or `--json`
@@ -166,7 +173,9 @@ gfty-label --terminal-preview never list
 ```
 
 Use `--terminal-preview-width N` to control thumbnail width. Watch mode redraws
-the terminal after successful rebuilds.
+the terminal after successful rebuilds. Interactive status and listing output
+uses restrained ANSI colors when supported; colors are disabled for redirected
+output and when `NO_COLOR` is set.
 
 ## Onshape JSON
 
@@ -228,7 +237,10 @@ Parts are named `part-<filament>` and zero-padded to the width of the largest
 filament ID, for example `part-00`, `part-02`, and `part-10`. This preserves
 OrcaSlicer's lexicographic overlap precedence: lower filament IDs come first and
 have higher priority. The original selected prototype is deleted after copies
-are generated.
+are generated. By default, the feature also assigns a stable display appearance
+to each filament ID so coincident parts are distinguishable in Onshape. These
+are appearance colors only, not physical material assignments, and can be
+disabled with **Assign filament appearances**.
 
 `featurescript/gfty_label_importer.fs` is retained only for legacy version 1
 JSON and is not part of the current workflow.
