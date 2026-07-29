@@ -5,22 +5,21 @@ File-based Gridfinity label composer and Onshape exporter.
 The project is under active development. The intended workflow uses SVG templates,
 reusable SVG icons with optional TOML color sidecars, and saved label TOML files.
 
-## Project layout
+## Paths
 
-```text
-project.toml
-templates/
-icons/
-labels/
-fonts/
-featurescript/
-```
+No project marker or fixed directory structure is required. Absolute paths work
+everywhere. Paths inside a saved label TOML are resolved relative to that TOML;
+paths passed to `quick` are resolved relative to the current directory.
+
+The list commands and pathless `validate` use `./templates`, `./icons`, and
+`./labels` by convention. Pass global `--root PATH` to search another root.
 
 ## Commands
 
 ```text
 gfty-label validate [LABEL]
 gfty-label render LABEL [--output PREVIEW.svg]
+gfty-label build LABEL --output DIR
 gfty-label export LABEL [--output FILLS.json]
 gfty-label quick --template TEMPLATE --text ID CONTENT --icon BOX ICON [--save LABEL.toml]
 gfty-label list-templates [--preview]
@@ -31,19 +30,19 @@ gfty-label plate --dimensions WIDTH HEIGHT [OPTIONS] LABEL...
 gfty-label watch LABEL --svg PREVIEW.svg --json FILLS.json
 ```
 
-All four design workflows are implemented. Rendering resolves bundled/project
-fonts, converts text and SVG primitives to paths with `usvg`, applies filament
+Rendering resolves bundled and explicitly supplied fonts, converts text and SVG
+primitives to paths with `usvg`, applies filament
 colors, and lays out icons without implicit gaps. Export produces centered,
 physical-millimeter paths grouped by filament for Onshape.
 
-`quick` runs from anywhere below a project root and treats template/icon paths
-as suffixes below `templates/` and `icons/` respectively:
+`quick` accepts ordinary relative or absolute template and icon paths:
 
 ```sh
 gfty-label quick \
-  --template label-1x1.svg \
+  --template templates/label-1x1.svg \
+  --filament 0 \
   --text main 'M{3}x[10]' \
-  --icon fasteners screws/pointy.svg \
+  --icon fasteners icons/screws/pointy.svg \
   --save labels/m3x10.toml \
   --svg preview.svg \
   --json label.json
@@ -58,11 +57,11 @@ stdout when its optional path is omitted:
 
 ```sh
 gfty-label export labels/m3.toml | wl-copy
-gfty-label quick --template label-1x1.svg --text main M3 --json | wl-copy
+gfty-label quick --template templates/label-1x1.svg --text main M3 --json | wl-copy
 ```
 
-The `list-*` commands print sorted paths relative to the project root, including
-`templates/`, `icons/`, or `labels/`. `list` prints all three groups together.
+The `list-*` commands print sorted paths relative to the selected search root,
+including `templates/`, `icons/`, or `labels/`. `list` prints all three groups together.
 Template listings also show detected physical size, text field names, and icon
 box direction/alignment. Listings only render terminal thumbnails when
 `--preview` is supplied.
@@ -90,7 +89,7 @@ viewport dimensions. Version 2 JSON keeps each label's local geometry together
 with its center so the combined Onshape feature can instantiate and merge it.
 
 `watch` performs an initial build, then watches the label TOML, its template,
-icons, sidecars, and project fonts. Failed rebuilds are reported without
+icons, sidecars, and explicit font directories. Failed rebuilds are reported without
 stopping the watcher:
 
 ```sh
@@ -128,30 +127,32 @@ accepts `top`, `center`, or `bottom`. Icons retain their order and aspect ratio,
 spacers act along the selected direction, and no implicit gaps are added.
 
 ```toml
-template = "label-1x1.svg"
+template = "../templates/label-1x1.svg"
+filament = 0 # Blank prototype filament; defaults to 0.
 
 [text.main]
 content = 'M{3}x[10]'
 
 [[icons.fasteners]]
-icon = "icons/screws/pointy.svg"
+icon = "../icons/screws/pointy.svg"
 
 [[icons.fasteners]]
 spacer = "1mm"
 ```
 
-Text starts at filament 0. `{}`, `[]`, and `<>` select filaments 1, 2, and 3;
+The blank prototype uses the label's `filament`, which defaults to 0. Plain text
+starts at filament 1. `{}`, `[]`, and `<>` select filaments 2, 3, and 4;
 `!N{}` selects any non-negative filament ID. Scopes nest and restore their
 parent color. Escape markup characters with a backslash, for example `\{`,
 `\!`, and `\\`.
 
-An `icon` value ending in `.svg` is a filesystem path relative to the project
-root and needs no declaration. Values without that suffix are aliases declared
+An `icon` value ending in `.svg` is an absolute path or a filesystem path
+relative to the label TOML and needs no declaration. Values without that suffix are aliases declared
 under `[icon.NAME]`; use an alias when label-local settings are needed:
 
 ```toml
 [icon.pointy]
-src = "screws/pointy.svg"
+src = "../icons/screws/pointy.svg"
 
 [icon.pointy.colors]
 "0" = 1
@@ -171,15 +172,72 @@ An icon sidecar is named after its SVG with a `.toml` extension:
 
 When present, the sidecar must map every source fill color exactly once. Without
 a sidecar, normalized colors are sorted lexicographically and assigned indices
-starting at zero. Label-local overrides may be partial; exact hex overrides win
+starting at one, reserving filament 0 for the default prototype. Label-local overrides may be partial; exact hex overrides win
 over numeric resolved-index overrides.
 
-By default, fonts are loaded recursively from the project `fonts/` directory
-and from the font directories bundled by the Nix package. The example works
-without `examples/fonts/` because `DejaVu Sans` and `JetBrains Mono` are among
-the Nix-bundled fonts—not because host fonts are scanned. Pass `--system-fonts` to additionally
-scan host fonts. Rendering and validation fail with an actionable error when
-none of an SVG text element's requested font families is available.
+By default, fonts are loaded from the directories bundled by the Nix package.
+Add repeatable `--font-dir PATH` options for local or Nix-provided fonts, or pass
+`--system-fonts` to additionally scan host fonts. Rendering and validation fail
+with an actionable error when none of an SVG text element's requested font
+families is available.
+
+## Nix builders
+
+The default package exposes `mkLabel` and `mkPlate` passthru functions. Add the
+flake's `easyOverlay`-generated `overlays.default` to nixpkgs to make the same
+package available as `pkgs.gfty-label`:
+
+```nix
+# Import nixpkgs with overlays = [ inputs.gfty-label.overlays.default ].
+let
+  screws = pkgs.gfty-label.mkLabel {
+    name = "screws-label"; # Derivation pname only.
+    template = ./templates/label.svg;
+    filament = 0;
+    fonts = [ pkgs.jetbrains-mono ];
+    icons.fasteners = [
+      ./icons/bolt.svg
+      { spacer = "1mm"; }
+      ./icons/nut.svg
+    ];
+    text.main = "M{3}x[10]";
+  };
+in
+pkgs.gfty-label.mkPlate {
+  name = "fastener-plate";
+  dimensions = [ "200mm" "250mm" ];
+  labels = [ screws screws ];
+}
+```
+
+A label derivation contains `label.svg`, `label.json`, and the generated
+`label.toml`; a plate contains `plate.svg` and `plate.json`. Font outputs are
+added at build time through `--font-dir` and do not rebuild `gfty-label`.
+Adjacent SVG color sidecars are retained automatically.
+
+Without an overlay, use
+`inputs'.gfty-label.packages.default.mkLabel`. A flake-parts module is also
+exported as `inputs.gfty-label.flakeModules.default`:
+
+```nix
+imports = [ inputs.gfty-label.flakeModules.default ];
+
+perSystem = { ... }: {
+  gfty-label = {
+    labels.screws = {
+      template = ./templates/label.svg;
+      text.main = "Screws";
+    };
+    plates.all = {
+      dimensions = [ "200mm" "250mm" ];
+      labels = [ "screws" "screws" ];
+    };
+  };
+};
+```
+
+This creates `packages.label-screws` and `packages.plate-all`. See
+`examples/flake.nix` for a buildable overlay, passthru, plate, and module example.
 
 ## Terminal previews
 
@@ -212,14 +270,15 @@ integers.
 {
   "version": 2,
   "size": [42.0, 21.0],
-  "filaments": [0],
+  "filaments": [0, 1],
   "labels": [
     {
       "center": [0.0, 0.0],
       "size": [42.0, 21.0],
+      "filament": 0,
       "parts": [
         {
-          "filament": 0,
+          "filament": 1,
           "shapes": [
             {
               "path": "M -21 10.5 L 21 10.5 L 21 -10.5 L -21 -10.5 Z"
@@ -248,8 +307,8 @@ then select:
 2. A mate connector centered on its top artwork surface, with +Z pointing out.
 3. A mate connector anywhere on its parallel bottom surface.
 
-The feature copies the prototype once per label and filament, places each
-label's artwork on the top connector plane, and unions artwork into its matching
+The feature copies the prototype for each label's base filament and artwork
+filaments, places each label's artwork on the top connector plane, and unions artwork into its matching
 filament copy. All filament copies overlap intentionally. For multiple labels,
 each filament receives an identical 1 mm-thick rectangular connector plate at
 the bottom plane spanning the complete top-level `size`, including gaps. This

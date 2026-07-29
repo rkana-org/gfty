@@ -68,7 +68,7 @@ export const gftyLabelInstances = defineFeature(function(context is Context, id 
         else
         {
             annotation { "Name" : "Label JSON",
-                         "Default" : "{\"version\":2,\"size\":[1,1],\"filaments\":[0],\"labels\":[{\"center\":[0,0],\"size\":[1,1],\"parts\":[{\"filament\":0,\"shapes\":[{\"path\":\"M -0.5 -0.5 L 0.5 -0.5 L 0.5 0.5 L -0.5 0.5 Z\"}]}]}]}",
+                         "Default" : "{\"version\":2,\"size\":[1,1],\"filaments\":[0,1],\"labels\":[{\"center\":[0,0],\"size\":[1,1],\"filament\":0,\"parts\":[{\"filament\":1,\"shapes\":[{\"path\":\"M -0.5 -0.5 L 0.5 -0.5 L 0.5 0.5 L -0.5 0.5 Z\"}]}]}]}",
                          "MaxLength" : 500000,
                          "Description" : "Version 2 JSON emitted by gfty-label export or plate." }
             definition.labelJson is string;
@@ -203,9 +203,16 @@ function parseInstancesJson(jsonText is string, faultyParameter is string) retur
     var globallyUsedFilaments = {};
     for (var labelIndex = 0; labelIndex < size(data.labels); labelIndex += 1)
     {
-        const label = data.labels[labelIndex];
-        if (!(label is map))
+        if (!(data.labels[labelIndex] is map))
             throw regenError("Every label must be an object.", [faultyParameter]);
+        if (data.labels[labelIndex].filament == undefined)
+            data.labels[labelIndex].filament = containsNumber(data.filaments, 0) ? 0 : data.filaments[0];
+        const label = data.labels[labelIndex];
+        if (!isValidFilament(label.filament) ||
+            !containsNumber(data.filaments, label.filament))
+            throw regenError("Every label needs a base filament listed in the top-level filaments array.",
+                             [faultyParameter]);
+        globallyUsedFilaments[toString(label.filament)] = true;
         validatePoint(label.center, "label center", faultyParameter);
         validatePositiveSize(label.size, "label size", faultyParameter);
         if (abs(label.center[0]) + label.size[0] / 2 > data.size[0] / 2 + 1e-8 ||
@@ -287,10 +294,14 @@ function patternPrototypeLayers(context is Context, id is Id, prototype is Query
     for (var filamentIndex = 0; filamentIndex < size(data.filaments); filamentIndex += 1)
     {
         var filamentNames = [];
+        const filament = data.filaments[filamentIndex];
         for (var labelIndex = 0; labelIndex < size(data.labels); labelIndex += 1)
         {
+            const label = data.labels[labelIndex];
+            if (label.filament != filament && findFilamentPart(label.parts, filament) == undefined)
+                continue;
             const instanceName = "f" ~ filamentIndex ~ "_label" ~ labelIndex;
-            const offset = labelOffset(artworkCSys, data.labels[labelIndex].center, unitScale);
+            const offset = labelOffset(artworkCSys, label.center, unitScale);
             transforms = append(transforms, transform(offset));
             instanceNames = append(instanceNames, instanceName);
             filamentNames = append(filamentNames, instanceName);
@@ -313,8 +324,8 @@ function patternPrototypeLayers(context is Context, id is Id, prototype is Query
     {
         const layer = qBodyType(qPatternInstances(id, namesByFilament[filamentIndex], EntityType.BODY),
                                 BodyType.SOLID);
-        if (size(evaluateQuery(context, layer)) != size(data.labels))
-            throw regenError("Could not create one prototype copy per label and filament.",
+        if (size(evaluateQuery(context, layer)) != size(namesByFilament[filamentIndex]))
+            throw regenError("Could not create the required prototype copies for a filament.",
                              ["prototypePart"]);
         layers = append(layers, layer);
     }
@@ -341,18 +352,21 @@ function buildFilamentInstances(context is Context, id is Id, definition is map,
     }
 
     var baseBody;
-    var tools;
+    var toolQueries;
     if (size(data.labels) > 1)
     {
         baseBody = buildConnectorPlate(context, id + "connectorPlate", artworkCSys,
                                        bottomOffset, data.size, definition.unitScale);
-        tools = qUnion([baseBody, prototypeCopies, qUnion(artworkBodies)]);
+        toolQueries = [baseBody, prototypeCopies];
     }
     else
     {
         baseBody = prototypeCopies;
-        tools = qUnion([prototypeCopies, qUnion(artworkBodies)]);
+        toolQueries = [prototypeCopies];
     }
+    if (size(artworkBodies) > 0)
+        toolQueries = append(toolQueries, qUnion(artworkBodies));
+    const tools = qUnion(toolQueries);
 
     setProperty(context, {
             "entities" : baseBody,

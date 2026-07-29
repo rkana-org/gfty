@@ -22,6 +22,7 @@ pub struct ExportDocument {
 pub struct LabelInstance {
     pub center: [f64; 2],
     pub size: [f64; 2],
+    pub filament: u32,
     pub parts: Vec<Part>,
 }
 
@@ -129,7 +130,10 @@ pub fn export_rendered(rendered: &RenderedLabel) -> Result<ExportDocument> {
         .into_iter()
         .map(|(filament, shapes)| Part { filament, shapes })
         .collect();
-    let filaments = parts.iter().map(|part| part.filament).collect();
+    let mut filaments = parts.iter().map(|part| part.filament).collect::<Vec<_>>();
+    filaments.push(rendered.base_filament);
+    filaments.sort_unstable();
+    filaments.dedup();
     Ok(ExportDocument {
         version: EXPORT_VERSION,
         size: rendered.size_mm,
@@ -137,6 +141,7 @@ pub fn export_rendered(rendered: &RenderedLabel) -> Result<ExportDocument> {
         labels: vec![LabelInstance {
             center: [0.0, 0.0],
             size: rendered.size_mm,
+            filament: rendered.base_filament,
             parts,
         }],
     })
@@ -293,11 +298,13 @@ mod tests {
             svg: r##"<svg xmlns="http://www.w3.org/2000/svg" width="96" height="48"><path fill="#8aaed6" d="M0 0 L96 0 L96 48 Z"/></svg>"##.to_owned(),
             palette: PreviewPalette::new([3]).unwrap(),
             size_mm: [25.4, 12.7],
+            base_filament: 3,
         };
         let output = export_rendered(&rendered).unwrap();
         assert_eq!(output.version, 2);
         assert_eq!(output.filaments, [3]);
         assert_eq!(output.labels.len(), 1);
+        assert_eq!(output.labels[0].filament, 3);
         assert_eq!(output.labels[0].parts[0].filament, 3);
         let contour = &output.labels[0].parts[0].shapes[0].contours[0];
         assert_eq!(contour.start, [-12.7, 6.35]);
@@ -318,6 +325,7 @@ mod tests {
             svg: r##"<svg xmlns="http://www.w3.org/2000/svg" width="200" height="100" viewBox="0 0 100 50"><g transform="translate(20 10)"><g transform="rotate(90)"><g transform="scale(2 3)"><path fill="#8aaed6" d="M1 1 L3 1 L3 2 Z"/></g></g></g></svg>"##.to_owned(),
             palette: PreviewPalette::new([3]).unwrap(),
             size_mm: [20.0, 10.0],
+            base_filament: 3,
         };
 
         let output = export_rendered(&rendered).unwrap();

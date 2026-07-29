@@ -21,6 +21,14 @@ pub struct Cli {
     #[arg(long, global = true)]
     pub system_fonts: bool,
 
+    /// Add a directory of fonts. May be repeated.
+    #[arg(long, global = true, value_name = "PATH")]
+    pub font_dir: Vec<PathBuf>,
+
+    /// Root used by list commands and pathless validate; defaults to the current directory.
+    #[arg(long, global = true, value_name = "PATH")]
+    pub root: Option<PathBuf>,
+
     /// Inline terminal preview mode.
     #[arg(long, global = true, value_enum, default_value_t = TerminalPreviewMode::Auto)]
     pub terminal_preview: TerminalPreviewMode,
@@ -50,6 +58,13 @@ pub enum Command {
         output: Option<PathBuf>,
     },
 
+    /// Build label.svg and label.json in an output directory.
+    Build {
+        label: PathBuf,
+        #[arg(short, long, value_name = "DIR")]
+        output: PathBuf,
+    },
+
     /// Export a label as compact Onshape JSON.
     Export {
         label: PathBuf,
@@ -62,6 +77,10 @@ pub enum Command {
     Quick {
         #[arg(long)]
         template: PathBuf,
+
+        /// Filament used for the blank prototype body.
+        #[arg(long, default_value_t = 0)]
+        filament: u32,
 
         /// Repeat as: --text ID CONTENT
         #[arg(long, value_names = ["ID", "CONTENT"], num_args = 2, action = clap::ArgAction::Append)]
@@ -83,16 +102,16 @@ pub enum Command {
         json: Option<PathBuf>,
     },
 
-    /// List template paths below the current project root.
+    /// List template paths below ROOT/templates.
     ListTemplates,
 
-    /// List icon paths below the current project root.
+    /// List icon paths below ROOT/icons.
     ListIcons,
 
-    /// List label paths below the current project root.
+    /// List label paths below ROOT/labels.
     ListLabels,
 
-    /// List templates, icons, and labels below the current project root.
+    /// List templates, icons, and labels below ROOT.
     List,
 
     /// Arrange labels into a dimension-constrained plate grid.
@@ -119,7 +138,7 @@ pub enum Command {
         labels: Vec<PathBuf>,
     },
 
-    /// Rebuild a label whenever project inputs change.
+    /// Rebuild a label whenever its inputs change.
     Watch {
         label: PathBuf,
 

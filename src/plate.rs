@@ -18,7 +18,7 @@ pub fn build_plate(
     dimensions: &[String],
     column_gap: &str,
     row_gap: &str,
-    system_fonts: bool,
+    font_options: &crate::svg::FontOptions,
 ) -> Result<PlateOutput> {
     if label_paths.is_empty() {
         bail!("plate needs at least one label");
@@ -52,14 +52,10 @@ pub fn build_plate(
         );
     }
     let palette = crate::color::PreviewPalette::new(filaments)?;
-    let project_roots = labels
-        .iter()
-        .map(|label| label.project_root.clone())
-        .collect::<Vec<_>>();
     let rendered = labels
         .iter()
         .map(|label| {
-            crate::compose::render_label_with_palette(label, system_fonts, palette.clone())
+            crate::compose::render_label_with_palette(label, font_options, palette.clone())
                 .with_context(|| format!("failed to render plate label {}", label.path.display()))
         })
         .collect::<Result<Vec<_>>>()?;
@@ -104,7 +100,7 @@ pub fn build_plate(
     }
     let layout = grid_layout(rendered.len(), columns, cell_size, column_gap, row_gap);
     let document = combine_documents(&rendered, &layout)?;
-    let svg = combine_svgs(&rendered, &project_roots, &layout)?;
+    let svg = combine_svgs(&rendered, &layout)?;
     Ok(PlateOutput { svg, document })
 }
 
@@ -176,11 +172,7 @@ fn combine_documents(rendered: &[RenderedLabel], layout: &GridLayout) -> Result<
     })
 }
 
-fn combine_svgs(
-    rendered: &[RenderedLabel],
-    project_roots: &[std::path::PathBuf],
-    layout: &GridLayout,
-) -> Result<String> {
+fn combine_svgs(rendered: &[RenderedLabel], layout: &GridLayout) -> Result<String> {
     let mut root = Element::parse(br#"<svg xmlns="http://www.w3.org/2000/svg"></svg>"#.as_slice())
         .expect("static SVG root is valid");
     root.attributes
@@ -192,17 +184,12 @@ fn combine_svgs(
         format!("0 0 {} {}", layout.size[0], layout.size[1]),
     );
 
-    for (index, ((label, project_root), position)) in rendered
-        .iter()
-        .zip(project_roots)
-        .zip(&layout.top_left)
-        .enumerate()
-    {
+    let font_options = crate::svg::FontOptions::default();
+    for (index, (label, position)) in rendered.iter().zip(&layout.top_left).enumerate() {
         let prefixed = crate::svg::normalize_svg_with_prefix(
             &label.svg,
-            project_root,
-            project_root,
-            false,
+            Path::new("."),
+            &font_options,
             Some(format!("plate-{index}-")),
         )
         .with_context(|| format!("failed to normalize plate preview label at index {index}"))?;
@@ -247,7 +234,7 @@ fn combine_svgs(
     )
     .context("failed to serialize plate SVG")?;
     let source = String::from_utf8(output).context("plate SVG is not UTF-8")?;
-    crate::svg::normalize_svg(&source, &project_roots[0], &project_roots[0], false)
+    crate::svg::normalize_svg(&source, Path::new("."), &font_options)
 }
 
 fn same_size(left: [f64; 2], right: [f64; 2]) -> bool {
@@ -283,11 +270,13 @@ mod tests {
                 svg: r##"<svg xmlns="http://www.w3.org/2000/svg" width="10" height="5"><path fill="#eaeaea" d="M0 0H10V5H0Z"/></svg>"##.to_owned(),
                 palette: crate::color::PreviewPalette::new([0, 2]).unwrap(),
                 size_mm: [10.0, 5.0],
+                base_filament: 0,
             },
             RenderedLabel {
                 svg: r##"<svg xmlns="http://www.w3.org/2000/svg" width="10" height="5"><path fill="#a7d293" d="M0 0H10V5H0Z"/></svg>"##.to_owned(),
                 palette: crate::color::PreviewPalette::new([0, 2]).unwrap(),
                 size_mm: [10.0, 5.0],
+                base_filament: 2,
             },
         ];
         let layout = grid_layout(2, 2, [10.0, 5.0], 2.0, 1.0);

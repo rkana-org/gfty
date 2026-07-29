@@ -1,22 +1,22 @@
-template = "basic-label.svg"
+template = "../templates/basic-label.svg"
 
 [text.main]
-# Explicit !N{} scopes support arbitrary filament IDs; angle brackets use 3.
+# Explicit !N{} scopes support arbitrary filament IDs; angle brackets use 4.
 content = '!5{M4} <HEX>'
 
 [icon.bolt]
-src = "bolt.svg"
+src = "../icons/bolt.svg"
 
 # Numeric overrides target resolved sidecar indices; exact hex wins when both apply.
 [icon.bolt.colors]
-"0" = 3
+"1" = 3
 "#ff0000" = 5
 
 [icon.nut]
-src = "nut.svg"
+src = "../icons/nut.svg"
 
 [icon.nut.colors]
-"0" = 1
+"1" = 1
 
 [[icons.fasteners]]
 icon = "nut"

@@ -12,6 +12,10 @@ use serde::{Deserialize, Serialize};
 pub struct LabelConfig {
     pub template: String,
 
+    /// Filament used for the blank prototype body.
+    #[serde(default)]
+    pub filament: u32,
+
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub text: BTreeMap<String, TextValue>,
 
@@ -50,7 +54,7 @@ pub enum IconPlacement {
 #[derive(Debug)]
 pub struct LoadedLabel {
     pub path: PathBuf,
-    pub project_root: PathBuf,
+    pub base_dir: PathBuf,
     pub config: LabelConfig,
 }
 
@@ -79,45 +83,51 @@ impl LoadedLabel {
             .with_context(|| format!("failed to read label {}", path.display()))?;
         let config: LabelConfig = toml::from_str(&source)
             .with_context(|| format!("failed to parse label {}", path.display()))?;
-        let project_root = find_project_root(path.parent().expect("label has a parent"))
-            .with_context(|| format!("failed to locate project for label {}", path.display()))?;
+        let base_dir = path.parent().expect("label has a parent").to_owned();
         Ok(Self {
             path,
-            project_root,
+            base_dir,
             config,
         })
     }
 
-    pub fn from_config(config: LabelConfig, project_root: PathBuf) -> Self {
+    pub fn from_config(config: LabelConfig, base_dir: PathBuf) -> Self {
         Self {
-            path: project_root.join("<quick>"),
-            project_root,
+            path: base_dir.join("<quick>"),
+            base_dir,
             config,
         }
     }
 
     pub fn template_path(&self) -> PathBuf {
-        self.project_root
-            .join("templates")
-            .join(&self.config.template)
+        self.resolve_path(&self.config.template)
     }
 
     pub fn icon_path(&self, icon: &IconDefinition) -> PathBuf {
-        self.project_root.join("icons").join(&icon.src)
+        self.resolve_path(&icon.src)
     }
 
-    /// A reference ending in `.svg` is a project-relative path. All other
-    /// references resolve through the label's `[icon.NAME]` declarations.
+    fn resolve_path(&self, value: &str) -> PathBuf {
+        let path = Path::new(value);
+        if path.is_absolute() {
+            path.to_owned()
+        } else {
+            self.base_dir.join(path)
+        }
+    }
+
+    /// A reference ending in `.svg` is absolute or relative to the label file.
+    /// All other references resolve through `[icon.NAME]` declarations.
     pub fn resolve_icon(&self, reference: &str) -> Result<ResolvedIcon<'_>> {
         if reference.ends_with(".svg") {
             return Ok(ResolvedIcon {
-                path: self.project_root.join(reference),
+                path: self.resolve_path(reference),
                 definition: None,
             });
         }
         let definition = self.config.icon.get(reference).with_context(|| {
             format!(
-                "unknown icon alias {reference:?}; use a project-relative path ending in .svg or declare [icon.{reference}]"
+                "unknown icon alias {reference:?}; use a path ending in .svg or declare [icon.{reference}]"
             )
         })?;
         Ok(ResolvedIcon {
@@ -232,18 +242,6 @@ fn ensure_file(path: &Path, description: &str) -> Result<()> {
     Ok(())
 }
 
-pub fn find_project_root(start: &Path) -> Result<PathBuf> {
-    for directory in start.ancestors() {
-        if directory.join("project.toml").is_file() {
-            return Ok(directory.to_owned());
-        }
-    }
-    bail!(
-        "could not find project.toml in {} or any parent directory",
-        start.display()
-    )
-}
-
 pub fn normalize_hex_color(value: &str) -> Option<String> {
     let value = value.trim().to_ascii_lowercase();
     let digits = value.strip_prefix('#').unwrap_or(&value);
@@ -306,6 +304,7 @@ mod tests {
         let label = LoadedLabel::from_config(
             LabelConfig {
                 template: "template.svg".to_owned(),
+                filament: 0,
                 text: BTreeMap::new(),
                 icon: BTreeMap::from([(
                     "nut".to_owned(),
@@ -325,7 +324,7 @@ mod tests {
         );
         assert_eq!(
             label.resolve_icon("nut").unwrap().path,
-            PathBuf::from("/project/icons/hardware/nut.svg")
+            PathBuf::from("/project/hardware/nut.svg")
         );
         assert!(label.resolve_icon("bolt").is_err());
     }

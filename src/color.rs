@@ -37,7 +37,7 @@ impl ColorMapping {
                 source_to_filament: colors
                     .into_iter()
                     .enumerate()
-                    .map(|(index, color)| (color, index as u32))
+                    .map(|(index, color)| (color, index as u32 + 1))
                     .collect(),
                 sidecar: None,
             })
@@ -287,11 +287,11 @@ mod tests {
         let mapping: BTreeMap<_, _> = colors
             .into_iter()
             .enumerate()
-            .map(|(index, color)| (color, index as u32))
+            .map(|(index, color)| (color, index as u32 + 1))
             .collect();
-        assert_eq!(mapping["000000"], 0);
-        assert_eq!(mapping["0000ff"], 1);
-        assert_eq!(mapping["ff0000"], 2);
+        assert_eq!(mapping["000000"], 1);
+        assert_eq!(mapping["0000ff"], 2);
+        assert_eq!(mapping["ff0000"], 3);
     }
 
     #[test]

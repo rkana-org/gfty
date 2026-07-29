@@ -11,10 +11,14 @@ pub struct ProjectEntries {
     pub labels: Vec<String>,
 }
 
-pub fn discover() -> Result<ProjectEntries> {
-    let current = std::env::current_dir().context("failed to determine current directory")?;
-    let root = crate::config::find_project_root(&current)
-        .with_context(|| format!("failed to find project root from {}", current.display()))?;
+pub fn discover(root: Option<&Path>) -> Result<ProjectEntries> {
+    let root = match root {
+        Some(root) if root.is_absolute() => root.to_owned(),
+        Some(root) => std::env::current_dir()
+            .context("failed to determine current directory")?
+            .join(root),
+        None => std::env::current_dir().context("failed to determine current directory")?,
+    };
     discover_from(&root)
 }
 
@@ -181,7 +185,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn returns_project_relative_prefixed_paths() {
+    fn returns_root_relative_prefixed_paths() {
         let temp = tempfile::tempdir().unwrap();
         for directory in ["templates", "icons", "labels"] {
             fs::create_dir(temp.path().join(directory)).unwrap();

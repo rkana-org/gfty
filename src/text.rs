@@ -6,8 +6,8 @@ pub struct TextRun {
     pub text: String,
 }
 
-/// Parse nested color markup. Plain text starts at filament 0; `{}`, `[]`, and
-/// `<>` select 1, 2, and 3, while `!N{}` selects any filament. Backslash escapes
+/// Parse nested color markup. Plain text starts at filament 1; `{}`, `[]`, and
+/// `<>` select 2, 3, and 4, while `!N{}` selects any filament. Backslash escapes
 /// the next character.
 pub fn parse_colored_text(input: &str) -> Result<Vec<TextRun>> {
     let chars: Vec<char> = input.chars().collect();
@@ -16,7 +16,7 @@ pub fn parse_colored_text(input: &str) -> Result<Vec<TextRun>> {
         offset: 0,
         runs: Vec::new(),
     };
-    parser.parse_region(0, None)?;
+    parser.parse_region(1, None)?;
     Ok(parser.runs)
 }
 
@@ -119,9 +119,9 @@ impl Parser<'_> {
 
 fn shorthand(open: char) -> Option<(u32, char)> {
     match open {
-        '{' => Some((1, '}')),
-        '[' => Some((2, ']')),
-        '<' => Some((3, '>')),
+        '{' => Some((2, '}')),
+        '[' => Some((3, ']')),
+        '<' => Some((4, '>')),
         _ => None,
     }
 }
@@ -143,10 +143,10 @@ mod tests {
         assert_eq!(
             runs("M{3}x[10]"),
             vec![
-                (0, "M".into()),
-                (1, "3".into()),
-                (0, "x".into()),
-                (2, "10".into())
+                (1, "M".into()),
+                (2, "3".into()),
+                (1, "x".into()),
+                (3, "10".into())
             ]
         );
     }
@@ -167,13 +167,13 @@ mod tests {
     fn supports_nested_shorthand() {
         assert_eq!(
             runs("{one [two] one}"),
-            vec![(1, "one ".into()), (2, "two".into()), (1, " one".into())]
+            vec![(2, "one ".into()), (3, "two".into()), (2, " one".into())]
         );
     }
 
     #[test]
     fn backslash_escapes_markup() {
-        assert_eq!(runs(r"\{x\} \!2\{y\} \\"), vec![(0, "{x} !2{y} \\".into())]);
+        assert_eq!(runs(r"\{x\} \!2\{y\} \\"), vec![(1, "{x} !2{y} \\".into())]);
     }
 
     #[test]

@@ -10,13 +10,12 @@ use crate::config::{IconPlacement, LabelConfig, LoadedLabel, TextValue};
 
 pub fn build_quick_label(
     template: &Path,
+    filament: u32,
     text: &[String],
     icons: &[String],
 ) -> Result<LoadedLabel> {
     let current_dir = env::current_dir().context("failed to determine current directory")?;
-    let project_root = crate::config::find_project_root(&current_dir)
-        .with_context(|| format!("failed to find project root from {}", current_dir.display()))?;
-    let template = project_relative_path(template, &project_root.join("templates"), "template")
+    let template = absolute_existing_path(template, &current_dir, "template")
         .with_context(|| format!("failed to resolve template {}", template.display()))?;
 
     let mut text_fields = BTreeMap::new();
@@ -38,25 +37,25 @@ pub fn build_quick_label(
     let mut placements = BTreeMap::<String, Vec<IconPlacement>>::new();
     for pair in pairs(icons, "--icon")? {
         let [box_name, source] = pair;
-        let source = project_relative_path(Path::new(source), &project_root.join("icons"), "icon")
+        let source = absolute_existing_path(Path::new(source), &current_dir, "icon")
             .with_context(|| format!("failed to resolve icon {source:?}"))?;
-        let reference = Path::new("icons").join(source);
         placements
             .entry(box_name.clone())
             .or_default()
             .push(IconPlacement::Icon {
-                icon: path_to_toml_string(&reference),
+                icon: path_to_toml_string(&source),
             });
     }
 
     Ok(LoadedLabel::from_config(
         LabelConfig {
             template: path_to_toml_string(&template),
+            filament,
             text: text_fields,
             icon: BTreeMap::new(),
             icons: placements,
         },
-        project_root,
+        current_dir,
     ))
 }
 
@@ -75,32 +74,15 @@ fn pairs<'a>(values: &'a [String], option: &str) -> Result<impl Iterator<Item = 
     Ok(pairs.iter())
 }
 
-fn project_relative_path(path: &Path, base: &Path, description: &str) -> Result<PathBuf> {
+fn absolute_existing_path(path: &Path, current_dir: &Path, description: &str) -> Result<PathBuf> {
     let candidate = if path.is_absolute() {
         path.to_owned()
-    } else if path.is_file() {
-        path.canonicalize()
-            .with_context(|| format!("failed to resolve {description} {}", path.display()))?
     } else {
-        return Ok(path.to_owned());
+        current_dir.join(path)
     };
-    let base = base.canonicalize().with_context(|| {
-        format!(
-            "failed to resolve {} directory {}",
-            description,
-            base.display()
-        )
-    })?;
     candidate
-        .strip_prefix(&base)
-        .map(Path::to_owned)
-        .with_context(|| {
-            format!(
-                "{description} {} must be inside {}",
-                candidate.display(),
-                base.display()
-            )
-        })
+        .canonicalize()
+        .with_context(|| format!("failed to resolve {description} {}", candidate.display()))
 }
 
 fn path_to_toml_string(path: &Path) -> String {
@@ -130,6 +112,7 @@ mod tests {
         let label = LoadedLabel::from_config(
             LabelConfig {
                 template: "basic.svg".to_owned(),
+                filament: 0,
                 text: BTreeMap::from([(
                     "main".to_owned(),
                     TextValue {

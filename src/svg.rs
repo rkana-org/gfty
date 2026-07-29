@@ -1,7 +1,7 @@
 use std::{
     collections::BTreeSet,
     env,
-    path::Path,
+    path::{Path, PathBuf},
     sync::{Arc, Mutex},
 };
 
@@ -10,18 +10,20 @@ use anyhow::{Context, Result, bail};
 /// Reusable SVG parser with the project's deterministic font database.
 /// Constructing it scans font directories, so callers rendering a batch should
 /// keep one parser for the complete batch.
+#[derive(Debug, Clone, Default)]
+pub struct FontOptions {
+    pub system_fonts: bool,
+    pub directories: Vec<PathBuf>,
+}
+
 pub struct SvgParser {
     fontdb: Arc<usvg::fontdb::Database>,
     system_fonts: bool,
 }
 
 impl SvgParser {
-    pub fn new(project_root: &Path, system_fonts: bool) -> Self {
+    pub fn new(font_options: &FontOptions) -> Self {
         let mut fontdb = usvg::fontdb::Database::new();
-        let project_fonts = project_root.join("fonts");
-        if project_fonts.is_dir() {
-            fontdb.load_fonts_dir(&project_fonts);
-        }
         if let Some(font_dirs) = env::var_os("GFTY_LABEL_FONT_DIRS") {
             for directory in env::split_paths(&font_dirs) {
                 if directory.is_dir() {
@@ -29,12 +31,17 @@ impl SvgParser {
                 }
             }
         }
-        if system_fonts {
+        for directory in &font_options.directories {
+            if directory.is_dir() {
+                fontdb.load_fonts_dir(directory);
+            }
+        }
+        if font_options.system_fonts {
             fontdb.load_system_fonts();
         }
         Self {
             fontdb: Arc::new(fontdb),
-            system_fonts,
+            system_fonts: font_options.system_fonts,
         }
     }
 
@@ -96,9 +103,9 @@ impl SvgParser {
                 .collect::<Vec<_>>()
                 .join(", ");
             let system_hint = if self.system_fonts {
-                "install the font or add its files to the project's fonts/ directory"
+                "install the font or add its files with --font-dir"
             } else {
-                "add its files to the project's fonts/ directory or pass --system-fonts"
+                "add its files with --font-dir or pass --system-fonts"
             };
             bail!("requested font family is unavailable: {families}; {system_hint}");
         }
@@ -112,20 +119,18 @@ impl SvgParser {
 pub fn normalize_svg(
     source: &str,
     resources_dir: &Path,
-    project_root: &Path,
-    system_fonts: bool,
+    font_options: &FontOptions,
 ) -> Result<String> {
-    normalize_svg_with_prefix(source, resources_dir, project_root, system_fonts, None)
+    normalize_svg_with_prefix(source, resources_dir, font_options, None)
 }
 
 pub fn normalize_svg_with_prefix(
     source: &str,
     resources_dir: &Path,
-    project_root: &Path,
-    system_fonts: bool,
+    font_options: &FontOptions,
     id_prefix: Option<String>,
 ) -> Result<String> {
-    let parser = SvgParser::new(project_root, system_fonts);
+    let parser = SvgParser::new(font_options);
     normalize_svg_with_parser(source, resources_dir, &parser, id_prefix)
 }
 
@@ -166,8 +171,7 @@ mod tests {
         let output = normalize_svg(
             r##"<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><rect width="5" height="6" fill="#f00"/></svg>"##,
             temp.path(),
-            temp.path(),
-            false,
+            &FontOptions::default(),
         )
         .unwrap();
         assert!(output.contains("<path"));
@@ -180,12 +184,11 @@ mod tests {
         let error = normalize_svg(
             r#"<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><text font-family="Definitely Missing Font">Test</text></svg>"#,
             temp.path(),
-            temp.path(),
-            false,
+            &FontOptions::default(),
         )
         .unwrap_err();
         let message = format!("{error:#}");
         assert!(message.contains("Definitely Missing Font"), "{message}");
-        assert!(message.contains("fonts/"), "{message}");
+        assert!(message.contains("--font-dir"), "{message}");
     }
 }

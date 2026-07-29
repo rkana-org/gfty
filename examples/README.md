@@ -1,7 +1,7 @@
 # gfty-label examples
 
-This directory is a complete project root containing one template, two icons,
-and two labels. Run these commands from `label-designer/`:
+This directory contains templates, icons, labels, and a standalone Nix flake.
+No project marker is required. Run these commands from `label-designer/`:
 
 ```sh
 nix run .# -- validate examples/labels/metric-fastener.toml
@@ -21,8 +21,21 @@ nix run .# -- plate \
   examples/labels/custom-colors.toml
 ```
 
-`metric-fastener.toml` references project-relative SVG paths directly, without
-icon declarations. The bolt uses an exhaustive color sidecar.
+`metric-fastener.toml` references SVG paths relative to its own location,
+without icon declarations. The bolt uses an exhaustive color sidecar.
 `custom-colors.toml` demonstrates aliases with both resolved-index and exact-hex
 icon overrides, while the nut demonstrates automatic color indexing and an
 even-odd hole.
+
+The flake demonstrates the generated overlay, `mkLabel`, `mkPlate`, and the
+flake-parts module:
+
+```sh
+nix build ./examples#screws
+nix build ./examples#plate
+nix build ./examples#label-module-example
+nix build ./examples#plate-module-example
+```
+
+Label outputs contain `label.svg`, `label.json`, and `label.toml`; plate outputs
+contain `plate.svg` and `plate.json`.

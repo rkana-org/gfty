@@ -25,10 +25,13 @@
     inputs.flake-parts.lib.mkFlake { inherit inputs; } {
       imports = [
         inputs.devshell.flakeModule
+        inputs.flake-parts.flakeModules.easyOverlay
         inputs.nci.flakeModule
         inputs.pre-commit-hooks.flakeModule
         inputs.treefmt-nix.flakeModule
       ];
+
+      flake.flakeModules.default = import ./flake-module.nix { inherit (inputs) self; };
 
       systems = [
         "x86_64-linux"
@@ -80,6 +83,7 @@
           };
 
           packages.default = pkgs.callPackage ./package.nix { };
+          overlayAttrs.gfty-label = config.packages.default;
         };
     };
 }

@@ -2,6 +2,7 @@
   lib,
   rustPlatform,
   makeWrapper,
+  callPackage,
   dejavu_fonts,
   liberation_ttf,
   jetbrains-mono,
@@ -11,7 +12,7 @@
     jetbrains-mono
   ],
 }:
-rustPlatform.buildRustPackage {
+rustPlatform.buildRustPackage (finalAttrs: {
   pname = "gfty-label";
   version = "0.1.0";
   src = lib.cleanSource ./.;
@@ -21,12 +22,27 @@ rustPlatform.buildRustPackage {
   nativeBuildInputs = [ makeWrapper ];
   postFixup = ''
     wrapProgram $out/bin/gfty-label \
-      --set GFTY_LABEL_FONT_DIRS ${lib.escapeShellArg (lib.concatStringsSep ":" (map toString fonts))}
+      --prefix GFTY_LABEL_FONT_DIRS : ${lib.escapeShellArg (lib.concatStringsSep ":" (map toString fonts))}
   '';
+
+  passthru = {
+    mkLabel =
+      args:
+      callPackage ./nix/mk-label.nix {
+        gftyLabel = finalAttrs.finalPackage;
+        inherit args;
+      };
+    mkPlate =
+      args:
+      callPackage ./nix/mk-plate.nix {
+        gftyLabel = finalAttrs.finalPackage;
+        inherit args;
+      };
+  };
 
   meta = {
     description = "File-based Gridfinity label composer and Onshape exporter";
     license = lib.licenses.mit;
     mainProgram = "gfty-label";
   };
-}
+})

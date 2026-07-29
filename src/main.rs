@@ -30,20 +30,25 @@ fn main() {
 
 fn run() -> Result<()> {
     let cli = Cli::parse();
-    let system_fonts = cli.system_fonts;
+    let font_options = svg::FontOptions {
+        system_fonts: cli.system_fonts,
+        directories: cli.font_dir,
+    };
+    let list_root = cli.root;
     let list_preview = cli.preview;
+    let system_fonts = &font_options;
     let preview_options = terminal_preview::PreviewOptions {
         mode: cli.terminal_preview,
         width: cli.terminal_preview_width,
     };
     match cli.command {
         Command::Validate { label } => {
-            validate_labels(label.as_deref(), system_fonts)?;
+            validate_labels(label.as_deref(), list_root.as_deref(), &font_options)?;
         }
         Command::Render { label, output } => {
             let loaded = config::LoadedLabel::load(&label)
                 .with_context(|| format!("failed to load label {}", label.display()))?;
-            let svg = compose::render_label_svg(&loaded, system_fonts)
+            let svg = compose::render_label_svg(&loaded, &font_options)
                 .with_context(|| format!("failed to render label {}", loaded.path.display()))?;
             if let Some(output) = output {
                 std::fs::write(&output, &svg)
@@ -69,10 +74,24 @@ fn run() -> Result<()> {
                 }
             }
         }
+        Command::Build { label, output } => {
+            let loaded = config::LoadedLabel::load(&label)
+                .with_context(|| format!("failed to load label {}", label.display()))?;
+            let rendered = compose::render_label(&loaded, &font_options)
+                .with_context(|| format!("failed to render label {}", loaded.path.display()))?;
+            std::fs::create_dir_all(&output).with_context(|| {
+                format!("failed to create output directory {}", output.display())
+            })?;
+            std::fs::write(output.join("label.svg"), &rendered.svg)
+                .with_context(|| format!("failed to write label SVG in {}", output.display()))?;
+            let document = export::export_rendered(&rendered)
+                .with_context(|| format!("failed to export label {}", loaded.path.display()))?;
+            write_json(&output.join("label.json"), &document)?;
+        }
         Command::Export { label, output } => {
             let loaded = config::LoadedLabel::load(&label)
                 .with_context(|| format!("failed to load label {}", label.display()))?;
-            let rendered = compose::render_label(&loaded, system_fonts)
+            let rendered = compose::render_label(&loaded, &font_options)
                 .with_context(|| format!("failed to render label {}", loaded.path.display()))?;
             let document = export::export_rendered(&rendered)
                 .with_context(|| format!("failed to export label {}", loaded.path.display()))?;
@@ -80,6 +99,7 @@ fn run() -> Result<()> {
         }
         Command::Quick {
             template,
+            filament,
             text,
             icon,
             svg,
@@ -89,9 +109,9 @@ fn run() -> Result<()> {
             if svg.is_none() && json.is_none() && save.is_none() {
                 anyhow::bail!("quick needs at least one of --svg, --json, or --save");
             }
-            let loaded = quick::build_quick_label(&template, &text, &icon)
+            let loaded = quick::build_quick_label(&template, filament, &text, &icon)
                 .context("failed to build quick label configuration")?;
-            let rendered = compose::render_label(&loaded, system_fonts)
+            let rendered = compose::render_label(&loaded, &font_options)
                 .context("failed to render quick label")?;
             try_preview(&rendered.svg, "quick label", preview_options, false);
             if let Some(output) = save {
@@ -108,7 +128,7 @@ fn run() -> Result<()> {
             }
         }
         Command::ListTemplates => {
-            let entries = list::discover()?;
+            let entries = list::discover(list_root.as_deref())?;
             list::print_templates(&entries, false);
             if list_preview {
                 preview_entries(
@@ -121,7 +141,7 @@ fn run() -> Result<()> {
             }
         }
         Command::ListIcons => {
-            let entries = list::discover()?;
+            let entries = list::discover(list_root.as_deref())?;
             print_values(&entries.icons);
             if list_preview {
                 preview_entries(
@@ -134,7 +154,7 @@ fn run() -> Result<()> {
             }
         }
         Command::ListLabels => {
-            let entries = list::discover()?;
+            let entries = list::discover(list_root.as_deref())?;
             print_values(&entries.labels);
             if list_preview {
                 preview_entries(
@@ -147,7 +167,7 @@ fn run() -> Result<()> {
             }
         }
         Command::List => {
-            let entries = list::discover()?;
+            let entries = list::discover(list_root.as_deref())?;
             println!("{}", "Templates:".bold().green());
             list::print_templates(&entries, true);
             if list_preview {
@@ -196,7 +216,7 @@ fn run() -> Result<()> {
                 json
             };
             let output =
-                plate::build_plate(&labels, &dimensions, &column_gap, &row_gap, system_fonts)
+                plate::build_plate(&labels, &dimensions, &column_gap, &row_gap, &font_options)
                     .context("failed to generate plate")?;
             try_preview(&output.svg, "plate", preview_options, false);
             if let Some(path) = svg {
@@ -212,7 +232,7 @@ fn run() -> Result<()> {
                 &label,
                 svg.as_deref(),
                 json.as_deref(),
-                system_fonts,
+                &font_options,
                 preview_options,
             )
             .with_context(|| format!("failed to watch label {}", label.display()))?;
@@ -221,11 +241,15 @@ fn run() -> Result<()> {
     Ok(())
 }
 
-fn validate_labels(label: Option<&std::path::Path>, system_fonts: bool) -> Result<()> {
+fn validate_labels(
+    label: Option<&std::path::Path>,
+    root: Option<&std::path::Path>,
+    font_options: &svg::FontOptions,
+) -> Result<()> {
     let labels: Vec<(String, std::path::PathBuf)> = if let Some(label) = label {
         vec![(label.display().to_string(), label.to_owned())]
     } else {
-        let entries = list::discover()?;
+        let entries = list::discover(root)?;
         entries
             .labels
             .iter()
@@ -239,7 +263,7 @@ fn validate_labels(label: Option<&std::path::Path>, system_fonts: bool) -> Resul
         let result = config::LoadedLabel::load(&path)
             .with_context(|| format!("failed to load label {}", path.display()))
             .and_then(|loaded| {
-                compose::render_label_svg(&loaded, system_fonts)
+                compose::render_label_svg(&loaded, font_options)
                     .with_context(|| format!("failed to validate label {}", loaded.path.display()))
             });
         match result {
@@ -296,7 +320,7 @@ fn preview_entries(
     entries: &list::ProjectEntries,
     values: &[String],
     kind: EntryKind,
-    system_fonts: bool,
+    font_options: &svg::FontOptions,
     options: terminal_preview::PreviewOptions,
 ) {
     if !options.enabled() || !std::io::stdout().is_terminal() {
@@ -310,7 +334,7 @@ fn preview_entries(
         }
     };
     let svg_parser = match kind {
-        EntryKind::Svg => Some(svg::SvgParser::new(&entries.root, system_fonts)),
+        EntryKind::Svg => Some(svg::SvgParser::new(font_options)),
         EntryKind::Label => None,
     };
 
@@ -342,7 +366,7 @@ fn preview_entries(
                 let result = config::LoadedLabel::load(&path)
                     .with_context(|| format!("failed to load listed label {}", path.display()))
                     .and_then(|label| {
-                        compose::render_label_svg(&label, system_fonts).with_context(|| {
+                        compose::render_label_svg(&label, font_options).with_context(|| {
                             format!("failed to render listed label {}", path.display())
                         })
                     })

@@ -17,18 +17,25 @@ pub struct RenderedLabel {
     pub svg: String,
     pub palette: crate::color::PreviewPalette,
     pub size_mm: [f64; 2],
+    pub base_filament: u32,
 }
 
-pub fn render_label_svg(label: &LoadedLabel, system_fonts: bool) -> Result<String> {
-    Ok(render_label(label, system_fonts)?.svg)
+pub fn render_label_svg(
+    label: &LoadedLabel,
+    font_options: &crate::svg::FontOptions,
+) -> Result<String> {
+    Ok(render_label(label, font_options)?.svg)
 }
 
-pub fn render_label(label: &LoadedLabel, system_fonts: bool) -> Result<RenderedLabel> {
+pub fn render_label(
+    label: &LoadedLabel,
+    font_options: &crate::svg::FontOptions,
+) -> Result<RenderedLabel> {
     let filaments = label_filaments(label)
         .with_context(|| format!("failed to collect filaments for {}", label.path.display()))?;
     let palette =
         crate::color::PreviewPalette::new(filaments).context("failed to create preview palette")?;
-    render_label_with_palette(label, system_fonts, palette)
+    render_label_with_palette(label, font_options, palette)
 }
 
 pub fn label_filaments(label: &LoadedLabel) -> Result<BTreeSet<u32>> {
@@ -42,12 +49,14 @@ pub fn label_filaments(label: &LoadedLabel) -> Result<BTreeSet<u32>> {
                 label.template_path().display()
             )
         })?;
-    collect_filaments(label, &template_colors)
+    let mut filaments = collect_filaments(label, &template_colors)?;
+    filaments.insert(label.config.filament);
+    Ok(filaments)
 }
 
 pub fn render_label_with_palette(
     label: &LoadedLabel,
-    system_fonts: bool,
+    font_options: &crate::svg::FontOptions,
     palette: crate::color::PreviewPalette,
 ) -> Result<RenderedLabel> {
     label
@@ -67,7 +76,7 @@ pub fn render_label_with_palette(
     let recolored_template =
         crate::color::recolor_svg(&source, &template_colors.source_to_filament, &palette);
     let mut root = Element::parse(recolored_template.as_bytes()).context("invalid template XML")?;
-    let svg_parser = crate::svg::SvgParser::new(&label.project_root, system_fonts);
+    let svg_parser = crate::svg::SvgParser::new(font_options);
 
     apply_text_fields(&mut root, label, &palette)
         .with_context(|| format!("failed to compose template {}", template_path.display()))?;
@@ -87,6 +96,7 @@ pub fn render_label_with_palette(
         svg,
         palette,
         size_mm: [template.width_mm, template.height_mm],
+        base_filament: label.config.filament,
     })
 }
 
@@ -414,9 +424,10 @@ mod tests {
     fn label_with_text(content: &str) -> LoadedLabel {
         LoadedLabel {
             path: PathBuf::from("label.toml"),
-            project_root: PathBuf::from("."),
+            base_dir: PathBuf::from("."),
             config: LabelConfig {
                 template: "template.svg".to_owned(),
+                filament: 0,
                 text: BTreeMap::from([(
                     "main".to_owned(),
                     TextValue {
@@ -436,7 +447,7 @@ mod tests {
                 .as_slice(),
         )
         .unwrap();
-        let palette = crate::color::PreviewPalette::new([0, 1]).unwrap();
+        let palette = crate::color::PreviewPalette::new([1, 2]).unwrap();
         apply_text_fields(&mut root, &label_with_text(r#"A{\<&\>}B"#), &palette).unwrap();
         replace_icon_boxes(&mut root, &mut BTreeMap::new());
         let output = serialize_element(&root).unwrap();
@@ -465,7 +476,8 @@ mod tests {
         .unwrap();
         let label = LoadedLabel::from_config(
             LabelConfig {
-                template: "label.svg".to_owned(),
+                template: "templates/label.svg".to_owned(),
+                filament: 0,
                 text: BTreeMap::new(),
                 icon: BTreeMap::new(),
                 icons: BTreeMap::from([(
@@ -478,7 +490,7 @@ mod tests {
             root.to_owned(),
         );
 
-        let rendered = render_label(&label, false).unwrap();
+        let rendered = render_label(&label, &crate::svg::FontOptions::default()).unwrap();
         let exported = crate::export::export_rendered(&rendered).unwrap();
         let contour = &exported.labels[0].parts[0].shapes[0].contours[0];
         let mut points = vec![contour.start];
