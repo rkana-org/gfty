@@ -1,7 +1,7 @@
 FeatureScript 2752;
 import(path : "onshape/std/geometry.fs", version : "2752.0");
 
-export const GFTY_INSTANCE_UNIT_BOUNDS = {
+export const GFTY_INSTANCE_LENGTH_BOUNDS = {
         (meter) : [1e-9, 0.001, 500],
         (centimeter) : 0.1,
         (millimeter) : 1,
@@ -10,21 +10,35 @@ export const GFTY_INSTANCE_UNIT_BOUNDS = {
         (yard) : 0.00109361329833771
     } as LengthBoundSpec;
 
+// This sacrificial connector joins label copies of the same filament into one
+// Onshape part. Offset the complete print down by 1 mm in the slicer so it is
+// below the build plate and is not printed.
+export const GFTY_CONNECTOR_PLATE_THICKNESS = 1 * millimeter;
+
 annotation { "Feature Type Name" : "GFTY Label Instances",
-             "Feature Type Description" : "Pattern prototype label parts to the center points in gfty-label JSON." }
+             "Feature Type Description" : "Copy a label prototype per filament and label, add artwork, and connect multi-label color parts." }
 export const gftyLabelInstances = defineFeature(function(context is Context, id is Id, definition is map)
     precondition
     {
-        annotation { "Name" : "Prototype label parts",
-                     "Filter" : EntityType.BODY && BodyType.SOLID,
-                     "Description" : "Select every filament part of the prototype centered at the layout plane origin." }
-        definition.prototypeParts is Query;
-
-        annotation { "Name" : "Layout plane",
-                     "Filter" : QueryFilterCompound.ALLOWS_PLANE,
+        annotation { "Name" : "Prototype label part",
+                     "Filter" : EntityType.BODY && BodyType.SOLID && ModifiableEntityOnly.YES,
                      "MaxNumberOfPicks" : 1,
-                     "Description" : "JSON X/Y center points are measured from this plane origin and axes." }
-        definition.layoutPlane is Query;
+                     "Description" : "The finished blank label body to copy once per label and filament." }
+        definition.prototypePart is Query;
+
+        annotation { "Name" : "Artwork mate connector",
+                     "Filter" : BodyType.MATE_CONNECTOR,
+                     "MaxNumberOfPicks" : 1,
+                     "UIHint" : UIHint.PREVENT_CREATING_NEW_MATE_CONNECTORS,
+                     "Description" : "Centered on the label top surface. X/Y orient JSON coordinates and +Z points out of the label." }
+        definition.artworkMateConnector is Query;
+
+        annotation { "Name" : "Bottom mate connector",
+                     "Filter" : BodyType.MATE_CONNECTOR,
+                     "MaxNumberOfPicks" : 1,
+                     "UIHint" : UIHint.PREVENT_CREATING_NEW_MATE_CONNECTORS,
+                     "Description" : "Anywhere on the prototype bottom plane. Its origin supplies the connector-plate height." }
+        definition.bottomMateConnector is Query;
 
         annotation { "Name" : "Read label JSON from variable",
                      "Description" : "Use a Part Studio variable containing gfty-label JSON instead of pasted text." }
@@ -39,69 +53,68 @@ export const gftyLabelInstances = defineFeature(function(context is Context, id 
         else
         {
             annotation { "Name" : "Label JSON",
-                         "Default" : "{\"size\":[1,1],\"parts\":[],\"instances\":[[0,0]]}",
+                         "Default" : "{\"version\":2,\"size\":[1,1],\"filaments\":[0],\"labels\":[{\"center\":[0,0],\"size\":[1,1],\"parts\":[{\"filament\":0,\"shapes\":[{\"path\":\"M -0.5 -0.5 L 0.5 -0.5 L 0.5 0.5 L -0.5 0.5 Z\"}]}]}]}",
                          "MaxLength" : 500000,
-                         "Description" : "JSON containing an instances array of [x, y] center points." }
+                         "Description" : "Version 2 JSON emitted by gfty-label export or plate." }
             definition.labelJson is string;
         }
 
         annotation { "Name" : "JSON unit scale",
                      "Default" : 1 * millimeter,
                      "Description" : "Length represented by one JSON coordinate. Keep 1 mm for gfty-label output." }
-        isLength(definition.unitScale, GFTY_INSTANCE_UNIT_BOUNDS);
+        isLength(definition.unitScale, GFTY_INSTANCE_LENGTH_BOUNDS);
+
+        annotation { "Name" : "Artwork depth", "Default" : 1 * millimeter }
+        isLength(definition.depth, GFTY_INSTANCE_LENGTH_BOUNDS);
+
+        annotation { "Name" : "Keep generated sketches", "Default" : false }
+        definition.keepSketches is boolean;
 
         annotation { "Name" : "Debug label instances", "Default" : false }
         definition.debugLabelInstances is boolean;
     }
     {
-        if (isQueryEmpty(context, definition.prototypeParts))
-            throw regenError("Select at least one prototype label part.", ["prototypeParts"]);
+        if (isQueryEmpty(context, definition.prototypePart))
+            throw regenError("Select one prototype label part.", ["prototypePart"]);
+        if (isQueryEmpty(context, definition.artworkMateConnector))
+            throw regenError("Select the centered top artwork mate connector.", ["artworkMateConnector"]);
+        if (isQueryEmpty(context, definition.bottomMateConnector))
+            throw regenError("Select a mate connector on the prototype bottom plane.", ["bottomMateConnector"]);
 
         const faultyParameter = definition.useJsonVariable ? "jsonVariableName" : "labelJson";
-        const jsonText = getInstancesJson(context, definition);
-        const instances = parseInstances(jsonText, faultyParameter);
-        const layoutPlane = evPlane(context, { "face" : definition.layoutPlane });
-        const yDirection = cross(layoutPlane.normal, layoutPlane.x);
-        var transforms = [];
-        var instanceNames = [];
-        var hasOriginInstance = false;
+        const data = parseInstancesJson(getInstancesJson(context, definition), faultyParameter);
+        const artworkCSys = evMateConnector(context, {
+                "mateConnector" : definition.artworkMateConnector
+        });
+        const bottomCSys = evMateConnector(context, {
+                "mateConnector" : definition.bottomMateConnector
+        });
+        if (!tolerantEquals(abs(dot(artworkCSys.zAxis, bottomCSys.zAxis)), 1))
+            throw regenError("Artwork and bottom mate connector planes must be parallel.",
+                             ["artworkMateConnector", "bottomMateConnector"]);
 
-        for (var instanceIndex = 0; instanceIndex < size(instances); instanceIndex += 1)
+        const bottomOffset = dot(bottomCSys.origin - artworkCSys.origin, artworkCSys.zAxis);
+        if (bottomOffset >= 0 * meter)
+            throw regenError("The artwork connector +Z must point out of the label and the bottom connector must be behind it.",
+                             ["artworkMateConnector", "bottomMateConnector"]);
+
+        const nameWidth = filamentNameWidth(data.filaments);
+        for (var filamentIndex = 0; filamentIndex < size(data.filaments); filamentIndex += 1)
         {
-            const point = instances[instanceIndex];
-            if (point[0] == 0 && point[1] == 0)
-            {
-                if (hasOriginInstance)
-                    throw regenError("instances may contain [0, 0] only once.", [faultyParameter]);
-                hasOriginInstance = true;
-                continue;
-            }
-            const translation = layoutPlane.x * (point[0] * definition.unitScale) +
-                                yDirection * (point[1] * definition.unitScale);
-            transforms = append(transforms, transform(translation));
-            instanceNames = append(instanceNames, "i" ~ instanceIndex);
+            const filament = data.filaments[filamentIndex];
+            buildFilamentInstances(context, id + ("filament" ~ filamentIndex), definition,
+                                   data, filament, artworkCSys, bottomOffset,
+                                   nameWidth, faultyParameter);
         }
 
-        if (size(transforms) > 0)
-        {
-            opPattern(context, id + "pattern", {
-                    "entities" : definition.prototypeParts,
-                    "transforms" : transforms,
-                    "instanceNames" : instanceNames,
-                    "copyPropertiesAndAttributes" : true
-            });
-        }
-        if (!hasOriginInstance)
-        {
-            opDeleteBodies(context, id + "deletePrototype", {
-                    "entities" : definition.prototypeParts
-            });
-        }
+        opDeleteBodies(context, id + "deletePrototype", {
+                "entities" : definition.prototypePart
+        });
 
         if (definition.debugLabelInstances)
-            println("GFTY label instances: requested=" ~ size(instances) ~
-                    ", patterned=" ~ size(transforms) ~
-                    ", kept origin=" ~ hasOriginInstance);
+            println("GFTY label instances: labels=" ~ size(data.labels) ~
+                    ", filaments=" ~ data.filaments ~
+                    ", connector plate=" ~ (size(data.labels) > 1));
     });
 
 function getInstancesJson(context is Context, definition is map) returns string
@@ -125,7 +138,7 @@ function getInstancesJson(context is Context, definition is map) returns string
     return value;
 }
 
-function parseInstances(jsonText is string, faultyParameter is string) returns array
+function parseInstancesJson(jsonText is string, faultyParameter is string) returns map
 {
     var data;
     try
@@ -136,13 +149,405 @@ function parseInstances(jsonText is string, faultyParameter is string) returns a
     {
         throw regenError("Label JSON is not well-formed.", [faultyParameter]);
     }
-    if (!(data is map) || !(data.instances is array) || size(data.instances) == 0)
-        throw regenError("Label JSON needs a non-empty instances array.", [faultyParameter]);
 
-    for (var point in data.instances)
+    if (!(data is map) || data.version != 2)
+        throw regenError("Label JSON must use schema version 2.", [faultyParameter]);
+    validatePositiveSize(data.size, "overall size", faultyParameter);
+    if (!(data.filaments is array) || size(data.filaments) == 0)
+        throw regenError("Label JSON needs a non-empty filaments array.", [faultyParameter]);
+
+    var previousFilament = -1;
+    for (var filament in data.filaments)
     {
-        if (!(point is array) || size(point) != 2 || !(point[0] is number) || !(point[1] is number))
-            throw regenError("Every instance must be a numeric [x, y] center point.", [faultyParameter]);
+        if (!(filament is number) || filament < 0 || filament != floor(filament))
+            throw regenError("Every filament must be a non-negative integer.", [faultyParameter]);
+        if (filament <= previousFilament)
+            throw regenError("Filaments must be unique and sorted in ascending priority order.", [faultyParameter]);
+        previousFilament = filament;
     }
-    return data.instances;
+
+    if (!(data.labels is array) || size(data.labels) == 0)
+        throw regenError("Label JSON needs a non-empty labels array.", [faultyParameter]);
+    var globallyUsedFilaments = {};
+    for (var labelIndex = 0; labelIndex < size(data.labels); labelIndex += 1)
+    {
+        const label = data.labels[labelIndex];
+        if (!(label is map))
+            throw regenError("Every label must be an object.", [faultyParameter]);
+        validatePoint(label.center, "label center", faultyParameter);
+        validatePositiveSize(label.size, "label size", faultyParameter);
+        if (abs(label.center[0]) + label.size[0] / 2 > data.size[0] / 2 + 1e-8 ||
+            abs(label.center[1]) + label.size[1] / 2 > data.size[1] / 2 + 1e-8)
+            throw regenError("Every label rectangle must fit inside the overall size.", [faultyParameter]);
+        if (!(label.parts is array) || size(label.parts) == 0)
+            throw regenError("Every label needs a non-empty parts array.", [faultyParameter]);
+
+        var labelFilaments = {};
+        for (var part in label.parts)
+        {
+            if (!(part is map) || !isValidFilament(part.filament) ||
+                !containsNumber(data.filaments, part.filament))
+                throw regenError("Every label part needs a filament listed in the top-level filaments array.",
+                                 [faultyParameter]);
+            const key = toString(part.filament);
+            if (labelFilaments[key] == true)
+                throw regenError("A label may contain each filament only once.", [faultyParameter]);
+            labelFilaments[key] = true;
+            globallyUsedFilaments[key] = true;
+            if (!(part.shapes is array) || size(part.shapes) == 0)
+                throw regenError("Every label part needs at least one shape.", [faultyParameter]);
+            for (var shape in part.shapes)
+            {
+                if (!(shape is map) ||
+                    !((shape.path is string && shape.path != "") ||
+                      (shape.contours is array && size(shape.contours) > 0)))
+                    throw regenError("Every shape needs a non-empty path string.", [faultyParameter]);
+            }
+        }
+    }
+
+    for (var filament in data.filaments)
+    {
+        if (globallyUsedFilaments[toString(filament)] != true)
+            throw regenError("Every top-level filament must be used by at least one label.", [faultyParameter]);
+    }
+    return data;
+}
+
+function validatePositiveSize(value, label is string, faultyParameter is string)
+{
+    if (!(value is array) || size(value) != 2 ||
+        !(value[0] is number) || !(value[1] is number) ||
+        value[0] <= 0 || value[1] <= 0)
+        throw regenError("Invalid " ~ label ~ ". Expected positive [width, height].", [faultyParameter]);
+}
+
+function validatePoint(value, label is string, faultyParameter is string)
+{
+    if (!(value is array) || size(value) != 2 ||
+        !(value[0] is number) || !(value[1] is number))
+        throw regenError("Invalid " ~ label ~ ". Expected numeric [x, y].", [faultyParameter]);
+}
+
+function isValidFilament(value) returns boolean
+{
+    return value is number && value >= 0 && value == floor(value);
+}
+
+function containsNumber(values is array, target is number) returns boolean
+{
+    for (var value in values)
+    {
+        if (value == target)
+            return true;
+    }
+    return false;
+}
+
+function buildFilamentInstances(context is Context, id is Id, definition is map,
+                                data is map, filament is number, artworkCSys is CoordSystem,
+                                bottomOffset is ValueWithUnits, nameWidth is number,
+                                faultyParameter is string)
+{
+    var transforms = [];
+    var instanceNames = [];
+    for (var labelIndex = 0; labelIndex < size(data.labels); labelIndex += 1)
+    {
+        const offset = labelOffset(artworkCSys, data.labels[labelIndex].center, definition.unitScale);
+        transforms = append(transforms, transform(offset));
+        instanceNames = append(instanceNames, "label" ~ labelIndex);
+    }
+
+    const patternId = id + "prototypePattern";
+    opPattern(context, patternId, {
+            "entities" : definition.prototypePart,
+            "transforms" : transforms,
+            "instanceNames" : instanceNames,
+            "copyPropertiesAndAttributes" : true
+    });
+    const prototypeCopies = qBodyType(qCreatedBy(patternId, EntityType.BODY), BodyType.SOLID);
+    if (isQueryEmpty(context, prototypeCopies))
+        throw regenError("Could not copy the prototype label part.", ["prototypePart"]);
+
+    var artworkBodies = [];
+    for (var labelIndex = 0; labelIndex < size(data.labels); labelIndex += 1)
+    {
+        const label = data.labels[labelIndex];
+        const part = findFilamentPart(label.parts, filament);
+        if (part != undefined)
+        {
+            const artworkPlane = labelPlane(artworkCSys, label.center, definition.unitScale);
+            artworkBodies = concatenateArrays([artworkBodies,
+                    buildArtwork(context, id + ("label" ~ labelIndex), artworkPlane,
+                                 artworkCSys.zAxis, part, definition, faultyParameter)]);
+        }
+    }
+
+    var baseBody;
+    var tools;
+    if (size(data.labels) > 1)
+    {
+        baseBody = buildConnectorPlate(context, id + "connectorPlate", artworkCSys,
+                                       bottomOffset, data.size, definition.unitScale);
+        tools = qUnion([baseBody, prototypeCopies, qUnion(artworkBodies)]);
+    }
+    else
+    {
+        baseBody = prototypeCopies;
+        tools = qUnion([prototypeCopies, qUnion(artworkBodies)]);
+    }
+
+    setProperty(context, {
+            "entities" : baseBody,
+            "propertyType" : PropertyType.NAME,
+            "value" : "part-" ~ padNumber(filament, nameWidth)
+    });
+    opBoolean(context, id + "union", {
+            "tools" : tools,
+            "operationType" : BooleanOperationType.UNION
+    });
+}
+
+function labelOffset(cSys is CoordSystem, center is array,
+                     unitScale is ValueWithUnits) returns Vector
+{
+    return cSys.xAxis * (center[0] * unitScale) +
+           yAxis(cSys) * (center[1] * unitScale);
+}
+
+function labelPlane(cSys is CoordSystem, center is array,
+                    unitScale is ValueWithUnits) returns Plane
+{
+    return plane(cSys.origin + labelOffset(cSys, center, unitScale),
+                 cSys.zAxis, cSys.xAxis);
+}
+
+function findFilamentPart(parts is array, filament is number)
+{
+    for (var part in parts)
+    {
+        if (part.filament == filament)
+            return part;
+    }
+    return undefined;
+}
+
+function buildArtwork(context is Context, id is Id, sketchPlane is Plane, normal is Vector,
+                      part is map, definition is map, faultyParameter is string) returns array
+{
+    var artworkBodies = [];
+    for (var shapeIndex = 0; shapeIndex < size(part.shapes); shapeIndex += 1)
+    {
+        const shape = part.shapes[shapeIndex];
+        const sketchId = id + ("shapeSketch" ~ shapeIndex);
+        var sketch = newSketchOnPlane(context, sketchId, { "sketchPlane" : sketchPlane });
+        if (shape.path is string)
+            addPathToSketch(sketch, "s" ~ shapeIndex ~ "_", shape.path,
+                            definition.unitScale, faultyParameter);
+        else
+            addContoursToSketch(sketch, "s" ~ shapeIndex ~ "_", shape.contours,
+                                definition.unitScale, faultyParameter);
+        skSolve(sketch);
+        const regions = qSketchRegion(sketchId, true);
+        if (isQueryEmpty(context, regions))
+            throw regenError("Artwork shape " ~ shapeIndex ~ " did not create a closed region.",
+                             [faultyParameter]);
+
+        const extrudeId = id + ("shapeExtrude" ~ shapeIndex);
+        opExtrude(context, extrudeId, {
+                "entities" : regions,
+                "direction" : normal,
+                "endBound" : BoundingType.BLIND,
+                "endDepth" : definition.depth
+        });
+        artworkBodies = append(artworkBodies, qCreatedBy(extrudeId, EntityType.BODY));
+
+        if (!definition.keepSketches)
+            try silent(opDeleteBodies(context, id + ("deleteShapeSketch" ~ shapeIndex), {
+                    "entities" : qCreatedBy(sketchId, EntityType.BODY)
+            }));
+    }
+    return artworkBodies;
+}
+
+function buildConnectorPlate(context is Context, id is Id, artworkCSys is CoordSystem,
+                             bottomOffset is ValueWithUnits, overallSize is array,
+                             unitScale is ValueWithUnits) returns Query
+{
+    const origin = artworkCSys.origin + artworkCSys.zAxis * bottomOffset;
+    const bottomPlane = plane(origin, artworkCSys.zAxis, artworkCSys.xAxis);
+    const halfWidth = overallSize[0] * unitScale / 2;
+    const halfHeight = overallSize[1] * unitScale / 2;
+    var sketch = newSketchOnPlane(context, id + "Sketch", { "sketchPlane" : bottomPlane });
+    skRectangle(sketch, "plate", {
+            "firstCorner" : vector(-halfWidth, -halfHeight),
+            "secondCorner" : vector(halfWidth, halfHeight)
+    });
+    skSolve(sketch);
+    opExtrude(context, id + "Extrude", {
+            "entities" : qSketchRegion(id + "Sketch"),
+            "direction" : -artworkCSys.zAxis,
+            "endBound" : BoundingType.BLIND,
+            "endDepth" : GFTY_CONNECTOR_PLATE_THICKNESS
+    });
+    try silent(opDeleteBodies(context, id + "deleteSketch", {
+            "entities" : qCreatedBy(id + "Sketch", EntityType.BODY)
+    }));
+    return qCreatedBy(id + "Extrude", EntityType.BODY);
+}
+
+// Parse the compact absolute path notation emitted by gfty-label. Only M, L,
+// C, and Z are accepted, and every command must be explicit.
+function addPathToSketch(sketch is Sketch, prefix is string, pathData is string,
+                         unitScale is ValueWithUnits, faultyParameter is string)
+{
+    const tokens = splitByRegexp(pathData, "[,\\t\\n\\r ]+");
+    var tokenIndex = 0;
+    var contourIndex = -1;
+    var segmentIndex = 0;
+    var current;
+    var startPoint;
+    var hasOpenContour = false;
+
+    while (tokenIndex < size(tokens))
+    {
+        const command = tokens[tokenIndex];
+        tokenIndex += 1;
+        if (command == "M")
+        {
+            if (hasOpenContour)
+                throw regenError("Path contour is missing Z before the next M.", [faultyParameter]);
+            const parsed = pathPoint(tokens, tokenIndex, unitScale, "move point", faultyParameter);
+            tokenIndex = parsed.next;
+            current = parsed.point;
+            startPoint = parsed.point;
+            contourIndex += 1;
+            segmentIndex = 0;
+            hasOpenContour = true;
+        }
+        else if (command == "L")
+        {
+            if (!hasOpenContour)
+                throw regenError("Path L command must follow M.", [faultyParameter]);
+            const parsed = pathPoint(tokens, tokenIndex, unitScale, "line end", faultyParameter);
+            tokenIndex = parsed.next;
+            if (!tolerantEquals(current, parsed.point))
+                skLineSegment(sketch, prefix ~ "c" ~ contourIndex ~ "_" ~ segmentIndex,
+                              { "start" : current, "end" : parsed.point });
+            current = parsed.point;
+            segmentIndex += 1;
+        }
+        else if (command == "C")
+        {
+            if (!hasOpenContour)
+                throw regenError("Path C command must follow M.", [faultyParameter]);
+            const first = pathPoint(tokens, tokenIndex, unitScale, "Bezier control 1", faultyParameter);
+            const second = pathPoint(tokens, first.next, unitScale, "Bezier control 2", faultyParameter);
+            const end = pathPoint(tokens, second.next, unitScale, "Bezier end", faultyParameter);
+            tokenIndex = end.next;
+            skBezier(sketch, prefix ~ "c" ~ contourIndex ~ "_" ~ segmentIndex,
+                     { "points" : [current, first.point, second.point, end.point] });
+            current = end.point;
+            segmentIndex += 1;
+        }
+        else if (command == "Z")
+        {
+            if (!hasOpenContour)
+                throw regenError("Path Z command must follow M.", [faultyParameter]);
+            if (!tolerantEquals(current, startPoint))
+                skLineSegment(sketch, prefix ~ "close" ~ contourIndex,
+                              { "start" : current, "end" : startPoint });
+            hasOpenContour = false;
+        }
+        else
+            throw regenError("Unsupported path token \"" ~ command ~ "\". Expected M, L, C, or Z.",
+                             [faultyParameter]);
+    }
+
+    if (hasOpenContour)
+        throw regenError("Path contour is missing its closing Z.", [faultyParameter]);
+    if (contourIndex < 0)
+        throw regenError("Shape path contains no contours.", [faultyParameter]);
+}
+
+function pathPoint(tokens is array, index is number, unitScale is ValueWithUnits,
+                   label is string, faultyParameter is string) returns map
+{
+    if (index + 1 >= size(tokens))
+        throw regenError("Path is missing coordinates for " ~ label ~ ".", [faultyParameter]);
+    var x;
+    var y;
+    try
+    {
+        x = stringToNumber(tokens[index]);
+        y = stringToNumber(tokens[index + 1]);
+    }
+    catch
+    {
+        throw regenError("Path has an invalid number for " ~ label ~ ".", [faultyParameter]);
+    }
+    return { "point" : vector(x, y) * unitScale, "next" : index + 2 };
+}
+
+// Kept for compatibility with early structured-contour shapes nested inside a
+// version 2 document.
+function addContoursToSketch(sketch is Sketch, prefix is string, contours is array,
+                             unitScale is ValueWithUnits, faultyParameter is string)
+{
+    for (var contourIndex = 0; contourIndex < size(contours); contourIndex += 1)
+    {
+        const contour = contours[contourIndex];
+        if (!(contour is map) || !(contour.segments is array))
+            throw regenError("Every contour needs a segments array.", [faultyParameter]);
+        const startPoint = pointFromLabelJson(contour.start, unitScale, "contour start", faultyParameter);
+        var current = startPoint;
+        for (var segmentIndex = 0; segmentIndex < size(contour.segments); segmentIndex += 1)
+        {
+            const segment = contour.segments[segmentIndex];
+            if (!(segment is map) || !(segment["type"] is string))
+                throw regenError("Every segment needs a string type.", [faultyParameter]);
+            const segmentId = prefix ~ "c" ~ contourIndex ~ "_" ~ segmentIndex;
+            if (segment["type"] == "L")
+            {
+                const endPoint = pointFromLabelJson(segment.to, unitScale, "line end", faultyParameter);
+                if (!tolerantEquals(current, endPoint))
+                    skLineSegment(sketch, segmentId, { "start" : current, "end" : endPoint });
+                current = endPoint;
+            }
+            else if (segment["type"] == "C")
+            {
+                const c1 = pointFromLabelJson(segment.c1, unitScale, "Bezier control 1", faultyParameter);
+                const c2 = pointFromLabelJson(segment.c2, unitScale, "Bezier control 2", faultyParameter);
+                const endPoint = pointFromLabelJson(segment.to, unitScale, "Bezier end", faultyParameter);
+                skBezier(sketch, segmentId, { "points" : [current, c1, c2, endPoint] });
+                current = endPoint;
+            }
+            else
+                throw regenError("Unsupported segment type \"" ~ segment["type"] ~ "\".",
+                                 [faultyParameter]);
+        }
+        if (!tolerantEquals(current, startPoint))
+            skLineSegment(sketch, prefix ~ "close" ~ contourIndex,
+                          { "start" : current, "end" : startPoint });
+    }
+}
+
+function pointFromLabelJson(value, unitScale is ValueWithUnits, label is string,
+                            faultyParameter is string) returns Vector
+{
+    validatePoint(value, label, faultyParameter);
+    return vector(value[0], value[1]) * unitScale;
+}
+
+function filamentNameWidth(filaments is array) returns number
+{
+    return length(toString(filaments[size(filaments) - 1]));
+}
+
+function padNumber(value is number, width is number) returns string
+{
+    var result = toString(value);
+    while (length(result) < width)
+        result = "0" ~ result;
+    return result;
 }

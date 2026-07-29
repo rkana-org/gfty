@@ -1,11 +1,11 @@
-use std::{collections::BTreeMap, path::Path};
+use std::path::Path;
 
 use anyhow::{Context, Result, bail};
 use xmltree::{Element, EmitterConfig, XMLNode};
 
 use crate::{
     compose::RenderedLabel,
-    export::{ExportDocument, Part, Segment, Shape},
+    export::{EXPORT_VERSION, ExportDocument, LabelInstance},
 };
 
 pub struct PlateOutput {
@@ -156,48 +156,24 @@ fn grid_layout(
 }
 
 fn combine_documents(rendered: &[RenderedLabel], layout: &GridLayout) -> Result<ExportDocument> {
-    let mut by_filament = BTreeMap::<u32, Vec<Shape>>::new();
+    let mut filaments = std::collections::BTreeSet::new();
+    let mut labels = Vec::<LabelInstance>::with_capacity(rendered.len());
     for (index, (label, center)) in rendered.iter().zip(&layout.centers).enumerate() {
         let document = crate::export::export_rendered(label)
             .with_context(|| format!("failed to export plate label at index {index}"))?;
-        for part in document.parts {
-            let shapes = by_filament.entry(part.filament).or_default();
-            for mut shape in part.shapes {
-                translate_shape(&mut shape, *center);
-                shapes.push(shape);
-            }
-        }
+        let [mut instance] = <[_; 1]>::try_from(document.labels).map_err(|_| {
+            anyhow::anyhow!("individual label export did not contain exactly one label")
+        })?;
+        instance.center = *center;
+        filaments.extend(document.filaments);
+        labels.push(instance);
     }
-    let parts = by_filament
-        .into_iter()
-        .map(|(filament, shapes)| Part { filament, shapes })
-        .collect();
     Ok(ExportDocument {
+        version: EXPORT_VERSION,
         size: layout.size,
-        parts,
-        instances: layout.centers.clone(),
+        filaments: filaments.into_iter().collect(),
+        labels,
     })
-}
-
-fn translate_shape(shape: &mut Shape, offset: [f64; 2]) {
-    for contour in &mut shape.contours {
-        translate_point(&mut contour.start, offset);
-        for segment in &mut contour.segments {
-            match segment {
-                Segment::Line { to } => translate_point(to, offset),
-                Segment::Cubic { c1, c2, to } => {
-                    translate_point(c1, offset);
-                    translate_point(c2, offset);
-                    translate_point(to, offset);
-                }
-            }
-        }
-    }
-}
-
-fn translate_point(point: &mut [f64; 2], offset: [f64; 2]) {
-    point[0] += offset[0];
-    point[1] += offset[1];
 }
 
 fn combine_svgs(
@@ -281,7 +257,6 @@ fn same_size(left: [f64; 2], right: [f64; 2]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::export::{Contour, Segment};
 
     #[test]
     fn computes_capacity_from_maximum_dimensions() {
@@ -302,27 +277,28 @@ mod tests {
     }
 
     #[test]
-    fn translates_all_contour_points() {
-        let mut shape = Shape {
-            contours: vec![Contour {
-                start: [0.0, 0.0],
-                closed: true,
-                segments: vec![Segment::Cubic {
-                    c1: [1.0, 1.0],
-                    c2: [2.0, 2.0],
-                    to: [3.0, 3.0],
-                }],
-            }],
-        };
-        translate_shape(&mut shape, [10.0, -5.0]);
-        assert_eq!(shape.contours[0].start, [10.0, -5.0]);
-        match &shape.contours[0].segments[0] {
-            Segment::Cubic { c1, c2, to } => {
-                assert_eq!(*c1, [11.0, -4.0]);
-                assert_eq!(*c2, [12.0, -3.0]);
-                assert_eq!(*to, [13.0, -2.0]);
-            }
-            Segment::Line { .. } => panic!("expected cubic"),
-        }
+    fn combines_local_label_documents_with_centers_and_filaments() {
+        let rendered = [
+            RenderedLabel {
+                svg: r##"<svg xmlns="http://www.w3.org/2000/svg" width="10" height="5"><path fill="#000000" d="M0 0H10V5H0Z"/></svg>"##.to_owned(),
+                palette: crate::color::PreviewPalette::new([0, 2]).unwrap(),
+                size_mm: [10.0, 5.0],
+            },
+            RenderedLabel {
+                svg: r##"<svg xmlns="http://www.w3.org/2000/svg" width="10" height="5"><path fill="#00a000" d="M0 0H10V5H0Z"/></svg>"##.to_owned(),
+                palette: crate::color::PreviewPalette::new([0, 2]).unwrap(),
+                size_mm: [10.0, 5.0],
+            },
+        ];
+        let layout = grid_layout(2, 2, [10.0, 5.0], 2.0, 1.0);
+        let document = combine_documents(&rendered, &layout).unwrap();
+        assert_eq!(document.version, 2);
+        assert_eq!(document.size, [22.0, 5.0]);
+        assert_eq!(document.filaments, [0, 2]);
+        assert_eq!(document.labels.len(), 2);
+        assert_eq!(document.labels[0].center, [-6.0, 0.0]);
+        assert_eq!(document.labels[1].center, [6.0, 0.0]);
+        assert_eq!(document.labels[0].parts[0].filament, 0);
+        assert_eq!(document.labels[1].parts[0].filament, 2);
     }
 }

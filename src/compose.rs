@@ -479,7 +479,7 @@ mod tests {
 
         let rendered = render_label(&label, false).unwrap();
         let exported = crate::export::export_rendered(&rendered).unwrap();
-        let contour = &exported.parts[0].shapes[0].contours[0];
+        let contour = &exported.labels[0].parts[0].shapes[0].contours[0];
         let mut points = vec![contour.start];
         for segment in &contour.segments {
             match segment {

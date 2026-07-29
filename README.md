@@ -73,8 +73,8 @@ rotation. The tool fits as many columns as possible within the maximum width,
 then verifies that all required rows fit the maximum height. The final incomplete
 row is left-aligned. Column and row gaps default to `5mm`; override them with
 `--column-gap` and `--row-gap`. Every label must have exactly the same physical
-viewport dimensions. Geometry is translated into plate coordinates and merged
-by filament ID; `instances` records the corresponding label centers.
+viewport dimensions. Version 2 JSON keeps each label's local geometry together
+with its center so the combined Onshape feature can instantiate and merge it.
 
 `watch` performs an initial build, then watches the label TOML, its template,
 icons, sidecars, and project fonts. Failed rebuilds are reported without
@@ -172,38 +172,58 @@ integers.
 
 ```json
 {
+  "version": 2,
   "size": [42.0, 21.0],
-  "parts": [
+  "filaments": [0],
+  "labels": [
     {
-      "filament": 0,
-      "shapes": [
+      "center": [0.0, 0.0],
+      "size": [42.0, 21.0],
+      "parts": [
         {
-          "path": "M -21 10.5 L 21 10.5 L 21 -10.5 L -21 -10.5 Z"
+          "filament": 0,
+          "shapes": [
+            {
+              "path": "M -21 10.5 L 21 10.5 L 21 -10.5 L -21 -10.5 Z"
+            }
+          ]
         }
       ]
     }
-  ],
-  "instances": [[0.0, 0.0]]
+  ]
 }
 ```
 
 Each shape corresponds to one filled rendered path. The compact path notation
 uses absolute `M`, `L`, and `C` commands plus `Z`; it is intentionally not the
-full SVG path grammar. The single-label exporter places one instance at the
-origin. The `plate` command emits the full plate size, flattened placed geometry,
-and one center point per label.
+full SVG path grammar. Geometry in each `labels` entry remains centered and
+local; `center` places that label in the overall rectangular `size`. `filaments`
+is sorted numerically in priority order.
 
-## Onshape FeatureScripts
+## Onshape FeatureScript
 
-`featurescript/gfty_label_importer.fs` consumes exported JSON and builds one
-solid named `part-<filament>` per filament. Filament numbers are zero-padded to
-the width of the largest index. Each solid receives a full-viewport, 1 mm helper
-plate behind the artwork so disconnected islands remain one STEP part. JSON may
-be pasted or read from a Part Studio string variable.
+Only `featurescript/gfty_label_instances.fs` is needed for the current workflow.
+Paste the complete version 2 JSON (or read it from a Part Studio string variable),
+then select:
 
-`featurescript/gfty_label_instances.fs` patterns a selected set of prototype
-filament parts to the center points in `instances`, without rotation. The
-prototype must be centered at the selected layout plane origin. An `[0, 0]`
-instance keeps the prototype; if no origin instance exists, the prototype is
-deleted after copies are made. This feature also supports pasted JSON or a
-Part Studio string variable.
+1. One finished blank prototype label solid.
+2. A mate connector centered on its top artwork surface, with +Z pointing out.
+3. A mate connector anywhere on its parallel bottom surface.
+
+The feature copies the prototype once per label and filament, places each
+label's artwork on the top connector plane, and unions artwork into its matching
+filament copy. All filament copies overlap intentionally. For multiple labels,
+each filament receives an identical 1 mm-thick rectangular connector plate at
+the bottom plane spanning the complete top-level `size`, including gaps. This
+joins every label into one part per filament. Offset the print down by 1 mm in
+the slicer so this sacrificial plate is not printed. A single label does not get
+a connector plate.
+
+Parts are named `part-<filament>` and zero-padded to the width of the largest
+filament ID, for example `part-00`, `part-02`, and `part-10`. This preserves
+OrcaSlicer's lexicographic overlap precedence: lower filament IDs come first and
+have higher priority. The original selected prototype is deleted after copies
+are generated.
+
+`featurescript/gfty_label_importer.fs` is retained only for legacy version 1
+JSON and is not part of the current workflow.

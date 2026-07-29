@@ -6,11 +6,23 @@ use usvg::{Node, Paint, tiny_skia_path::PathSegment};
 
 use crate::{color::PreviewPalette, compose::RenderedLabel};
 
+pub const EXPORT_VERSION: u32 = 2;
+
 #[derive(Debug, Serialize)]
 pub struct ExportDocument {
+    pub version: u32,
+    /// Overall rectangular layout size, including gaps between labels.
+    pub size: [f64; 2],
+    /// Numeric order is also the intended lexicographic part-name priority.
+    pub filaments: Vec<u32>,
+    pub labels: Vec<LabelInstance>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct LabelInstance {
+    pub center: [f64; 2],
     pub size: [f64; 2],
     pub parts: Vec<Part>,
-    pub instances: Vec<[f64; 2]>,
 }
 
 #[derive(Debug, Serialize)]
@@ -113,14 +125,20 @@ pub fn export_rendered(rendered: &RenderedLabel) -> Result<ExportDocument> {
     if by_filament.is_empty() {
         bail!("rendered label contains no filled geometry to export");
     }
-    let parts = by_filament
+    let parts: Vec<_> = by_filament
         .into_iter()
         .map(|(filament, shapes)| Part { filament, shapes })
         .collect();
+    let filaments = parts.iter().map(|part| part.filament).collect();
     Ok(ExportDocument {
+        version: EXPORT_VERSION,
         size: rendered.size_mm,
-        parts,
-        instances: vec![[0.0, 0.0]],
+        filaments,
+        labels: vec![LabelInstance {
+            center: [0.0, 0.0],
+            size: rendered.size_mm,
+            parts,
+        }],
     })
 }
 
@@ -277,17 +295,19 @@ mod tests {
             size_mm: [25.4, 12.7],
         };
         let output = export_rendered(&rendered).unwrap();
-        assert_eq!(output.parts.len(), 1);
-        assert_eq!(output.parts[0].filament, 3);
-        let contour = &output.parts[0].shapes[0].contours[0];
+        assert_eq!(output.version, 2);
+        assert_eq!(output.filaments, [3]);
+        assert_eq!(output.labels.len(), 1);
+        assert_eq!(output.labels[0].parts[0].filament, 3);
+        let contour = &output.labels[0].parts[0].shapes[0].contours[0];
         assert_eq!(contour.start, [-12.7, 6.35]);
         match contour.segments[0] {
             Segment::Line { to } => assert_eq!(to, [12.7, 6.35]),
             _ => panic!("expected line"),
         }
-        assert_eq!(output.instances, vec![[0.0, 0.0]]);
+        assert_eq!(output.labels[0].center, [0.0, 0.0]);
         let json = serde_json::to_value(&output).unwrap();
-        let shape = &json["parts"][0]["shapes"][0];
+        let shape = &json["labels"][0]["parts"][0]["shapes"][0];
         assert!(shape.get("contours").is_none());
         assert_eq!(shape["path"], "M -12.7 6.35 L 12.7 6.35 L 12.7 -6.35 Z");
     }
@@ -301,7 +321,7 @@ mod tests {
         };
 
         let output = export_rendered(&rendered).unwrap();
-        let contour = &output.parts[0].shapes[0].contours[0];
+        let contour = &output.labels[0].parts[0].shapes[0].contours[0];
         assert_point_close(contour.start, [-6.6, 2.6]);
         let Segment::Line { to } = contour.segments[0] else {
             panic!("expected line");

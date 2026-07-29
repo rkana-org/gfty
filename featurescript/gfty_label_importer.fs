@@ -1,4 +1,6 @@
 FeatureScript 2752;
+// Legacy version 1 importer. New workspaces should use
+// gfty_label_instances.fs with version 2 JSON and a prototype label part.
 import(path : "onshape/std/geometry.fs", version : "2752.0");
 
 export const GFTY_LABEL_LENGTH_BOUNDS = {
