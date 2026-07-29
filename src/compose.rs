@@ -1,4 +1,7 @@
-use std::{collections::BTreeSet, fs};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    fs,
+};
 
 use anyhow::{Context, Result};
 use xmltree::{Element, EmitterConfig, XMLNode};
@@ -65,14 +68,11 @@ pub fn render_label_with_palette(
         crate::color::recolor_svg(&source, &template_colors.source_to_filament, &palette);
     let mut root = Element::parse(recolored_template.as_bytes()).context("invalid template XML")?;
 
-    compose_text_and_remove_boxes(&mut root, label, &palette)
+    apply_text_fields(&mut root, label, &palette)
         .with_context(|| format!("failed to compose template {}", template_path.display()))?;
-    root.children.extend(
-        compose_icons(label, system_fonts, &palette)
-            .with_context(|| format!("failed to compose icons for {}", label.path.display()))?
-            .into_iter()
-            .map(XMLNode::Element),
-    );
+    let mut icons = compose_icons(label, system_fonts, &palette)
+        .with_context(|| format!("failed to compose icons for {}", label.path.display()))?;
+    replace_icon_boxes(&mut root, &mut icons);
     let composed = serialize_element(&root).context("failed to serialize composed label")?;
 
     let svg = crate::svg::normalize_svg(
@@ -136,17 +136,18 @@ fn compose_icons(
     label: &LoadedLabel,
     system_fonts: bool,
     palette: &crate::color::PreviewPalette,
-) -> Result<Vec<Element>> {
+) -> Result<BTreeMap<String, Vec<Element>>> {
     let template = TemplateInfo::load(&label.template_path()).with_context(|| {
         format!(
             "failed to load template {}",
             label.template_path().display()
         )
     })?;
-    let mut result = Vec::new();
+    let mut result = BTreeMap::new();
     let mut instance_index = 0usize;
 
     for (box_name, entries) in &label.config.icons {
+        let mut box_result = Vec::new();
         let icon_box = template
             .icon_boxes
             .get(box_name)
@@ -245,33 +246,70 @@ fn compose_icons(
                 format!("0 0 {normalized_width} {normalized_height}"),
             );
             nested_svg.children.push(XMLNode::Element(group));
-            result.push(nested_svg);
+            box_result.push(nested_svg);
             instance_index += 1;
         }
+        result.insert(box_name.clone(), box_result);
     }
     Ok(result)
 }
 
-fn compose_text_and_remove_boxes(
-    root: &mut Element,
-    label: &LoadedLabel,
-    palette: &crate::color::PreviewPalette,
-) -> Result<()> {
-    remove_icon_boxes(root);
-    apply_text_fields(root, label, palette)
+/// Replace icon-box rectangles in place so their ancestor transforms remain in
+/// effect. A transform on the rectangle itself is transferred to a wrapper;
+/// final viewport scaling and affine flattening are left to usvg.
+fn replace_icon_boxes(element: &mut Element, replacements: &mut BTreeMap<String, Vec<Element>>) {
+    let mut children = Vec::with_capacity(element.children.len());
+    for node in std::mem::take(&mut element.children) {
+        let XMLNode::Element(mut child) = node else {
+            children.push(node);
+            continue;
+        };
+        let box_name = child
+            .attributes
+            .get("id")
+            .and_then(|id| id.strip_prefix("icons-"))
+            .map(str::to_owned);
+        if let Some(box_name) = box_name {
+            if let Some(replacement) = replacements.remove(&box_name)
+                && !replacement.is_empty()
+            {
+                let mut group = svg_element("g", child.namespace.clone());
+                for attribute in ["transform", "transform-origin", "transform-box"] {
+                    if let Some(value) = child.attributes.get(attribute) {
+                        group
+                            .attributes
+                            .insert(attribute.to_owned(), value.to_owned());
+                    }
+                }
+                if let Some(style) = child.attributes.get("style")
+                    && let Some(style) = transform_style(style)
+                {
+                    group.attributes.insert("style".to_owned(), style);
+                }
+                group.children = replacement.into_iter().map(XMLNode::Element).collect();
+                children.push(XMLNode::Element(group));
+            }
+            continue;
+        }
+        replace_icon_boxes(&mut child, replacements);
+        children.push(XMLNode::Element(child));
+    }
+    element.children = children;
 }
 
-fn remove_icon_boxes(element: &mut Element) {
-    element.children.retain(|node| {
-        node.as_element()
-            .and_then(|child| child.attributes.get("id"))
-            .is_none_or(|id| !id.starts_with("icons-"))
-    });
-    for child in &mut element.children {
-        if let Some(child) = child.as_mut_element() {
-            remove_icon_boxes(child);
-        }
-    }
+fn transform_style(style: &str) -> Option<String> {
+    let declarations = style
+        .split(';')
+        .filter_map(|declaration| {
+            let (name, _) = declaration.split_once(':')?;
+            matches!(
+                name.trim(),
+                "transform" | "transform-origin" | "transform-box"
+            )
+            .then(|| declaration.trim())
+        })
+        .collect::<Vec<_>>();
+    (!declarations.is_empty()).then(|| declarations.join(";"))
 }
 
 fn apply_text_fields(
@@ -370,7 +408,7 @@ mod tests {
     use std::{collections::BTreeMap, path::PathBuf};
 
     use super::*;
-    use crate::config::{LabelConfig, TextValue};
+    use crate::config::{IconPlacement, LabelConfig, TextValue};
 
     fn label_with_text(content: &str) -> LoadedLabel {
         LoadedLabel {
@@ -398,13 +436,76 @@ mod tests {
         )
         .unwrap();
         let palette = crate::color::PreviewPalette::new([0, 1]).unwrap();
-        compose_text_and_remove_boxes(&mut root, &label_with_text(r#"A{\<&\>}B"#), &palette)
-            .unwrap();
+        apply_text_fields(&mut root, &label_with_text(r#"A{\<&\>}B"#), &palette).unwrap();
+        replace_icon_boxes(&mut root, &mut BTreeMap::new());
         let output = serialize_element(&root).unwrap();
 
         assert!(!output.contains("icons-main"));
         assert!(output.contains("fill=\"#0000ff\""));
         assert!(output.contains("&lt;&amp;&gt;"));
         roxmltree::Document::parse(&output).unwrap();
+    }
+
+    #[test]
+    fn transformed_icon_boxes_export_at_their_transformed_position() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
+        fs::create_dir_all(root.join("templates")).unwrap();
+        fs::create_dir_all(root.join("icons")).unwrap();
+        fs::write(
+            root.join("templates/label.svg"),
+            r#"<svg xmlns="http://www.w3.org/2000/svg" width="100mm" height="100mm" viewBox="0 0 100 100"><g transform="translate(20 30)"><rect id="icons-main" x="0" y="0" width="10" height="10" transform="scale(2)" fill="none"/></g></svg>"#,
+        )
+        .unwrap();
+        fs::write(
+            root.join("icons/square.svg"),
+            r##"<svg xmlns="http://www.w3.org/2000/svg" width="10mm" height="10mm" viewBox="0 0 10 10"><g transform="translate(1 1) scale(.8)"><path fill="#000000" d="M0 0H10V10H0Z"/></g></svg>"##,
+        )
+        .unwrap();
+        let label = LoadedLabel::from_config(
+            LabelConfig {
+                template: "label.svg".to_owned(),
+                text: BTreeMap::new(),
+                icon: BTreeMap::new(),
+                icons: BTreeMap::from([(
+                    "main".to_owned(),
+                    vec![IconPlacement::Icon {
+                        icon: "icons/square.svg".to_owned(),
+                    }],
+                )]),
+            },
+            root.to_owned(),
+        );
+
+        let rendered = render_label(&label, false).unwrap();
+        let exported = crate::export::export_rendered(&rendered).unwrap();
+        let contour = &exported.parts[0].shapes[0].contours[0];
+        let mut points = vec![contour.start];
+        for segment in &contour.segments {
+            match segment {
+                crate::export::Segment::Line { to } => points.push(*to),
+                crate::export::Segment::Cubic { c1, c2, to } => {
+                    points.extend([*c1, *c2, *to]);
+                }
+            }
+        }
+        let bounds = points.iter().fold(
+            [
+                f64::INFINITY,
+                f64::INFINITY,
+                f64::NEG_INFINITY,
+                f64::NEG_INFINITY,
+            ],
+            |mut bounds, point| {
+                bounds[0] = bounds[0].min(point[0]);
+                bounds[1] = bounds[1].min(point[1]);
+                bounds[2] = bounds[2].max(point[0]);
+                bounds[3] = bounds[3].max(point[1]);
+                bounds
+            },
+        );
+        for (actual, expected) in bounds.into_iter().zip([-28.0, 2.0, -12.0, 18.0]) {
+            assert!((actual - expected).abs() < 1e-5, "{bounds:?}");
+        }
     }
 }

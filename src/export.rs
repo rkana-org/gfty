@@ -152,12 +152,16 @@ fn collect_group(
                             color.red, color.green, color.blue
                         )
                     })?;
-                let contours = convert_path(
-                    path.data().segments(),
-                    path.abs_transform(),
-                    canvas,
-                    size_mm,
-                );
+                // usvg has already resolved the complete SVG transform stack,
+                // including viewports and all ancestor transforms. Let
+                // tiny-skia apply that matrix before converting coordinates to
+                // centered physical millimeters.
+                let transformed = path
+                    .data()
+                    .clone()
+                    .transform(path.abs_transform())
+                    .context("failed to apply resolved SVG path transform")?;
+                let contours = convert_path(transformed.segments(), canvas, size_mm);
                 if !contours.is_empty() {
                     result.entry(filament).or_default().push(Shape { contours });
                 }
@@ -173,7 +177,6 @@ fn collect_group(
 
 fn convert_path(
     segments: impl Iterator<Item = PathSegment>,
-    transform: usvg::Transform,
     canvas: [f64; 2],
     size_mm: [f64; 2],
 ) -> Vec<Contour> {
@@ -199,7 +202,7 @@ fn convert_path(
                 current = Some(point);
                 subpath_start = Some(point);
                 current_contour = Some(Contour {
-                    start: map_point(point, transform, canvas, size_mm),
+                    start: map_point(point, canvas, size_mm),
                     closed: false,
                     segments: Vec::new(),
                 });
@@ -207,7 +210,7 @@ fn convert_path(
             PathSegment::LineTo(to) => {
                 if let Some(contour) = &mut current_contour {
                     contour.segments.push(Segment::Line {
-                        to: map_point(to, transform, canvas, size_mm),
+                        to: map_point(to, canvas, size_mm),
                     });
                 }
                 current = Some(to);
@@ -223,9 +226,9 @@ fn convert_path(
                         to.y + (control.y - to.y) * 2.0 / 3.0,
                     );
                     contour.segments.push(Segment::Cubic {
-                        c1: map_point(c1, transform, canvas, size_mm),
-                        c2: map_point(c2, transform, canvas, size_mm),
-                        to: map_point(to, transform, canvas, size_mm),
+                        c1: map_point(c1, canvas, size_mm),
+                        c2: map_point(c2, canvas, size_mm),
+                        to: map_point(to, canvas, size_mm),
                     });
                 }
                 current = Some(to);
@@ -233,9 +236,9 @@ fn convert_path(
             PathSegment::CubicTo(c1, c2, to) => {
                 if let Some(contour) = &mut current_contour {
                     contour.segments.push(Segment::Cubic {
-                        c1: map_point(c1, transform, canvas, size_mm),
-                        c2: map_point(c2, transform, canvas, size_mm),
-                        to: map_point(to, transform, canvas, size_mm),
+                        c1: map_point(c1, canvas, size_mm),
+                        c2: map_point(c2, canvas, size_mm),
+                        to: map_point(to, canvas, size_mm),
                     });
                 }
                 current = Some(to);
@@ -252,13 +255,7 @@ fn convert_path(
     contours
 }
 
-fn map_point(
-    mut point: usvg::tiny_skia_path::Point,
-    transform: usvg::Transform,
-    canvas: [f64; 2],
-    size_mm: [f64; 2],
-) -> [f64; 2] {
-    transform.map_point(&mut point);
+fn map_point(point: usvg::tiny_skia_path::Point, canvas: [f64; 2], size_mm: [f64; 2]) -> [f64; 2] {
     let x = point.x as f64 / canvas[0] * size_mm[0] - size_mm[0] / 2.0;
     let y = size_mm[1] / 2.0 - point.y as f64 / canvas[1] * size_mm[1];
     [clean_zero(x), clean_zero(y)]
@@ -293,5 +290,31 @@ mod tests {
         let shape = &json["parts"][0]["shapes"][0];
         assert!(shape.get("contours").is_none());
         assert_eq!(shape["path"], "M -12.7 6.35 L 12.7 6.35 L 12.7 -6.35 Z");
+    }
+
+    #[test]
+    fn applies_viewbox_and_nested_affine_transforms_via_usvg() {
+        let rendered = RenderedLabel {
+            svg: r##"<svg xmlns="http://www.w3.org/2000/svg" width="200" height="100" viewBox="0 0 100 50"><g transform="translate(20 10)"><g transform="rotate(90)"><g transform="scale(2 3)"><path fill="#ff0000" d="M1 1 L3 1 L3 2 Z"/></g></g></g></svg>"##.to_owned(),
+            palette: PreviewPalette::new([3]).unwrap(),
+            size_mm: [20.0, 10.0],
+        };
+
+        let output = export_rendered(&rendered).unwrap();
+        let contour = &output.parts[0].shapes[0].contours[0];
+        assert_point_close(contour.start, [-6.6, 2.6]);
+        let Segment::Line { to } = contour.segments[0] else {
+            panic!("expected line");
+        };
+        assert_point_close(to, [-6.6, 1.8]);
+        let Segment::Line { to } = contour.segments[1] else {
+            panic!("expected line");
+        };
+        assert_point_close(to, [-7.2, 1.8]);
+    }
+
+    fn assert_point_close(actual: [f64; 2], expected: [f64; 2]) {
+        assert!((actual[0] - expected[0]).abs() < 1e-6, "{actual:?}");
+        assert!((actual[1] - expected[1]).abs() < 1e-6, "{actual:?}");
     }
 }

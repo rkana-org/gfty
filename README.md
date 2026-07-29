@@ -89,7 +89,8 @@ gfty-label watch labels/m3.toml --svg preview.svg --json label.json
 Templates need physical `width`/`height`, a `viewBox`, unique `<text>` elements
 named `text-*`, and unique icon-box `<rect>` elements named `icons-*`. TOML uses
 the suffix only (`text-main` becomes `text.main`). The viewport center is the
-label origin.
+label origin. Template, icon-box, and icon transforms are preserved through
+composition and resolved by `usvg` before JSON coordinates are exported.
 
 ```toml
 template = "label-1x1.svg"
