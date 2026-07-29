@@ -175,16 +175,19 @@ function buildFilamentPart(context is Context, id is Id, sketchPlane is Plane, n
 
     const plate = buildHelperPlate(context, id + "plate", sketchPlane, normal,
                                    labelSize, definition.unitScale);
-    const unionId = id + "union";
-    opBoolean(context, unionId, {
-            "tools" : qUnion([plate, qUnion(artworkBodies)]),
-            "operationType" : BooleanOperationType.UNION
-    });
-    const result = qCreatedBy(unionId, EntityType.BODY);
+
+    // A union preserves the identity, name, and appearance of the earliest
+    // tool rather than creating a body owned by the boolean operation. Name
+    // the plate first and put it first in the query so the merged result keeps
+    // the deterministic filament name.
     setProperty(context, {
-            "entities" : result,
+            "entities" : plate,
             "propertyType" : PropertyType.NAME,
             "value" : "part-" ~ padNumber(part.filament, nameWidth)
+    });
+    opBoolean(context, id + "union", {
+            "tools" : qUnion([plate, qUnion(artworkBodies)]),
+            "operationType" : BooleanOperationType.UNION
     });
 }
 
