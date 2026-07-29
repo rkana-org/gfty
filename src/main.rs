@@ -235,31 +235,51 @@ fn preview_entries(
     if !options.enabled() || !std::io::stdout().is_terminal() {
         return;
     }
+    let mut preview = match terminal_preview::PreviewSession::new(options) {
+        Ok(preview) => preview,
+        Err(error) => {
+            eprintln!("Failed to initialize terminal previews: {error:#}");
+            return;
+        }
+    };
+    let svg_parser = match kind {
+        EntryKind::Svg => Some(svg::SvgParser::new(&entries.root, system_fonts)),
+        EntryKind::Label => None,
+    };
+
     for value in values {
         let path = entries.root.join(value);
-        let result = match kind {
-            EntryKind::Svg => std::fs::read_to_string(&path)
-                .with_context(|| format!("failed to read SVG {}", path.display()))
-                .and_then(|source| {
-                    svg::normalize_svg(
-                        &source,
-                        path.parent().expect("listed SVG has a parent"),
-                        &entries.root,
-                        system_fonts,
-                    )
-                    .with_context(|| format!("failed to render listed SVG {}", path.display()))
-                }),
-            EntryKind::Label => config::LoadedLabel::load(&path)
-                .with_context(|| format!("failed to load listed label {}", path.display()))
-                .and_then(|label| {
-                    compose::render_label_svg(&label, system_fonts).with_context(|| {
-                        format!("failed to render listed label {}", path.display())
+        match kind {
+            EntryKind::Svg => {
+                let result = std::fs::read_to_string(&path)
+                    .with_context(|| format!("failed to read SVG {}", path.display()))
+                    .and_then(|source| {
+                        svg_parser
+                            .as_ref()
+                            .expect("SVG parser exists for SVG entries")
+                            .parse(&source, path.parent().expect("listed SVG has a parent"))
+                            .with_context(|| {
+                                format!("failed to render listed SVG {}", path.display())
+                            })
                     })
-                }),
-        };
-        match result {
-            Ok(svg) => try_preview(&svg, value, options, false),
-            Err(error) => eprintln!("Preview failed for {value}: {error:#}"),
+                    .and_then(|tree| preview.show_tree(&tree, value, false).map(|_| ()));
+                if let Err(error) = result {
+                    eprintln!("Preview failed for {value}: {error:#}");
+                }
+            }
+            EntryKind::Label => {
+                let result = config::LoadedLabel::load(&path)
+                    .with_context(|| format!("failed to load listed label {}", path.display()))
+                    .and_then(|label| {
+                        compose::render_label_svg(&label, system_fonts).with_context(|| {
+                            format!("failed to render listed label {}", path.display())
+                        })
+                    })
+                    .and_then(|svg| preview.show_svg(&svg, value, false).map(|_| ()));
+                if let Err(error) = result {
+                    eprintln!("Preview failed for {value}: {error:#}");
+                }
+            }
         }
     }
 }

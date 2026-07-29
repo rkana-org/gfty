@@ -21,74 +21,144 @@ impl PreviewOptions {
     }
 }
 
-pub fn show_svg(svg: &str, label: &str, options: PreviewOptions, clear: bool) -> Result<bool> {
-    if !options.enabled() {
-        return Ok(false);
+/// Reuses terminal detection, the controlling terminal, and dimensions across
+/// a batch of previews. This avoids spawning tmux detection and reopening the
+/// terminal once per listed file.
+pub struct PreviewSession {
+    options: PreviewOptions,
+    #[cfg(unix)]
+    unix: Option<UnixPreviewSession>,
+}
+
+impl PreviewSession {
+    pub fn new(options: PreviewOptions) -> Result<Self> {
+        #[cfg(unix)]
+        let unix = if options.enabled() {
+            UnixPreviewSession::new(options)?
+        } else {
+            None
+        };
+        Ok(Self {
+            options,
+            #[cfg(unix)]
+            unix,
+        })
     }
 
-    #[cfg(unix)]
-    {
-        show_svg_unix(svg, label, options, clear)
+    pub fn show_svg(&mut self, svg: &str, label: &str, clear: bool) -> Result<bool> {
+        if !self.options.enabled() {
+            return Ok(false);
+        }
+        let tree = usvg::Tree::from_str(svg, &usvg::Options::default())
+            .context("failed to parse rendered SVG for terminal preview")?;
+        self.show_tree(&tree, label, clear)
     }
-    #[cfg(not(unix))]
-    {
-        let _ = (svg, label, clear);
-        Ok(false)
+
+    pub fn show_tree(&mut self, tree: &usvg::Tree, label: &str, clear: bool) -> Result<bool> {
+        if !self.options.enabled() {
+            return Ok(false);
+        }
+        #[cfg(unix)]
+        {
+            let Some(unix) = &mut self.unix else {
+                return Ok(false);
+            };
+            unix.show_tree(tree, label, self.options, clear)?;
+            Ok(true)
+        }
+        #[cfg(not(unix))]
+        {
+            let _ = (tree, label, clear);
+            Ok(false)
+        }
     }
 }
 
+pub fn show_svg(svg: &str, label: &str, options: PreviewOptions, clear: bool) -> Result<bool> {
+    PreviewSession::new(options)?.show_svg(svg, label, clear)
+}
+
 #[cfg(unix)]
-fn show_svg_unix(svg: &str, label: &str, options: PreviewOptions, clear: bool) -> Result<bool> {
-    use std::{fs::OpenOptions, io::Write};
+struct UnixPreviewSession {
+    terminal: std::fs::File,
+    encoder: RasterEncoder,
+    dimensions: TerminalDimensions,
+    wininfo: Wininfo,
+}
 
-    let environment = EnvIdentifiers::new();
-    let Some(encoder) = select_encoder(options.mode, &environment) else {
-        return Ok(false);
-    };
+#[cfg(unix)]
+impl UnixPreviewSession {
+    fn new(options: PreviewOptions) -> Result<Option<Self>> {
+        use std::fs::OpenOptions;
 
-    let mut terminal = OpenOptions::new()
-        .read(true)
-        .write(true)
-        .open("/dev/tty")
-        .context("failed to open controlling terminal for preview")?;
-    let dimensions = terminal_dimensions(&terminal);
-    let columns = options.width.min(dimensions.columns).max(1);
-    let target_pixel_width = if encoder == RasterEncoder::Ascii {
-        u32::from(columns)
-    } else {
-        u32::from(columns) * dimensions.cell_pixel_width()
-    };
-    let image = rasterize(svg, target_pixel_width)?;
-    let wininfo = dimensions.wininfo(&environment)?;
-
-    if clear {
-        terminal
-            .write_all(b"\x1b[2J\x1b[H")
-            .context("failed to clear terminal preview")?;
-    }
-    writeln!(terminal, "Preview: {label}").context("failed to write terminal preview label")?;
-
-    let rows = preview_rows(&image, encoder, &wininfo)?;
-    let rasteroid_handles_space =
-        wininfo.is_tmux && matches!(encoder, RasterEncoder::Iterm | RasterEncoder::Sixel);
-    if encoder != RasterEncoder::Ascii && !rasteroid_handles_space {
-        ensure_space(&mut terminal, rows).context("failed to reserve terminal preview rows")?;
+        let environment = EnvIdentifiers::new();
+        let Some(encoder) = select_encoder(options.mode, &environment) else {
+            return Ok(None);
+        };
+        let terminal = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open("/dev/tty")
+            .context("failed to open controlling terminal for preview")?;
+        let dimensions = terminal_dimensions(&terminal);
+        let wininfo = dimensions.wininfo(&environment)?;
+        Ok(Some(Self {
+            terminal,
+            encoder,
+            dimensions,
+            wininfo,
+        }))
     }
 
-    encoder
-        .encode_image(&image, &mut terminal, &wininfo, None, None)
-        .with_context(|| format!("failed to write {encoder:?} terminal preview"))?;
+    fn show_tree(
+        &mut self,
+        tree: &usvg::Tree,
+        label: &str,
+        options: PreviewOptions,
+        clear: bool,
+    ) -> Result<()> {
+        use std::io::Write;
 
-    if encoder != RasterEncoder::Ascii {
-        if !rasteroid_handles_space {
-            write!(terminal, "\x1b[{rows}B").context("failed to advance past terminal preview")?;
+        let columns = options.width.min(self.dimensions.columns).max(1);
+        let target_pixel_width = if self.encoder == RasterEncoder::Ascii {
+            u32::from(columns)
+        } else {
+            u32::from(columns) * self.dimensions.cell_pixel_width()
+        };
+        let image = rasterize(tree, target_pixel_width)?;
+
+        if clear {
+            self.terminal
+                .write_all(b"\x1b[2J\x1b[H")
+                .context("failed to clear terminal preview")?;
         }
-        writeln!(terminal).context("failed to finish terminal preview")?;
+        writeln!(self.terminal, "Preview: {label}")
+            .context("failed to write terminal preview label")?;
+
+        let rows = preview_rows(&image, self.encoder, &self.wininfo)?;
+        let rasteroid_handles_space = self.wininfo.is_tmux
+            && matches!(self.encoder, RasterEncoder::Iterm | RasterEncoder::Sixel);
+        if self.encoder != RasterEncoder::Ascii && !rasteroid_handles_space {
+            ensure_space(&mut self.terminal, rows)
+                .context("failed to reserve terminal preview rows")?;
+        }
+
+        self.encoder
+            .encode_image(&image, &mut self.terminal, &self.wininfo, None, None)
+            .with_context(|| format!("failed to write {:?} terminal preview", self.encoder))?;
+
+        if self.encoder != RasterEncoder::Ascii {
+            if !rasteroid_handles_space {
+                write!(self.terminal, "\x1b[{rows}B")
+                    .context("failed to advance past terminal preview")?;
+            }
+            writeln!(self.terminal).context("failed to finish terminal preview")?;
+        }
+        self.terminal
+            .flush()
+            .context("failed to flush terminal preview")?;
+        Ok(())
     }
-    terminal
-        .flush()
-        .context("failed to flush terminal preview")?;
-    Ok(true)
 }
 
 fn select_encoder(
@@ -106,9 +176,7 @@ fn select_encoder(
     }
 }
 
-fn rasterize(svg: &str, requested_width: u32) -> Result<DynamicImage> {
-    let tree = usvg::Tree::from_str(svg, &usvg::Options::default())
-        .context("failed to parse rendered SVG for terminal preview")?;
+fn rasterize(tree: &usvg::Tree, requested_width: u32) -> Result<DynamicImage> {
     let source = tree.size();
     let mut scale = requested_width.max(1) as f32 / source.width();
     let requested_height = (source.height() * scale).ceil();
@@ -121,7 +189,7 @@ fn rasterize(svg: &str, requested_width: u32) -> Result<DynamicImage> {
         .context("terminal preview dimensions are too large")?;
     pixmap.fill(resvg::tiny_skia::Color::from_rgba8(242, 242, 242, 255));
     resvg::render(
-        &tree,
+        tree,
         resvg::tiny_skia::Transform::from_scale(scale, scale),
         &mut pixmap.as_mut(),
     );
@@ -223,11 +291,12 @@ mod tests {
 
     #[test]
     fn rasterizes_path_only_svg_to_an_image() {
-        let image = rasterize(
+        let tree = usvg::Tree::from_str(
             r##"<svg xmlns="http://www.w3.org/2000/svg" width="10" height="5"><path fill="#000" d="M0 0H10V5H0Z"/></svg>"##,
-            20,
+            &usvg::Options::default(),
         )
         .unwrap();
+        let image = rasterize(&tree, 20).unwrap();
         assert_eq!((image.width(), image.height()), (20, 10));
         assert_eq!(image.to_rgba8().get_pixel(0, 0).0, [0, 0, 0, 255]);
     }

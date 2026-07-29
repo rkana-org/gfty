@@ -67,19 +67,20 @@ pub fn render_label_with_palette(
     let recolored_template =
         crate::color::recolor_svg(&source, &template_colors.source_to_filament, &palette);
     let mut root = Element::parse(recolored_template.as_bytes()).context("invalid template XML")?;
+    let svg_parser = crate::svg::SvgParser::new(&label.project_root, system_fonts);
 
     apply_text_fields(&mut root, label, &palette)
         .with_context(|| format!("failed to compose template {}", template_path.display()))?;
-    let mut icons = compose_icons(label, system_fonts, &palette)
+    let mut icons = compose_icons(label, &svg_parser, &palette)
         .with_context(|| format!("failed to compose icons for {}", label.path.display()))?;
     replace_icon_boxes(&mut root, &mut icons);
     let composed = serialize_element(&root).context("failed to serialize composed label")?;
 
-    let svg = crate::svg::normalize_svg(
+    let svg = crate::svg::normalize_svg_with_parser(
         &composed,
         template_path.parent().expect("template has a parent"),
-        &label.project_root,
-        system_fonts,
+        &svg_parser,
+        None,
     )
     .with_context(|| format!("failed to normalize template {}", template_path.display()))?;
     Ok(RenderedLabel {
@@ -134,7 +135,7 @@ fn collect_filaments(
 
 fn compose_icons(
     label: &LoadedLabel,
-    system_fonts: bool,
+    svg_parser: &crate::svg::SvgParser,
     palette: &crate::color::PreviewPalette,
 ) -> Result<BTreeMap<String, Vec<Element>>> {
     let template = TemplateInfo::load(&label.template_path()).with_context(|| {
@@ -193,11 +194,10 @@ fn compose_icons(
                 .color_mapping()
                 .with_context(|| format!("invalid colors for icon {}", resolved.path.display()))?;
             let recolored = crate::color::recolor_svg(&source, &colors.source_to_filament, palette);
-            let normalized = crate::svg::normalize_svg_with_prefix(
+            let normalized = crate::svg::normalize_svg_with_parser(
                 &recolored,
                 resolved.path.parent().expect("icon has a parent"),
-                &label.project_root,
-                system_fonts,
+                svg_parser,
                 Some(format!("icon-{instance_index}-")),
             )
             .with_context(|| format!("failed to normalize icon {}", resolved.path.display()))?;
