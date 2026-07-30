@@ -244,26 +244,52 @@ pub fn discover_colors(svg: &str) -> Result<BTreeSet<String>> {
     for node in document.descendants().filter(|node| node.is_element()) {
         if !matches!(
             node.tag_name().name(),
-            "path" | "rect" | "circle" | "ellipse" | "polygon" | "polyline" | "text"
+            "path" | "rect" | "circle" | "ellipse" | "line" | "polygon" | "polyline" | "text"
         ) {
             continue;
         }
-        let style = parse_style(node.attribute("style").unwrap_or(""));
-        let fill = style
-            .get("fill")
-            .map(String::as_str)
-            .or_else(|| node.attribute("fill"))
-            .unwrap_or("#000000")
-            .trim();
-        if fill.eq_ignore_ascii_case("none") {
-            continue;
+
+        // Fill and stroke are both converted to filled paths by usvg. Resolve
+        // inherited paint here so every color that can reach the exporter is
+        // assigned a filament before normalization.
+        if node.tag_name().name() != "line" {
+            collect_paint(&node, "fill", Some("#000000"), &mut result)?;
         }
-        let color = normalize_hex_color(fill).with_context(|| {
-            format!("unsupported fill {fill:?}; icon/template colors must use hex")
-        })?;
-        result.insert(color);
+        collect_paint(&node, "stroke", None, &mut result)?;
     }
     Ok(result)
+}
+
+fn collect_paint(
+    node: &roxmltree::Node<'_, '_>,
+    property: &str,
+    default: Option<&str>,
+    result: &mut BTreeSet<String>,
+) -> Result<()> {
+    let paint = node
+        .ancestors()
+        .filter(|ancestor| ancestor.is_element())
+        .find_map(|ancestor| {
+            let style = parse_style(ancestor.attribute("style").unwrap_or(""));
+            style
+                .get(property)
+                .cloned()
+                .or_else(|| ancestor.attribute(property).map(str::to_owned))
+                .filter(|value| !value.trim().eq_ignore_ascii_case("inherit"))
+        })
+        .or_else(|| default.map(str::to_owned));
+    let Some(paint) = paint else {
+        return Ok(());
+    };
+    let paint = paint.trim();
+    if paint.eq_ignore_ascii_case("none") {
+        return Ok(());
+    }
+    let color = normalize_hex_color(paint).with_context(|| {
+        format!("unsupported {property} {paint:?}; icon/template colors must use hex")
+    })?;
+    result.insert(color);
+    Ok(())
 }
 
 fn parse_style(style: &str) -> BTreeMap<String, String> {
@@ -292,6 +318,15 @@ mod tests {
         assert_eq!(mapping["000000"], 1);
         assert_eq!(mapping["0000ff"], 2);
         assert_eq!(mapping["ff0000"], 3);
+    }
+
+    #[test]
+    fn discovers_inherited_stroke_colors() {
+        let colors = discover_colors(
+            r##"<svg stroke="#123456"><path fill="none" d="M0 0L1 1"/><line x2="1"/></svg>"##,
+        )
+        .unwrap();
+        assert_eq!(colors, BTreeSet::from(["123456".to_owned()]));
     }
 
     #[test]

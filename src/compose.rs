@@ -205,6 +205,22 @@ fn compose_icons(
                 .color_mapping()
                 .with_context(|| format!("invalid colors for icon {}", resolved.path.display()))?;
             let recolored = crate::color::recolor_svg(&source, &colors.source_to_filament, palette);
+            let inherited_fill = colors
+                .source_to_filament
+                .get("000000")
+                .map(|filament| palette.color(*filament).to_owned())
+                .unwrap_or_else(|| "000000".to_owned());
+            let mut recolored_root =
+                Element::parse(recolored.as_bytes()).context("invalid recolored icon SVG")?;
+            // SVG's initial fill is black. Set that default before usvg resolves
+            // inheritance; setting it on the wrapper after normalization is too
+            // late because usvg has made the black fill explicit on each path.
+            recolored_root
+                .attributes
+                .entry("fill".to_owned())
+                .or_insert_with(|| format!("#{inherited_fill}"));
+            let recolored =
+                serialize_element(&recolored_root).context("failed to serialize recolored icon")?;
             let normalized = crate::svg::normalize_svg_with_parser(
                 &recolored,
                 resolved.path.parent().expect("icon has a parent"),
@@ -226,12 +242,6 @@ fn compose_icons(
                 .context("normalized icon has no height")?
                 .parse()
                 .context("normalized icon height is not numeric")?;
-            let inherited_fill = colors
-                .source_to_filament
-                .get("000000")
-                .map(|filament| palette.color(*filament).to_owned())
-                .unwrap_or_else(|| "000000".to_owned());
-
             let namespace = normalized_root.namespace.clone();
             let mut group = svg_element("g", namespace.clone());
             group
@@ -471,7 +481,7 @@ mod tests {
         .unwrap();
         fs::write(
             root.join("icons/square.svg"),
-            r##"<svg xmlns="http://www.w3.org/2000/svg" width="10mm" height="10mm" viewBox="0 0 10 10"><g transform="translate(1 1) scale(.8)"><path fill="#000000" d="M0 0H10V10H0Z"/></g></svg>"##,
+            r#"<svg xmlns="http://www.w3.org/2000/svg" width="10mm" height="10mm" viewBox="0 0 10 10"><g transform="translate(1 1) scale(.8)"><path d="M0 0H10V10H0Z"/></g></svg>"#,
         )
         .unwrap();
         let label = LoadedLabel::from_config(

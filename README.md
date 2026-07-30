@@ -170,10 +170,12 @@ An icon sidecar is named after its SVG with a `.toml` extension:
 "#ff0000" = 3
 ```
 
-When present, the sidecar must map every source fill color exactly once. Without
-a sidecar, normalized colors are sorted lexicographically and assigned indices
-starting at one, reserving filament 0 for the default prototype. Label-local overrides may be partial; exact hex overrides win
-over numeric resolved-index overrides.
+When present, the sidecar must map every effective fill and stroke color exactly
+once. Inherited paints and SVG's default black fill are included. Without a
+sidecar, normalized colors are sorted lexicographically and assigned indices
+starting at one, reserving filament 0 for the default prototype. Label-local
+overrides may be partial; exact hex overrides win over numeric resolved-index
+overrides.
 
 By default, fonts are loaded from the directories bundled by the Nix package.
 Add repeatable `--font-dir PATH` options for local or Nix-provided fonts, or pass
