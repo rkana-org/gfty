@@ -27,3 +27,14 @@ result/
 
 Each individual label contains `label.svg`, `label.json`, and `label.toml`.
 Each plate contains `plate.svg` and `plate.json`.
+
+Every individual output also exposes an Onshape URL containing both its geometry
+JSON and the corresponding pure-Nix Gridfinity Ultimate configuration:
+
+```sh
+nix eval --raw ./examples#labels.module-example.onshapeUrl
+nix eval --raw ./examples#plates.module-example.onshapeUrl
+```
+
+Evaluating a URL builds the corresponding package so its generated JSON can be
+embedded in the link.

@@ -4,6 +4,33 @@ let
   inherit (flake-parts-lib) mkPerSystemOption;
   inherit (lib) mkOption types;
 
+  defaultOnshapeBaseUrl = "https://cad.onshape.com/documents/089ad0a2edf08cd2cfdc9875/w/5ce345793596671ec8f90331/e/5bba513a46b691f2bf439aaa";
+
+  # Onshape configuration assignments are semicolon-separated. Each value is
+  # form-encoded first, then the complete assignment string is URL-encoded as
+  # the outer `configuration` query parameter.
+  formEncode = value: lib.replaceStrings [ "%20" ] [ "+" ] (lib.escapeURL value);
+  makeOnshapeUrl =
+    baseUrl: configJsonPath: gftyUltimateConfig:
+    let
+      configJson = lib.removeSuffix "\n" (builtins.readFile configJsonPath);
+      configuration =
+        "Config=${formEncode configJson}"
+        + ";GFTYUltimateConfig=${formEncode (builtins.toJSON gftyUltimateConfig)}";
+    in
+    "${baseUrl}?renderMode=&configuration=${lib.escapeURL configuration}";
+
+  jsonAttrsType = types.addCheck types.attrs (
+    value: (builtins.tryEval (builtins.toJSON value)).success
+  );
+
+  baseSize =
+    owner: gftyUltimateConfig:
+    map (field: gftyUltimateConfig.${field} or (throw "${owner}.gfty-ultimate must define ${field}")) [
+      "size_x_units"
+      "size_y_units"
+    ];
+
   labelType = types.submodule {
     options = {
       name = mkOption {
@@ -34,6 +61,10 @@ let
         type = types.attrsOf (types.listOf types.path);
         default = { };
         description = "Ordered icon paths for each icon box, keyed without the icons- prefix.";
+      };
+      gfty-ultimate = mkOption {
+        type = jsonAttrsType;
+        description = "Gridfinity Ultimate JSON configuration, expressed as a JSON-serializable Nix attribute set.";
       };
     };
   };
@@ -68,6 +99,10 @@ let
         default = "5mm";
         description = "Vertical gap between labels.";
       };
+      gfty-ultimate = mkOption {
+        type = jsonAttrsType;
+        description = "Gridfinity Ultimate JSON configuration for the plate's shared base model.";
+      };
     };
   };
 in
@@ -76,7 +111,16 @@ in
     { config, system, ... }:
     let
       package = self.packages.${system}.default;
-      labelPackages = lib.mapAttrs (
+      withOnshapeUrl =
+        output: jsonFile: gftyUltimateConfig:
+        output.overrideAttrs (old: {
+          passthru = (old.passthru or { }) // {
+            onshapeUrl =
+              makeOnshapeUrl config.gfty-label.onshapeBaseUrl "${output}/${jsonFile}"
+                gftyUltimateConfig;
+          };
+        });
+      rawLabelPackages = lib.mapAttrs (
         labelName: definition:
         package.mkLabel {
           name = if definition.name == null then labelName else definition.name;
@@ -89,6 +133,10 @@ in
             ;
         }
       ) config.gfty-label.labels;
+      labelPackages = lib.mapAttrs (
+        labelName: output:
+        withOnshapeUrl output "label.json" config.gfty-label.labels.${labelName}.gfty-ultimate
+      ) rawLabelPackages;
       allLabels = package.mkOutputSet {
         name = "all-labels";
         entries = labelPackages;
@@ -102,8 +150,22 @@ in
             entries = labelPackages;
             extra.all = allLabels;
           };
-      platePackages = lib.mapAttrs (
+      rawPlatePackages = lib.mapAttrs (
         plateName: definition:
+        let
+          plateSize = baseSize "gfty-label.plates.${plateName}" definition.gfty-ultimate;
+          mismatchedLabels = builtins.filter (
+            labelName:
+            baseSize "gfty-label.labels.${labelName}" (
+              config.gfty-label.labels.${labelName}.gfty-ultimate
+                or (throw "gfty-label plate ${plateName} refers to unknown label ${labelName}")
+            ) != plateSize
+          ) (lib.unique definition.labels);
+        in
+        assert lib.assertMsg (mismatchedLabels == [ ]) (
+          "gfty-label plate ${plateName} has a different Gridfinity base size than labels: "
+          + lib.concatStringsSep ", " mismatchedLabels
+        );
         package.mkPlate {
           name = if definition.name == null then plateName else definition.name;
           inherit (definition)
@@ -119,6 +181,10 @@ in
           ) definition.labels;
         }
       ) config.gfty-label.plates;
+      platePackages = lib.mapAttrs (
+        plateName: output:
+        withOnshapeUrl output "plate.json" config.gfty-label.plates.${plateName}.gfty-ultimate
+      ) rawPlatePackages;
       platesOutput = package.mkOutputSet {
         name = "plates";
         entries = platePackages;
@@ -126,6 +192,11 @@ in
     in
     {
       options.gfty-label = {
+        onshapeBaseUrl = mkOption {
+          type = types.str;
+          default = defaultOnshapeBaseUrl;
+          description = "Base Onshape workspace URL used by generated package onshapeUrl passthru values.";
+        };
         labels = mkOption {
           type = types.attrsOf labelType;
           default = { };

@@ -224,15 +224,26 @@ exported as `inputs.gfty-label.flakeModules.default`:
 ```nix
 imports = [ inputs.gfty-label.flakeModules.default ];
 
-perSystem = { ... }: {
+perSystem = { ... }:
+let
+  gftyConfig = {
+    size_x_units = 1;
+    size_y_units = 1;
+    # ...the remaining Gridfinity Ultimate JSON fields as pure Nix...
+  };
+in {
   gfty-label = {
+    # Optional; this is already the module's default workspace.
+    onshapeBaseUrl = "https://cad.onshape.com/documents/089ad0a2edf08cd2cfdc9875/w/5ce345793596671ec8f90331/e/5bba513a46b691f2bf439aaa";
     labels.screws = {
       template = ./templates/label.svg;
       text.main = "Screws";
+      gfty-ultimate = gftyConfig;
     };
     plates.all = {
       dimensions = [ "200mm" "250mm" ];
       labels = [ "screws" "screws" ];
+      gfty-ultimate = gftyConfig;
     };
   };
 };
@@ -242,13 +253,25 @@ The module validates label definitions with typed options: `template` is a
 path, `filament` is an unsigned integer, `fonts` is a list of packages or paths,
 `text` is an attribute set of strings, and each `icons` value is an ordered list
 of paths. Plate dimensions must contain exactly two strings and plate label
-references must be strings.
+references must be strings. Every label and plate also requires a
+`gfty-ultimate` attribute set containing its unrolled Gridfinity Ultimate JSON.
+A plate uses its own configuration rather than those of its child labels; the
+module verifies that their `size_x_units` and `size_y_units` match.
 
 Outputs are grouped as `packages.labels.<name>` and
-`packages.plates.<name>`. `packages.labels.all` links every generated label
-under its definition name, making it convenient to install or copy the complete
-set. See `examples/flake.nix` and `examples/labels.nix` for a buildable module
-example.
+`packages.plates.<name>`. Each individual output has an `onshapeUrl` passthru
+which configures the workspace's `Config` variable from the generated geometry
+JSON and `GFTYUltimateConfig` from the Nix attribute set:
+
+```sh
+nix eval --raw .#labels.screws.onshapeUrl
+nix eval --raw .#plates.all.onshapeUrl
+```
+
+Evaluating this property realizes the package because its generated JSON is
+embedded in the URL. `packages.labels.all` links every generated label under its
+definition name, making it convenient to install or copy the complete set. See
+`examples/flake.nix` and `examples/labels.nix` for a buildable module example.
 
 ## Terminal previews
 
