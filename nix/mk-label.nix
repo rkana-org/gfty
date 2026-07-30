@@ -56,7 +56,6 @@ runCommand name
   }
   ''
     mkdir -p "$out"
-    gfty-label ${fontArgs} --terminal-preview never build \
-      ${lib.escapeShellArg (toString config)} --output "$out"
+    gfty-label ${fontArgs} build ${lib.escapeShellArg (toString config)} --output "$out"
     cp ${config} "$out/label.toml"
   ''

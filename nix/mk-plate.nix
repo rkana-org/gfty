@@ -39,7 +39,7 @@ runCommand name
   }
   ''
     mkdir -p "$out"
-    gfty-label ${fontArgs} --terminal-preview never plate \
+    gfty-label ${fontArgs} plate \
       --dimensions ${lib.escapeShellArg (toString (builtins.elemAt dimensions 0))} \
                    ${lib.escapeShellArg (toString (builtins.elemAt dimensions 1))} \
       --column-gap ${lib.escapeShellArg columnGap} \
