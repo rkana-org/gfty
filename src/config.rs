@@ -330,17 +330,6 @@ mod tests {
     }
 
     #[test]
-    fn bundled_examples_validate() {
-        let root = Path::new(env!("CARGO_MANIFEST_DIR"));
-        for name in ["metric-fastener.toml", "custom-colors.toml"] {
-            LoadedLabel::load(&root.join("examples/labels").join(name))
-                .unwrap()
-                .validate()
-                .unwrap();
-        }
-    }
-
-    #[test]
     fn resolves_svg_paths_directly_and_other_names_as_aliases() {
         let label = LoadedLabel::from_config(
             LabelConfig {

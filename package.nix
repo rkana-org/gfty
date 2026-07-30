@@ -38,6 +38,7 @@ rustPlatform.buildRustPackage (finalAttrs: {
         gftyLabel = finalAttrs.finalPackage;
         inherit args;
       };
+    mkOutputSet = args: callPackage ./nix/mk-output-set.nix args;
   };
 
   meta = {

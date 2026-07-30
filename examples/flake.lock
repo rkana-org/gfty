@@ -135,9 +135,7 @@
         "devshell": "devshell",
         "flake-parts": "flake-parts_2",
         "nci": "nci",
-        "nixpkgs": [
-          "nixpkgs"
-        ],
+        "nixpkgs": "nixpkgs",
         "pre-commit-hooks": "pre-commit-hooks",
         "treefmt-nix": "treefmt-nix"
       },
@@ -335,8 +333,7 @@
     "root": {
       "inputs": {
         "flake-parts": "flake-parts",
-        "gfty-label": "gfty-label",
-        "nixpkgs": "nixpkgs"
+        "gfty-label": "gfty-label"
       }
     },
     "rust-overlay": {

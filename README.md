@@ -236,8 +236,17 @@ perSystem = { ... }: {
 };
 ```
 
-This creates `packages.label-screws` and `packages.plate-all`. See
-`examples/flake.nix` for a buildable overlay, passthru, plate, and module example.
+The module validates label definitions with typed options: `template` is a
+path, `filament` is an unsigned integer, `fonts` is a list of packages or paths,
+`text` is an attribute set of strings, and each `icons` value is an ordered list
+of paths. Plate dimensions must contain exactly two strings and plate label
+references must be strings.
+
+Outputs are grouped as `packages.labels.<name>` and
+`packages.plates.<name>`. `packages.labels.all` links every generated label
+under its definition name, making it convenient to install or copy the complete
+set. See `examples/flake.nix` and `examples/labels.nix` for a buildable module
+example.
 
 ## Terminal previews
 
