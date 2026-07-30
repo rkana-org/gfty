@@ -11,8 +11,8 @@ No project marker or fixed directory structure is required. Absolute paths work
 everywhere. Paths inside a saved label TOML are resolved relative to that TOML;
 paths passed to `quick` are resolved relative to the current directory.
 
-The list commands and pathless `validate` use `./templates`, `./icons`, and
-`./labels` by convention. Pass global `--root PATH` to search another root.
+Pathless `validate` scans `./labels` by convention. Pass global `--root PATH`
+to scan another root. `inspect` always takes an explicit file.
 
 ## Commands
 
@@ -22,10 +22,7 @@ gfty-label render LABEL [--output PREVIEW.svg]
 gfty-label build LABEL --output DIR
 gfty-label export LABEL [--output FILLS.json]
 gfty-label quick --template TEMPLATE --text ID CONTENT --icon BOX ICON [--save LABEL.toml]
-gfty-label list-templates [--preview]
-gfty-label list-icons [--preview]
-gfty-label list-labels [--preview]
-gfty-label list [--preview]
+gfty-label inspect FILE [--preview]
 gfty-label plate --dimensions WIDTH HEIGHT [OPTIONS] LABEL...
 gfty-label watch LABEL --svg PREVIEW.svg --json FILLS.json
 ```
@@ -60,11 +57,14 @@ gfty-label export labels/m3.toml | wl-copy
 gfty-label quick --template templates/label-1x1.svg --text main M3 --json | wl-copy
 ```
 
-The `list-*` commands print sorted paths relative to the selected search root,
-including `templates/`, `icons/`, or `labels/`. `list` prints all three groups together.
-Template listings also show detected physical size, text field names, and icon
-box direction/alignment. Listings only render terminal thumbnails when
-`--preview` is supplied.
+`inspect` accepts a label TOML, template SVG, or icon SVG. It reports known
+size, fields, icon boxes, color mappings, filaments, and resolved paths. Add
+`--preview` for a terminal thumbnail:
+
+```sh
+gfty-label inspect templates/label.svg
+gfty-label inspect labels/m3.toml --preview
+```
 
 `plate` takes label TOML paths directly on the command line; no plate config
 file is needed. Repeat a path to repeat that label. With no `--svg` or `--json`
@@ -244,13 +244,13 @@ This creates `packages.label-screws` and `packages.plate-all`. See
 Interactive commands rasterize rendered SVGs with `resvg` and display them with
 the native Rust `rasteroid` encoder. It selects Kitty, iTerm2, Sixel, or Unicode
 symbols based on terminal capabilities. Previews are skipped when stderr is not
-a terminal, so JSON and list pipelines remain clean.
+a terminal, so JSON pipelines remain clean.
 
 ```sh
 gfty-label --terminal-preview auto render labels/m3.toml -o /tmp/m3.svg
 gfty-label --terminal-preview graphics watch labels/m3.toml --svg /tmp/m3.svg
-gfty-label --terminal-preview symbols list-labels --preview
-gfty-label --terminal-preview never list
+gfty-label --terminal-preview symbols inspect labels/m3.toml --preview
+gfty-label --terminal-preview never inspect templates/label.svg
 ```
 
 Use `--terminal-preview-width N` to control thumbnail width. Watch mode clears

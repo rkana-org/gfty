@@ -242,6 +242,47 @@ fn ensure_file(path: &Path, description: &str) -> Result<()> {
     Ok(())
 }
 
+pub fn discover_labels(root: Option<&Path>) -> Result<(PathBuf, Vec<PathBuf>)> {
+    let root = match root {
+        Some(root) if root.is_absolute() => root.to_owned(),
+        Some(root) => std::env::current_dir()
+            .context("failed to determine current directory")?
+            .join(root),
+        None => std::env::current_dir().context("failed to determine current directory")?,
+    };
+    let mut labels = Vec::new();
+    collect_label_paths(&root.join("labels"), &mut labels)?;
+    labels.sort();
+    Ok((root, labels))
+}
+
+fn collect_label_paths(directory: &Path, labels: &mut Vec<PathBuf>) -> Result<()> {
+    if !directory.exists() {
+        return Ok(());
+    }
+    for entry in fs::read_dir(directory)
+        .with_context(|| format!("failed to read directory {}", directory.display()))?
+    {
+        let entry =
+            entry.with_context(|| format!("failed to read an entry in {}", directory.display()))?;
+        let path = entry.path();
+        let file_type = entry
+            .file_type()
+            .with_context(|| format!("failed to inspect {}", path.display()))?;
+        if file_type.is_dir() {
+            collect_label_paths(&path, labels)?;
+        } else if file_type.is_file()
+            && path
+                .extension()
+                .and_then(|value| value.to_str())
+                .is_some_and(|value| value.eq_ignore_ascii_case("toml"))
+        {
+            labels.push(path);
+        }
+    }
+    Ok(())
+}
+
 pub fn normalize_hex_color(value: &str) -> Option<String> {
     let value = value.trim().to_ascii_lowercase();
     let digits = value.strip_prefix('#').unwrap_or(&value);
@@ -327,6 +368,23 @@ mod tests {
             PathBuf::from("/project/hardware/nut.svg")
         );
         assert!(label.resolve_icon("bolt").is_err());
+    }
+
+    #[test]
+    fn discovers_nested_labels_without_a_project_marker() {
+        let temp = tempfile::tempdir().unwrap();
+        fs::create_dir_all(temp.path().join("labels/nested")).unwrap();
+        fs::write(temp.path().join("labels/z.toml"), "").unwrap();
+        fs::write(temp.path().join("labels/nested/a.TOML"), "").unwrap();
+        fs::write(temp.path().join("labels/ignore.svg"), "").unwrap();
+        let (_, labels) = discover_labels(Some(temp.path())).unwrap();
+        assert_eq!(
+            labels,
+            [
+                temp.path().join("labels/nested/a.TOML"),
+                temp.path().join("labels/z.toml")
+            ]
+        );
     }
 
     #[test]

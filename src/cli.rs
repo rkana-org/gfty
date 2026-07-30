@@ -25,7 +25,7 @@ pub struct Cli {
     #[arg(long, global = true, value_name = "PATH")]
     pub font_dir: Vec<PathBuf>,
 
-    /// Root used by list commands and pathless validate; defaults to the current directory.
+    /// Root used by pathless validate; defaults to the current directory.
     #[arg(long, global = true, value_name = "PATH")]
     pub root: Option<PathBuf>,
 
@@ -37,7 +37,7 @@ pub struct Cli {
     #[arg(long, global = true, default_value_t = 60)]
     pub terminal_preview_width: u16,
 
-    /// Show previews while running a list command.
+    /// Show a terminal preview while inspecting a file.
     #[arg(long, global = true)]
     pub preview: bool,
 
@@ -102,17 +102,8 @@ pub enum Command {
         json: Option<PathBuf>,
     },
 
-    /// List template paths below ROOT/templates.
-    ListTemplates,
-
-    /// List icon paths below ROOT/icons.
-    ListIcons,
-
-    /// List label paths below ROOT/labels.
-    ListLabels,
-
-    /// List templates, icons, and labels below ROOT.
-    List,
+    /// Inspect a label TOML, template SVG, or icon SVG.
+    Inspect { file: PathBuf },
 
     /// Arrange labels into a dimension-constrained plate grid.
     Plate {

@@ -379,10 +379,13 @@ function buildFilamentInstances(context is Context, id is Id, definition is map,
                 "propertyType" : PropertyType.APPEARANCE,
                 "value" : GFTY_FILAMENT_APPEARANCES[filament % size(GFTY_FILAMENT_APPEARANCES)]
         });
-    opBoolean(context, id + "union", {
-            "tools" : tools,
-            "operationType" : BooleanOperationType.UNION
-    });
+    // A base-only filament on a single label has exactly one prototype body.
+    // opBoolean rejects a one-body union, so leave that already-named body as-is.
+    if (size(evaluateQuery(context, tools)) > 1)
+        opBoolean(context, id + "union", {
+                "tools" : tools,
+                "operationType" : BooleanOperationType.UNION
+        });
 }
 
 function labelOffset(cSys is CoordSystem, center is array,

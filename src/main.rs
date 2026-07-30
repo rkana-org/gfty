@@ -4,7 +4,6 @@ mod compose;
 mod config;
 mod export;
 mod layout;
-mod list;
 mod plate;
 mod quick;
 mod svg;
@@ -13,7 +12,7 @@ mod terminal_preview;
 mod text;
 mod watch;
 
-use std::io::{IsTerminal, Write};
+use std::io::Write;
 
 use anyhow::{Context, Result};
 use clap::Parser;
@@ -35,8 +34,7 @@ fn run() -> Result<()> {
         directories: cli.font_dir,
     };
     let list_root = cli.root;
-    let list_preview = cli.preview;
-    let system_fonts = &font_options;
+    let inspect_preview = cli.preview;
     let preview_options = terminal_preview::PreviewOptions {
         mode: cli.terminal_preview,
         width: cli.terminal_preview_width,
@@ -127,78 +125,8 @@ fn run() -> Result<()> {
                 write_json(&output, &document)?;
             }
         }
-        Command::ListTemplates => {
-            let entries = list::discover(list_root.as_deref())?;
-            list::print_templates(&entries, false);
-            if list_preview {
-                preview_entries(
-                    &entries,
-                    &entries.templates,
-                    EntryKind::Svg,
-                    system_fonts,
-                    preview_options,
-                );
-            }
-        }
-        Command::ListIcons => {
-            let entries = list::discover(list_root.as_deref())?;
-            print_values(&entries.icons);
-            if list_preview {
-                preview_entries(
-                    &entries,
-                    &entries.icons,
-                    EntryKind::Svg,
-                    system_fonts,
-                    preview_options,
-                );
-            }
-        }
-        Command::ListLabels => {
-            let entries = list::discover(list_root.as_deref())?;
-            print_values(&entries.labels);
-            if list_preview {
-                preview_entries(
-                    &entries,
-                    &entries.labels,
-                    EntryKind::Label,
-                    system_fonts,
-                    preview_options,
-                );
-            }
-        }
-        Command::List => {
-            let entries = list::discover(list_root.as_deref())?;
-            println!("{}", "Templates:".bold().green());
-            list::print_templates(&entries, true);
-            if list_preview {
-                preview_entries(
-                    &entries,
-                    &entries.templates,
-                    EntryKind::Svg,
-                    system_fonts,
-                    preview_options,
-                );
-            }
-            list::print_group("Icons", &entries.icons);
-            if list_preview {
-                preview_entries(
-                    &entries,
-                    &entries.icons,
-                    EntryKind::Svg,
-                    system_fonts,
-                    preview_options,
-                );
-            }
-            list::print_group("Labels", &entries.labels);
-            if list_preview {
-                preview_entries(
-                    &entries,
-                    &entries.labels,
-                    EntryKind::Label,
-                    system_fonts,
-                    preview_options,
-                );
-            }
+        Command::Inspect { file } => {
+            inspect_file(&file, &font_options, preview_options, inspect_preview)?;
         }
         Command::Plate {
             dimensions,
@@ -249,11 +177,17 @@ fn validate_labels(
     let labels: Vec<(String, std::path::PathBuf)> = if let Some(label) = label {
         vec![(label.display().to_string(), label.to_owned())]
     } else {
-        let entries = list::discover(root)?;
-        entries
-            .labels
-            .iter()
-            .map(|path| (path.clone(), entries.root.join(path)))
+        let (root, paths) = config::discover_labels(root)?;
+        paths
+            .into_iter()
+            .map(|path| {
+                let display = path
+                    .strip_prefix(&root)
+                    .unwrap_or(&path)
+                    .to_string_lossy()
+                    .replace('\\', "/");
+                (display, path)
+            })
             .collect()
     };
 
@@ -304,83 +238,177 @@ fn is_stdout_path(path: &std::path::Path) -> bool {
     path == std::path::Path::new("-")
 }
 
-#[derive(Clone, Copy)]
-enum EntryKind {
-    Svg,
-    Label,
-}
-
-fn print_values(values: &[String]) {
-    for value in values {
-        println!("{value}");
-    }
-}
-
-fn preview_entries(
-    entries: &list::ProjectEntries,
-    values: &[String],
-    kind: EntryKind,
+fn inspect_file(
+    path: &std::path::Path,
     font_options: &svg::FontOptions,
-    options: terminal_preview::PreviewOptions,
-) {
-    if !options.enabled() || !std::io::stdout().is_terminal() {
-        return;
+    preview_options: terminal_preview::PreviewOptions,
+    preview: bool,
+) -> Result<()> {
+    let extension = path
+        .extension()
+        .and_then(|value| value.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    println!(
+        "{} {}",
+        "Inspecting".green().bold(),
+        path.display().to_string().bold()
+    );
+    match extension.as_str() {
+        "toml" => inspect_label(path, font_options, preview_options, preview),
+        "svg" => inspect_svg(path, font_options, preview_options, preview),
+        _ => anyhow::bail!("inspect supports label TOML and template/icon SVG files"),
     }
-    let mut preview = match terminal_preview::PreviewSession::new(options) {
-        Ok(preview) => preview,
-        Err(error) => {
-            eprintln!("{} {error:#}", "preview unavailable:".yellow().bold());
-            return;
-        }
-    };
-    let svg_parser = match kind {
-        EntryKind::Svg => Some(svg::SvgParser::new(font_options)),
-        EntryKind::Label => None,
-    };
+}
 
-    for value in values {
-        let path = entries.root.join(value);
-        match kind {
-            EntryKind::Svg => {
-                let result = std::fs::read_to_string(&path)
-                    .with_context(|| format!("failed to read SVG {}", path.display()))
-                    .and_then(|source| {
-                        svg_parser
-                            .as_ref()
-                            .expect("SVG parser exists for SVG entries")
-                            .parse(&source, path.parent().expect("listed SVG has a parent"))
-                            .with_context(|| {
-                                format!("failed to render listed SVG {}", path.display())
-                            })
-                    })
-                    .and_then(|tree| preview.show_tree(&tree, value, false).map(|_| ()));
-                if let Err(error) = result {
-                    eprintln!(
-                        "{} {}: {error:#}",
-                        "preview failed for".red().bold(),
-                        value.cyan()
-                    );
-                }
-            }
-            EntryKind::Label => {
-                let result = config::LoadedLabel::load(&path)
-                    .with_context(|| format!("failed to load listed label {}", path.display()))
-                    .and_then(|label| {
-                        compose::render_label_svg(&label, font_options).with_context(|| {
-                            format!("failed to render listed label {}", path.display())
-                        })
-                    })
-                    .and_then(|svg| preview.show_svg(&svg, value, false).map(|_| ()));
-                if let Err(error) = result {
-                    eprintln!(
-                        "{} {}: {error:#}",
-                        "preview failed for".red().bold(),
-                        value.cyan()
-                    );
-                }
-            }
+fn inspect_label(
+    path: &std::path::Path,
+    font_options: &svg::FontOptions,
+    preview_options: terminal_preview::PreviewOptions,
+    preview: bool,
+) -> Result<()> {
+    let label = config::LoadedLabel::load(path)
+        .with_context(|| format!("failed to load label {}", path.display()))?;
+    let template = template::TemplateInfo::load(&label.template_path())?;
+    let filaments = compose::label_filaments(&label)?;
+    print_inspect_field("type", "label");
+    print_inspect_field("template", &label.template_path().display().to_string());
+    print_inspect_field(
+        "size",
+        &format!(
+            "{} × {} mm",
+            compact(template.width_mm),
+            compact(template.height_mm)
+        ),
+    );
+    print_inspect_field("base filament", &label.config.filament.to_string());
+    print_inspect_field(
+        "filaments",
+        &filaments
+            .iter()
+            .map(u32::to_string)
+            .collect::<Vec<_>>()
+            .join(", "),
+    );
+    if label.config.text.is_empty() {
+        print_inspect_field("text", "(none)");
+    } else {
+        for (name, value) in &label.config.text {
+            print_inspect_field(&format!("text.{name}"), &value.content);
         }
     }
+    for (name, values) in &label.config.icons {
+        print_inspect_field(&format!("icons.{name}"), &format!("{} items", values.len()));
+    }
+    if preview {
+        let rendered = compose::render_label_svg(&label, font_options)
+            .with_context(|| format!("failed to preview label {}", path.display()))?;
+        show_inspect_svg(&rendered, &path.display().to_string(), preview_options)?;
+    }
+    Ok(())
+}
+
+fn inspect_svg(
+    path: &std::path::Path,
+    font_options: &svg::FontOptions,
+    preview_options: terminal_preview::PreviewOptions,
+    preview: bool,
+) -> Result<()> {
+    let source = std::fs::read_to_string(path)
+        .with_context(|| format!("failed to read SVG {}", path.display()))?;
+    let info = template::TemplateInfo::parse(&source)
+        .with_context(|| format!("invalid template or icon SVG {}", path.display()))?;
+    let colors = color::ColorMapping::load(path)?;
+    let kind = if info.text_fields.is_empty() && info.icon_boxes.is_empty() {
+        "icon"
+    } else {
+        "template"
+    };
+    print_inspect_field("type", kind);
+    print_inspect_field(
+        "size",
+        &format!(
+            "{} × {} mm",
+            compact(info.width_mm),
+            compact(info.height_mm)
+        ),
+    );
+    print_inspect_field(
+        "viewBox",
+        &format!(
+            "{} {} {} {}",
+            compact(info.view_box.min_x),
+            compact(info.view_box.min_y),
+            compact(info.view_box.width),
+            compact(info.view_box.height)
+        ),
+    );
+    for (name, default) in &info.text_fields {
+        print_inspect_field(&format!("text.{name}"), default);
+    }
+    for (name, icon_box) in &info.icon_boxes {
+        let direction = match icon_box.direction {
+            template::IconDirection::Horizontal => "horizontal",
+            template::IconDirection::Vertical => "vertical",
+        };
+        let alignment = match (icon_box.direction, icon_box.alignment) {
+            (_, template::IconAlignment::Center) => "center",
+            (template::IconDirection::Horizontal, template::IconAlignment::Start) => "left",
+            (template::IconDirection::Horizontal, template::IconAlignment::End) => "right",
+            (template::IconDirection::Vertical, template::IconAlignment::Start) => "top",
+            (template::IconDirection::Vertical, template::IconAlignment::End) => "bottom",
+        };
+        print_inspect_field(
+            &format!("icons.{name}"),
+            &format!(
+                "x={} y={} width={} height={}, {direction}, {alignment}",
+                compact(icon_box.x),
+                compact(icon_box.y),
+                compact(icon_box.width),
+                compact(icon_box.height)
+            ),
+        );
+    }
+    for (source, filament) in &colors.source_to_filament {
+        print_inspect_field(&format!("color #{source}"), &format!("filament {filament}"));
+    }
+    print_inspect_field(
+        "color mapping",
+        &colors
+            .sidecar
+            .as_ref()
+            .map(|path| path.display().to_string())
+            .unwrap_or_else(|| "automatic".to_owned()),
+    );
+    if preview {
+        let parser = svg::SvgParser::new(font_options);
+        let tree = parser.parse(
+            &source,
+            path.parent().unwrap_or_else(|| std::path::Path::new(".")),
+        )?;
+        let mut session = terminal_preview::PreviewSession::new(preview_options)?;
+        session.show_tree(&tree, &path.display().to_string(), false)?;
+    }
+    Ok(())
+}
+
+fn show_inspect_svg(
+    svg: &str,
+    label: &str,
+    preview_options: terminal_preview::PreviewOptions,
+) -> Result<()> {
+    let mut session = terminal_preview::PreviewSession::new(preview_options)?;
+    session.show_svg(svg, label, false)?;
+    Ok(())
+}
+
+fn print_inspect_field(name: &str, value: &str) {
+    println!("  {} {value}", format!("{name}:").dimmed());
+}
+
+fn compact(value: f64) -> String {
+    let value = format!("{value:.6}");
+    value.trim_end_matches('0').trim_end_matches('.').to_owned()
 }
 
 fn try_preview(svg: &str, label: &str, options: terminal_preview::PreviewOptions, clear: bool) {
