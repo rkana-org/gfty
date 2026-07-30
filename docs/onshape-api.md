@@ -109,12 +109,12 @@ possible. The downloader should also verify that a label/plate STEP contains
 exactly the expected filament part names and count; an unexpected `Part 1` is
 then reported as likely disconnected/out-of-bounds artwork.
 
-## Suggested CLI shape
+## Implemented CLI and Nix interface
 
-API operations must be runtime commands, not Nix derivation build steps. Nix
-builds must remain pure and credentials must never enter the Nix store.
+API operations are runtime commands, not Nix derivation build steps. Nix builds
+remain pure and credentials never enter the Nix store.
 
-The transitional label interface is:
+The generic label interface is:
 
 ```text
 gfty export LABEL \
@@ -123,29 +123,16 @@ gfty export LABEL \
   --output label.step
 ```
 
-It generates geometry in memory, signs requests, downloads atomically, and
-validates expected STEP product/body names. `plan.md` defines the future
-entity-oriented `gfty` command structure, generic TOML dispatch, plate support,
-and Nix apps.
+The equivalent entity-oriented commands are `gfty label export` and
+`gfty label plate export`; `gfty label create --export` handles an unsaved label.
+They generate geometry in memory, sign requests, poll with bounded exponential
+backoff, download atomically, and validate expected STEP product/body names.
 
-The Nix module could expose non-secret passthru metadata such as the target
-version URL, generated geometry path, Gridfinity JSON path, and a ready-to-run
-command. Actual API requests should happen only when the user invokes the CLI.
-
-A first prototype should:
-
-1. Parse and validate document/version-or-workspace/element IDs from the target
-   URL.
-2. Call `getConfiguration` and verify the `Config` and
-   `GFTYUltimateConfig` parameter IDs and string-compatible types.
-3. Encode the configuration with a POST body.
-4. Start one asynchronous STEP export with `storeInDocument=false`.
-5. Poll conservatively and download atomically to a requested path.
-6. Report Onshape `failureReason`, feature regeneration failures, response
-   request IDs, and rate-limit information clearly.
-
-After this succeeds, add format discovery, STL/3MF options, part filtering,
-retries, and Nix-generated command metadata.
+The Nix module exposes manual apps such as `export-label-screws` and
+`export-plate-all`. Their scripts capture only immutable model/configuration and
+font inputs; normal runtime credential discovery happens after `nix run` starts.
+Model parameter contracts were verified separately and are pinned by immutable
+version, avoiding a redundant `getConfiguration` call on each export.
 
 ## Alternative upload approaches
 

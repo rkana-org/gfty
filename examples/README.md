@@ -25,8 +25,8 @@ result/
 └── module-example -> /nix/store/…-module-example
 ```
 
-Each individual label contains `label.svg`, `label.json`, and `label.toml`.
-Each plate contains `plate.svg` and `plate.json`.
+Each individual label contains `label.svg` and `label.toml`. Each plate contains
+`plate.svg`. Geometry JSON is generated in memory only by runtime export apps.
 
 Every individual definition also exposes an explicit runtime export app:
 

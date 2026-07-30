@@ -1,6 +1,7 @@
-# gfty-label
+# gfty
 
-File-based Gridfinity label composer and Onshape exporter.
+Reproducible Gridfinity authoring and Onshape export, currently focused on
+file-based labels and label plates.
 
 The project is under active development. The intended workflow uses SVG templates,
 reusable SVG icons with optional TOML color sidecars, and saved label TOML files.
@@ -9,7 +10,7 @@ reusable SVG icons with optional TOML color sidecars, and saved label TOML files
 
 No project marker or fixed directory structure is required. Absolute paths work
 everywhere. Paths inside a saved label TOML are resolved relative to that TOML;
-paths passed to `quick` are resolved relative to the current directory.
+paths passed to `label create` are resolved relative to the current directory.
 
 Pathless `validate` scans `./labels` by convention. Pass global `--root PATH`
 to scan another root. `inspect` always takes an explicit file.
@@ -17,44 +18,57 @@ to scan another root. `inspect` always takes an explicit file.
 ## Commands
 
 ```text
-gfty validate [LABEL]
-gfty render LABEL [--output PREVIEW.svg]
-gfty build LABEL --output DIR
-gfty export LABEL --gridfinity-config CONFIG.json [--output LABEL.step]
-gfty quick --template TEMPLATE --text ID CONTENT --icon BOX ICON [--save LABEL.toml]
-gfty inspect FILE [--preview]
-gfty plate --dimensions WIDTH HEIGHT [OPTIONS] LABEL...
-gfty watch LABEL --svg PREVIEW.svg --json FILLS.json
+gfty export LABEL [EXPORT OPTIONS]
+
+gfty label validate [LABEL]
+gfty label render LABEL [--output PREVIEW.svg]
+gfty label create [CREATE OPTIONS]
+gfty label inspect FILE [--preview]
+gfty label watch LABEL [--svg PREVIEW.svg]
+gfty label export LABEL [EXPORT OPTIONS]
+
+gfty label plate create --dimensions WIDTH HEIGHT [OPTIONS] LABEL...
+gfty label plate export --dimensions WIDTH HEIGHT [EXPORT OPTIONS] LABEL...
 ```
 
-`gfty` is the main executable. `gfty-label` remains a compatibility symlink while
-the command hierarchy and downstream flakes migrate.
+`gfty` is the main executable. `gfty-label` remains a compatibility wrapper for
+old local label commands while downstream flakes migrate.
 
 Rendering resolves bundled and explicitly supplied fonts, converts text and SVG
-primitives to paths with `usvg`, applies filament
-colors, and lays out icons without implicit gaps. Export produces centered,
-physical-millimeter paths grouped by filament for Onshape.
+primitives to paths with `usvg`, applies filament colors, and lays out icons
+without implicit gaps. Geometry JSON is generated only as an internal Onshape
+wire format.
 
-`quick` accepts ordinary relative or absolute template and icon paths:
+`label create` replaces the old `quick` command and accepts ordinary relative or
+absolute template and icon paths:
 
 ```sh
-gfty quick \
+gfty label create \
   --template templates/label-1x1.svg \
   --filament 0 \
   --text main 'M{3}x[10]' \
   --icon fasteners icons/screws/pointy.svg \
   --save labels/m3x10.toml \
-  --svg preview.svg \
-  --json label.json
+  --svg preview.svg
 ```
 
-`quick --save PATH` stores the invocation as a normal reusable label TOML. It
-can be used by itself or together with SVG/JSON output; the label is fully
-rendered and validated before it is saved.
+It can also export an unsaved label directly:
 
-`export` renders the label, sends its geometry and Gridfinity Ultimate
-configuration to the pinned immutable Onshape model in POST bodies, and
-downloads one grouped AP242 STEP containing every named filament part:
+```sh
+gfty label create \
+  --template templates/label-1x1.svg \
+  --text main M3 \
+  --gridfinity-config gridfinity-1x1.json \
+  --export m3.step
+```
+
+`--save PATH` stores a normal reusable label TOML. The label is fully rendered
+and validated before any save, SVG, or export output is written.
+
+Both `gfty export LABEL` and `gfty label export LABEL` render the label, send its
+geometry and Gridfinity Ultimate configuration to the pinned immutable Onshape
+model in POST bodies, and download one grouped AP242 STEP containing every named
+filament part:
 
 ```sh
 gfty export labels/m3.toml \
@@ -82,56 +96,45 @@ Pass it with `--onshape-credentials PATH`, set
 requests use Onshape HMAC signatures. A read-only document API key is sufficient
 because exports use `storeInDocument=false`.
 
-`quick --json` writes compact internal geometry JSON to stdout when its optional
-path is omitted during the transition to the future `gfty` command structure:
-
-```sh
-gfty quick --template templates/label-1x1.svg --text main M3 --json | wl-copy
-```
-
-`inspect` accepts a label TOML, template SVG, or icon SVG. It reports known
+`label inspect` accepts a label TOML, template SVG, or icon SVG. It reports known
 size, fields, icon boxes, color mappings, filaments, and resolved paths. Add
 `--preview` for a terminal thumbnail:
 
 ```sh
-gfty inspect templates/label.svg
-gfty inspect labels/m3.toml --preview
+gfty label inspect templates/label.svg
+gfty label inspect labels/m3.toml --preview
 ```
 
-`plate` takes label TOML paths directly on the command line; no plate config
-file is needed. Repeat a path to repeat that label. With no `--svg` or `--json`
-option, plate JSON goes to stdout; `--json` without a path does the same:
+`label plate create` takes label TOML paths directly; no plate config file is
+needed yet. Repeat a path to repeat that label:
 
 ```sh
-gfty plate --dimensions 200mm 250mm labels/*.toml | wl-copy
-
-gfty plate \
+gfty label plate create \
   --dimensions 200mm 250mm \
   --svg plate.svg \
-  --json plate.json \
   labels/m3.toml labels/m3.toml labels/m4.toml
 ```
 
+Without `--svg`, it previews interactively. `label plate export` accepts the
+same layout arguments plus the normal remote export options and downloads STEP.
 Labels are placed in argument order, row-major from the top left, without
 rotation. The tool fits as many columns as possible within the maximum width,
 then verifies that all required rows fit the maximum height. The final incomplete
 row is left-aligned. Column and row gaps default to `5mm`; override them with
 `--column-gap` and `--row-gap`. Every label must have exactly the same physical
-viewport dimensions. Version 2 JSON keeps each label's local geometry together
-with its center so the combined Onshape feature can instantiate and merge it.
+viewport dimensions.
 
-`watch` performs an initial build, then watches the label TOML, its template,
-icons, sidecars, and explicit font directories. Failed rebuilds are reported without
-stopping the watcher:
+`label watch` watches the label TOML, template, icons, sidecars, and explicit font
+directories. Failed rebuilds are reported without stopping the watcher:
 
 ```sh
-gfty watch labels/m3.toml --svg preview.svg --json label.json
+gfty label watch labels/m3.toml --svg preview.svg
 ```
 
-`validate LABEL` checks one label. With no path, it validates every TOML below
-`labels/`, prints only failures, and finishes with an `X/N valid` summary.
-`render LABEL` writes an SVG when `--output` is supplied; without it, the label
-is rendered directly in a supported interactive terminal.
+`label validate LABEL` checks one label. With no path, it validates every TOML
+below `labels/`, prints failures, and finishes with an `X/N valid` summary.
+`label render LABEL` writes an SVG when `--output` is supplied; without it, the
+label is rendered directly in a supported interactive terminal.
 
 ## Template contract
 
@@ -159,6 +162,8 @@ accepts `top`, `center`, or `bottom`. Icons retain their order and aspect ratio,
 spacers act along the selected direction, and no implicit gaps are added.
 
 ```toml
+kind = "label"
+version = 1
 template = "../templates/label-1x1.svg"
 filament = 0 # Blank prototype filament; defaults to 0.
 
@@ -172,7 +177,9 @@ icon = "../icons/screws/pointy.svg"
 spacer = "1mm"
 ```
 
-The blank prototype uses the label's `filament`, which defaults to 0. Plain text
+New files use `kind = "label"` and `version = 1`; existing labels without those
+fields remain compatible. The blank prototype uses the label's `filament`, which
+defaults to 0. Plain text
 starts at filament 1. `{}`, `[]`, and `<>` select filaments 2, 3, and 4;
 `!N{}` selects any non-negative filament ID. Scopes nest and restore their
 parent color. Escape markup characters with a backslash, for example `\{`,
@@ -245,9 +252,10 @@ pkgs.gfty.mkPlate {
 }
 ```
 
-A label derivation contains `label.svg`, `label.json`, and the generated
-`label.toml`; a plate contains `plate.svg` and `plate.json`. Font outputs are
-added at build time through `--font-dir` and do not rebuild `gfty-label`.
+A label derivation contains `label.svg` and the generated `label.toml`; a plate
+contains `plate.svg`. Geometry JSON is generated in memory by runtime export
+apps rather than exposed as a package artifact. Font outputs are added at build
+time through `--font-dir` and do not rebuild `gfty-label`.
 Adjacent SVG color sidecars are retained automatically.
 
 Without an overlay, use
@@ -331,10 +339,10 @@ local timestamp, and elapsed render time before the preview. Interactive status
 uses Cargo-like action coloring when supported; ordinary text stays uncolored.
 Colors are disabled for redirected output and when `NO_COLOR` is set.
 
-## Onshape JSON
+## Internal Onshape geometry
 
-`build`, `quick --json`, `plate --json`, and `watch --json` use compact
-structured geometry internally. Coordinates are
+Remote label and plate exports generate compact structured geometry in memory.
+Coordinates are
 millimeters, centered on the template viewport, with SVG's downward Y axis
 converted to an upward Y axis. Filament indices remain arbitrary non-negative
 integers.

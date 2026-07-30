@@ -27,7 +27,7 @@ pub struct Cli {
     #[arg(long, global = true, value_name = "PATH")]
     pub font_dir: Vec<PathBuf>,
 
-    /// Root used by pathless validate; defaults to the current directory.
+    /// Root used by pathless label validate; defaults to the current directory.
     #[arg(long, global = true, value_name = "PATH")]
     pub root: Option<PathBuf>,
 
@@ -49,6 +49,21 @@ pub struct Cli {
 
 #[derive(Debug, Subcommand)]
 pub enum Command {
+    /// Dispatch a TOML file to its configured remote STEP exporter.
+    Export(ExportArgs),
+
+    /// Author, inspect, render, and export labels.
+    Label(LabelArgs),
+}
+
+#[derive(Debug, Args)]
+pub struct LabelArgs {
+    #[command(subcommand)]
+    pub command: LabelCommand,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum LabelCommand {
     /// Validate one label, or every label below labels/ when omitted.
     Validate { label: Option<PathBuf> },
 
@@ -60,75 +75,11 @@ pub enum Command {
         output: Option<PathBuf>,
     },
 
-    /// Build label.svg and label.json in an output directory.
-    Build {
-        label: PathBuf,
-        #[arg(short, long, value_name = "DIR")]
-        output: PathBuf,
-    },
-
-    /// Generate a configured label in Onshape and download a grouped STEP.
-    Export(ExportArgs),
-
-    /// Generate a configured label plate in Onshape and download a grouped STEP.
-    #[command(hide = true)]
-    ExportPlate(ExportPlateArgs),
-
-    /// Build an unsaved label from command-line values.
-    Quick {
-        #[arg(long)]
-        template: PathBuf,
-
-        /// Filament used for the blank prototype body.
-        #[arg(long, default_value_t = 0)]
-        filament: u32,
-
-        /// Repeat as: --text ID CONTENT
-        #[arg(long, value_names = ["ID", "CONTENT"], num_args = 2, action = clap::ArgAction::Append)]
-        text: Vec<String>,
-
-        /// Repeat as: --icon BOX ICON
-        #[arg(long, value_names = ["BOX", "ICON"], num_args = 2, action = clap::ArgAction::Append)]
-        icon: Vec<String>,
-
-        #[arg(long)]
-        svg: Option<PathBuf>,
-
-        /// Save this invocation as a reusable label TOML file.
-        #[arg(long, value_name = "PATH")]
-        save: Option<PathBuf>,
-
-        /// Write JSON to PATH, or to stdout when PATH is omitted.
-        #[arg(long, num_args = 0..=1, default_missing_value = "-", value_name = "PATH")]
-        json: Option<PathBuf>,
-    },
+    /// Create an unsaved label from command-line values.
+    Create(CreateArgs),
 
     /// Inspect a label TOML, template SVG, or icon SVG.
     Inspect { file: PathBuf },
-
-    /// Arrange labels into a dimension-constrained plate grid.
-    Plate {
-        /// Maximum plate width and height, for example: --dimensions 200mm 250mm.
-        #[arg(long, value_names = ["WIDTH", "HEIGHT"], num_args = 2, required = true)]
-        dimensions: Vec<String>,
-
-        #[arg(long, default_value = "5mm")]
-        column_gap: String,
-
-        #[arg(long, default_value = "5mm")]
-        row_gap: String,
-
-        #[arg(long)]
-        svg: Option<PathBuf>,
-
-        /// Write JSON to PATH, or to stdout when PATH is omitted.
-        #[arg(long, num_args = 0..=1, default_missing_value = "-", value_name = "PATH")]
-        json: Option<PathBuf>,
-
-        /// Labels in top-left, row-major order. Repeat a path to repeat a label.
-        #[arg(required = true)]
-        labels: Vec<PathBuf>,
-    },
 
     /// Rebuild a label whenever its inputs change.
     Watch {
@@ -136,10 +87,95 @@ pub enum Command {
 
         #[arg(long)]
         svg: Option<PathBuf>,
-
-        #[arg(long)]
-        json: Option<PathBuf>,
     },
+
+    /// Generate a configured label in Onshape and download a grouped STEP.
+    Export(ExportArgs),
+
+    /// Arrange and export multi-label plates.
+    Plate(PlateArgs),
+}
+
+#[derive(Debug, Args)]
+pub struct PlateArgs {
+    #[command(subcommand)]
+    pub command: PlateCommand,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum PlateCommand {
+    /// Create a dimension-constrained plate preview.
+    Create(PlateCreateArgs),
+
+    /// Generate a configured plate in Onshape and download a grouped STEP.
+    Export(ExportPlateArgs),
+}
+
+#[derive(Debug, Args)]
+pub struct CreateArgs {
+    #[arg(long)]
+    pub template: PathBuf,
+
+    /// Filament used for the blank prototype body.
+    #[arg(long, default_value_t = 0)]
+    pub filament: u32,
+
+    /// Repeat as: --text ID CONTENT
+    #[arg(long, value_names = ["ID", "CONTENT"], num_args = 2, action = clap::ArgAction::Append)]
+    pub text: Vec<String>,
+
+    /// Repeat as: --icon BOX ICON
+    #[arg(long, value_names = ["BOX", "ICON"], num_args = 2, action = clap::ArgAction::Append)]
+    pub icon: Vec<String>,
+
+    /// Write the rendered SVG to PATH.
+    #[arg(long)]
+    pub svg: Option<PathBuf>,
+
+    /// Save this invocation as a reusable label TOML file.
+    #[arg(long, value_name = "PATH")]
+    pub save: Option<PathBuf>,
+
+    /// Export directly to STEP, defaulting to label.step when PATH is omitted.
+    #[arg(long, num_args = 0..=1, default_missing_value = "label.step", value_name = "PATH")]
+    pub export: Option<PathBuf>,
+
+    /// Gridfinity Ultimate JSON required by --export.
+    #[arg(long, value_name = "PATH")]
+    pub gridfinity_config: Option<PathBuf>,
+
+    /// Protected TOML file containing access-key and secret-key.
+    #[arg(long, value_name = "PATH")]
+    pub onshape_credentials: Option<PathBuf>,
+
+    /// Immutable Onshape label model version URL.
+    #[arg(long, default_value = DEFAULT_LABEL_MODEL_URL, value_name = "URL")]
+    pub onshape_model: String,
+
+    /// Replace an existing STEP output.
+    #[arg(long)]
+    pub force: bool,
+}
+
+#[derive(Debug, Args)]
+pub struct PlateCreateArgs {
+    /// Maximum plate width and height, for example: --dimensions 200mm 250mm.
+    #[arg(long, value_names = ["WIDTH", "HEIGHT"], num_args = 2, required = true)]
+    pub dimensions: Vec<String>,
+
+    #[arg(long, default_value = "5mm")]
+    pub column_gap: String,
+
+    #[arg(long, default_value = "5mm")]
+    pub row_gap: String,
+
+    /// Write the rendered SVG to PATH; otherwise preview in the terminal.
+    #[arg(long)]
+    pub svg: Option<PathBuf>,
+
+    /// Labels in top-left, row-major order. Repeat a path to repeat a label.
+    #[arg(required = true)]
+    pub labels: Vec<PathBuf>,
 }
 
 #[derive(Debug, Args)]

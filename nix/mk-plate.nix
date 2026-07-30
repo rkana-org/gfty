@@ -39,12 +39,11 @@ runCommand name
   }
   ''
     mkdir -p "$out"
-    gfty-label ${fontArgs} plate \
+    gfty ${fontArgs} label plate create \
       --dimensions ${lib.escapeShellArg (toString (builtins.elemAt dimensions 0))} \
                    ${lib.escapeShellArg (toString (builtins.elemAt dimensions 1))} \
       --column-gap ${lib.escapeShellArg columnGap} \
       --row-gap ${lib.escapeShellArg rowGap} \
       --svg "$out/plate.svg" \
-      --json "$out/plate.json" \
       ${labelArgs}
   ''

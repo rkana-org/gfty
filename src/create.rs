@@ -6,9 +6,11 @@ use std::{
 
 use anyhow::{Context, Result, bail};
 
-use crate::config::{IconPlacement, LabelConfig, LoadedLabel, TextValue};
+use crate::config::{
+    ConfigKind, IconPlacement, LABEL_CONFIG_VERSION, LabelConfig, LoadedLabel, TextValue,
+};
 
-pub fn build_quick_label(
+pub fn build_label(
     template: &Path,
     filament: u32,
     text: &[String],
@@ -49,6 +51,8 @@ pub fn build_quick_label(
 
     Ok(LoadedLabel::from_config(
         LabelConfig {
+            kind: Some(ConfigKind::Label),
+            version: Some(LABEL_CONFIG_VERSION),
             template: path_to_toml_string(&template),
             filament,
             text: text_fields,
@@ -59,11 +63,11 @@ pub fn build_quick_label(
     ))
 }
 
-pub fn save_quick_label(label: &LoadedLabel, path: &Path) -> Result<()> {
-    let source =
-        toml::to_string_pretty(&label.config).context("failed to serialize quick label as TOML")?;
+pub fn save_label(label: &LoadedLabel, path: &Path) -> Result<()> {
+    let source = toml::to_string_pretty(&label.config)
+        .context("failed to serialize created label as TOML")?;
     fs::write(path, source)
-        .with_context(|| format!("failed to save quick label TOML {}", path.display()))
+        .with_context(|| format!("failed to save created label TOML {}", path.display()))
 }
 
 fn pairs<'a>(values: &'a [String], option: &str) -> Result<impl Iterator<Item = &'a [String; 2]>> {
@@ -111,6 +115,8 @@ mod tests {
         let temp = tempfile::tempdir().unwrap();
         let label = LoadedLabel::from_config(
             LabelConfig {
+                kind: Some(ConfigKind::Label),
+                version: Some(LABEL_CONFIG_VERSION),
                 template: "basic.svg".to_owned(),
                 filament: 0,
                 text: BTreeMap::from([(
@@ -125,8 +131,10 @@ mod tests {
             temp.path().to_owned(),
         );
         let path = temp.path().join("saved.toml");
-        save_quick_label(&label, &path).unwrap();
+        save_label(&label, &path).unwrap();
         let saved: LabelConfig = toml::from_str(&fs::read_to_string(path).unwrap()).unwrap();
+        assert_eq!(saved.kind, Some(ConfigKind::Label));
+        assert_eq!(saved.version, Some(LABEL_CONFIG_VERSION));
         assert_eq!(saved.template, "basic.svg");
         assert_eq!(saved.text["main"].content, "M{3}");
     }

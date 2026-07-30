@@ -5,30 +5,24 @@ use std::{
     time::{Duration, Instant},
 };
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result};
 use colored::Colorize;
 use notify::{Event, EventKind, RecursiveMode, Watcher};
 
 pub fn watch_label(
     label_path: &Path,
     svg_output: Option<&Path>,
-    json_output: Option<&Path>,
     font_options: &crate::svg::FontOptions,
     preview_options: crate::terminal_preview::PreviewOptions,
 ) -> Result<()> {
-    if svg_output.is_none() && json_output.is_none() {
-        bail!("watch needs at least one of --svg or --json");
-    }
-
     let initial = crate::config::LoadedLabel::load(label_path)
         .with_context(|| format!("failed to load label {}", label_path.display()))?;
     let watch_root = initial.base_dir.clone();
     let mut inputs =
         watch_inputs(&initial, font_options).context("failed to collect watch inputs")?;
 
-    let ignored_outputs: Vec<_> = [svg_output, json_output]
+    let ignored_outputs: Vec<_> = svg_output
         .into_iter()
-        .flatten()
         .map(absolute_path)
         .collect::<Result<_>>()?;
     let (sender, receiver) = mpsc::channel();
@@ -47,8 +41,8 @@ pub fn watch_label(
     };
     let mut rebuild_count = 1usize;
     let started = Instant::now();
-    let initial_svg = rebuild(label_path, svg_output, json_output, font_options)
-        .context("initial watched build failed")?;
+    let initial_svg =
+        rebuild(label_path, svg_output, font_options).context("initial watched build failed")?;
     redraw(
         preview.as_mut(),
         &initial_svg,
@@ -82,7 +76,7 @@ pub fn watch_label(
 
         rebuild_count += 1;
         let started = Instant::now();
-        match rebuild(label_path, svg_output, json_output, font_options) {
+        match rebuild(label_path, svg_output, font_options) {
             Ok(svg) => {
                 if let Ok(label) = crate::config::LoadedLabel::load(label_path)
                     && let Ok(updated) = watch_inputs(&label, font_options)
@@ -111,7 +105,6 @@ pub fn watch_label(
 fn rebuild(
     label_path: &Path,
     svg_output: Option<&Path>,
-    json_output: Option<&Path>,
     font_options: &crate::svg::FontOptions,
 ) -> Result<String> {
     let label = crate::config::LoadedLabel::load(label_path)
@@ -121,14 +114,6 @@ fn rebuild(
     if let Some(path) = svg_output {
         fs::write(path, &rendered.svg)
             .with_context(|| format!("failed to write SVG {}", path.display()))?;
-    }
-    if let Some(path) = json_output {
-        let document = crate::export::export_rendered(&rendered)
-            .with_context(|| format!("failed to export label {}", label.path.display()))?;
-        let mut json = serde_json::to_vec(&document).context("failed to serialize Onshape JSON")?;
-        json.push(b'\n');
-        fs::write(path, json)
-            .with_context(|| format!("failed to write JSON {}", path.display()))?;
     }
     Ok(rendered.svg)
 }

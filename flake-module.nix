@@ -231,7 +231,9 @@ in
         lib.nameValuePair "export-plate-${plateName}" (makeExportApp {
           name = plateName;
           arguments = [
-            "export-plate"
+            "label"
+            "plate"
+            "export"
             "--dimensions"
             (builtins.elemAt definition.dimensions 0)
             (builtins.elemAt definition.dimensions 1)

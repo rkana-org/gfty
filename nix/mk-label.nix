@@ -36,6 +36,8 @@ let
       { icon = assetPath item; };
 
   config = (formats.toml { }).generate "${name}-label.toml" {
+    kind = "label";
+    version = 1;
     template = assetPath template;
     inherit filament;
     text = lib.mapAttrs (_: content: { inherit content; }) text;
@@ -56,6 +58,6 @@ runCommand name
   }
   ''
     mkdir -p "$out"
-    gfty-label ${fontArgs} build ${lib.escapeShellArg (toString config)} --output "$out"
+    gfty ${fontArgs} label render ${lib.escapeShellArg (toString config)} --output "$out/label.svg"
     cp ${config} "$out/label.toml"
   ''

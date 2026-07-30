@@ -7,9 +7,23 @@ use std::{
 use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
 
+pub const LABEL_CONFIG_VERSION: u32 = 1;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ConfigKind {
+    Label,
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct LabelConfig {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kind: Option<ConfigKind>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub version: Option<u32>,
+
     pub template: String,
 
     /// Filament used for the blank prototype body.
@@ -93,7 +107,7 @@ impl LoadedLabel {
 
     pub fn from_config(config: LabelConfig, base_dir: PathBuf) -> Self {
         Self {
-            path: base_dir.join("<quick>"),
+            path: base_dir.join("<create>"),
             base_dir,
             config,
         }
@@ -137,6 +151,11 @@ impl LoadedLabel {
     }
 
     pub fn validate(&self) -> Result<()> {
+        if let Some(version) = self.config.version
+            && version != LABEL_CONFIG_VERSION
+        {
+            bail!("unsupported label TOML version {version}; expected {LABEL_CONFIG_VERSION}");
+        }
         ensure_file(&self.template_path(), "template")?;
         let template = crate::template::TemplateInfo::load(&self.template_path())?;
         crate::color::ColorMapping::load(&self.template_path()).with_context(|| {
@@ -333,6 +352,8 @@ mod tests {
     fn resolves_svg_paths_directly_and_other_names_as_aliases() {
         let label = LoadedLabel::from_config(
             LabelConfig {
+                kind: None,
+                version: None,
                 template: "template.svg".to_owned(),
                 filament: 0,
                 text: BTreeMap::new(),
@@ -373,6 +394,29 @@ mod tests {
                 temp.path().join("labels/nested/a.TOML"),
                 temp.path().join("labels/z.toml")
             ]
+        );
+    }
+
+    #[test]
+    fn rejects_unknown_label_schema_versions_before_resolving_assets() {
+        let label = LoadedLabel::from_config(
+            LabelConfig {
+                kind: Some(ConfigKind::Label),
+                version: Some(LABEL_CONFIG_VERSION + 1),
+                template: "missing.svg".to_owned(),
+                filament: 0,
+                text: BTreeMap::new(),
+                icon: BTreeMap::new(),
+                icons: BTreeMap::new(),
+            },
+            PathBuf::from("/project"),
+        );
+        assert!(
+            label
+                .validate()
+                .unwrap_err()
+                .to_string()
+                .contains("version")
         );
     }
 

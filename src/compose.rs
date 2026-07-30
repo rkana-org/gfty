@@ -436,6 +436,8 @@ mod tests {
             path: PathBuf::from("label.toml"),
             base_dir: PathBuf::from("."),
             config: LabelConfig {
+                kind: None,
+                version: None,
                 template: "template.svg".to_owned(),
                 filament: 0,
                 text: BTreeMap::from([(
@@ -486,6 +488,8 @@ mod tests {
         .unwrap();
         let label = LoadedLabel::from_config(
             LabelConfig {
+                kind: None,
+                version: None,
                 template: "templates/label.svg".to_owned(),
                 filament: 0,
                 text: BTreeMap::new(),

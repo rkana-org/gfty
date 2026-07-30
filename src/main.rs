@@ -2,12 +2,12 @@ mod cli;
 mod color;
 mod compose;
 mod config;
+mod create;
 mod credentials;
 mod export;
 mod layout;
 mod onshape;
 mod plate;
-mod quick;
 mod step;
 mod svg;
 mod template;
@@ -15,13 +15,14 @@ mod terminal_preview;
 mod text;
 mod watch;
 
-use std::io::Write;
-
 use anyhow::{Context, Result};
 use clap::Parser;
 use colored::Colorize;
 
-use crate::cli::{Cli, Command, ExportArgs, ExportPlateArgs, RemoteExportArgs};
+use crate::cli::{
+    Cli, Command, CreateArgs, ExportArgs, ExportPlateArgs, LabelCommand, PlateCommand,
+    PlateCreateArgs, RemoteExportArgs,
+};
 
 fn main() {
     if let Err(error) = run() {
@@ -36,20 +37,35 @@ fn run() -> Result<()> {
         system_fonts: cli.system_fonts,
         directories: cli.font_dir,
     };
-    let list_root = cli.root;
-    let inspect_preview = cli.preview;
     let preview_options = terminal_preview::PreviewOptions {
         mode: cli.terminal_preview,
         width: cli.terminal_preview_width,
     };
     match cli.command {
-        Command::Validate { label } => {
-            validate_labels(label.as_deref(), list_root.as_deref(), &font_options)?;
-        }
-        Command::Render { label, output } => {
+        Command::Export(args) => export_label_step(args, &font_options),
+        Command::Label(label) => run_label_command(
+            label.command,
+            cli.root.as_deref(),
+            cli.preview,
+            &font_options,
+            preview_options,
+        ),
+    }
+}
+
+fn run_label_command(
+    command: LabelCommand,
+    root: Option<&std::path::Path>,
+    inspect_preview: bool,
+    font_options: &svg::FontOptions,
+    preview_options: terminal_preview::PreviewOptions,
+) -> Result<()> {
+    match command {
+        LabelCommand::Validate { label } => validate_labels(label.as_deref(), root, font_options),
+        LabelCommand::Render { label, output } => {
             let loaded = config::LoadedLabel::load(&label)
                 .with_context(|| format!("failed to load label {}", label.display()))?;
-            let svg = compose::render_label_svg(&loaded, &font_options)
+            let svg = compose::render_label_svg(&loaded, font_options)
                 .with_context(|| format!("failed to render label {}", loaded.path.display()))?;
             if let Some(output) = output {
                 std::fs::write(&output, &svg)
@@ -60,107 +76,104 @@ fn run() -> Result<()> {
                     preview_options,
                     false,
                 );
+                Ok(())
             } else {
-                let shown = terminal_preview::show_svg(
-                    &svg,
-                    &loaded.path.display().to_string(),
-                    preview_options,
-                    false,
-                )
-                .context("failed to render SVG in the terminal")?;
-                if !shown {
-                    anyhow::bail!(
-                        "terminal preview is unavailable; use --output PATH or select a supported terminal preview mode"
-                    );
-                }
+                show_required_preview(&svg, &loaded.path.display().to_string(), preview_options)
             }
         }
-        Command::Build { label, output } => {
-            let loaded = config::LoadedLabel::load(&label)
-                .with_context(|| format!("failed to load label {}", label.display()))?;
-            let rendered = compose::render_label(&loaded, &font_options)
-                .with_context(|| format!("failed to render label {}", loaded.path.display()))?;
-            std::fs::create_dir_all(&output).with_context(|| {
-                format!("failed to create output directory {}", output.display())
-            })?;
-            std::fs::write(output.join("label.svg"), &rendered.svg)
-                .with_context(|| format!("failed to write label SVG in {}", output.display()))?;
-            let document = export::export_rendered(&rendered)
-                .with_context(|| format!("failed to export label {}", loaded.path.display()))?;
-            write_json(&output.join("label.json"), &document)?;
+        LabelCommand::Create(args) => create_label(args, font_options, preview_options),
+        LabelCommand::Inspect { file } => {
+            inspect_file(&file, font_options, preview_options, inspect_preview)
         }
-        Command::Export(args) => export_label_step(args, &font_options)?,
-        Command::ExportPlate(args) => export_plate_step(args, &font_options)?,
-        Command::Quick {
-            template,
-            filament,
-            text,
-            icon,
-            svg,
-            save,
-            json,
-        } => {
-            if svg.is_none() && json.is_none() && save.is_none() {
-                anyhow::bail!("quick needs at least one of --svg, --json, or --save");
-            }
-            let loaded = quick::build_quick_label(&template, filament, &text, &icon)
-                .context("failed to build quick label configuration")?;
-            let rendered = compose::render_label(&loaded, &font_options)
-                .context("failed to render quick label")?;
-            try_preview(&rendered.svg, "quick label", preview_options, false);
-            if let Some(output) = save {
-                quick::save_quick_label(&loaded, &output)?;
-            }
-            if let Some(output) = svg {
-                std::fs::write(&output, &rendered.svg)
-                    .with_context(|| format!("failed to write SVG {}", output.display()))?;
-            }
-            if let Some(output) = json {
-                let document =
-                    export::export_rendered(&rendered).context("failed to export quick label")?;
-                write_json(&output, &document)?;
-            }
+        LabelCommand::Watch { label, svg } => {
+            watch::watch_label(&label, svg.as_deref(), font_options, preview_options)
+                .with_context(|| format!("failed to watch label {}", label.display()))
         }
-        Command::Inspect { file } => {
-            inspect_file(&file, &font_options, preview_options, inspect_preview)?;
-        }
-        Command::Plate {
-            dimensions,
-            column_gap,
-            row_gap,
-            svg,
-            json,
-            labels,
-        } => {
-            // With no explicit output option, mirror export and quick --json
-            // by writing compact JSON to stdout.
-            let json = if svg.is_none() && json.is_none() {
-                Some(std::path::PathBuf::from("-"))
-            } else {
-                json
-            };
-            let output =
-                plate::build_plate(&labels, &dimensions, &column_gap, &row_gap, &font_options)
-                    .context("failed to generate plate")?;
-            try_preview(&output.svg, "plate", preview_options, false);
-            if let Some(path) = svg {
-                std::fs::write(&path, output.svg)
-                    .with_context(|| format!("failed to write plate SVG {}", path.display()))?;
-            }
-            if let Some(path) = json {
-                write_json(&path, &output.document)?;
-            }
-        }
-        Command::Watch { label, svg, json } => {
-            watch::watch_label(
-                &label,
-                svg.as_deref(),
-                json.as_deref(),
-                &font_options,
-                preview_options,
-            )
-            .with_context(|| format!("failed to watch label {}", label.display()))?;
-        }
+        LabelCommand::Export(args) => export_label_step(args, font_options),
+        LabelCommand::Plate(plate) => match plate.command {
+            PlateCommand::Create(args) => create_plate(args, font_options, preview_options),
+            PlateCommand::Export(args) => export_plate_step(args, font_options),
+        },
+    }
+}
+
+fn create_label(
+    args: CreateArgs,
+    font_options: &svg::FontOptions,
+    preview_options: terminal_preview::PreviewOptions,
+) -> Result<()> {
+    if args.svg.is_none() && args.save.is_none() && args.export.is_none() {
+        anyhow::bail!("label create needs at least one of --svg, --save, or --export");
+    }
+    let loaded = create::build_label(&args.template, args.filament, &args.text, &args.icon)
+        .context("failed to create label configuration")?;
+    let rendered =
+        compose::render_label(&loaded, font_options).context("failed to render label")?;
+    try_preview(&rendered.svg, "created label", preview_options, false);
+    if let Some(output) = args.save {
+        create::save_label(&loaded, &output)?;
+    }
+    if let Some(output) = args.svg {
+        std::fs::write(&output, &rendered.svg)
+            .with_context(|| format!("failed to write SVG {}", output.display()))?;
+    }
+    if let Some(output) = args.export {
+        let gridfinity_config = args
+            .gridfinity_config
+            .context("label create --export requires --gridfinity-config PATH")?;
+        step::ensure_output_available(&output, args.force)?;
+        let document = export::export_rendered(&rendered)
+            .context("failed to generate geometry for created label")?;
+        download_document_step(
+            &document,
+            RemoteExportArgs {
+                gridfinity_config,
+                output: Some(output.clone()),
+                onshape_credentials: args.onshape_credentials,
+                onshape_model: args.onshape_model,
+                force: args.force,
+            },
+            output,
+            "created label",
+        )?;
+    }
+    Ok(())
+}
+
+fn create_plate(
+    args: PlateCreateArgs,
+    font_options: &svg::FontOptions,
+    preview_options: terminal_preview::PreviewOptions,
+) -> Result<()> {
+    let output = plate::build_plate(
+        &args.labels,
+        &args.dimensions,
+        &args.column_gap,
+        &args.row_gap,
+        font_options,
+    )
+    .context("failed to generate label plate")?;
+    if let Some(path) = args.svg {
+        std::fs::write(&path, &output.svg)
+            .with_context(|| format!("failed to write plate SVG {}", path.display()))?;
+        try_preview(&output.svg, "label plate", preview_options, false);
+        Ok(())
+    } else {
+        show_required_preview(&output.svg, "label plate", preview_options)
+    }
+}
+
+fn show_required_preview(
+    svg: &str,
+    name: &str,
+    preview_options: terminal_preview::PreviewOptions,
+) -> Result<()> {
+    let shown = terminal_preview::show_svg(svg, name, preview_options, false)
+        .context("failed to render SVG in the terminal")?;
+    if !shown {
+        anyhow::bail!(
+            "terminal preview is unavailable; use an output option or select a supported terminal preview mode"
+        );
     }
     Ok(())
 }
@@ -321,25 +334,6 @@ fn validate_labels(
         std::process::exit(1);
     }
     Ok(())
-}
-
-fn write_json(path: &std::path::Path, document: &export::ExportDocument) -> Result<()> {
-    let mut json = serde_json::to_vec(document).context("failed to serialize Onshape JSON")?;
-    json.push(b'\n');
-    if is_stdout_path(path) {
-        std::io::stdout()
-            .lock()
-            .write_all(&json)
-            .context("failed to write JSON to stdout")?;
-    } else {
-        std::fs::write(path, json)
-            .with_context(|| format!("failed to write JSON {}", path.display()))?;
-    }
-    Ok(())
-}
-
-fn is_stdout_path(path: &std::path::Path) -> bool {
-    path == std::path::Path::new("-")
 }
 
 fn inspect_file(

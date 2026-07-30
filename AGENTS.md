@@ -2,9 +2,10 @@
 
 ## Scope and purpose
 
-`gfty-label` is a Rust CLI, Nix package/module, and small set of Onshape
-FeatureScripts for reproducibly turning SVG label artwork into colored Onshape
-geometry. It supports individual labels and row-major multi-label plates.
+`gfty` (in the transitional `gfty-label` repository/package) is a Rust CLI, Nix
+module, and small set of Onshape FeatureScripts for reproducibly turning SVG
+label artwork into colored Onshape geometry. It supports individual labels and
+row-major multi-label plates, with bins planned next.
 
 The current end-to-end model is:
 
@@ -25,6 +26,10 @@ is in `../std-library/`.
 - `src/main.rs`: command dispatch, output behavior, and inspection.
 - `src/cli.rs`: Clap interface. Keep stdout clean for data-producing commands.
 - `src/config.rs`: TOML schema, path resolution, discovery, and validation.
+- `src/create.rs`: unsaved label creation and reusable TOML saving.
+- `src/credentials.rs`: protected Onshape credential-file discovery.
+- `src/onshape.rs`: signed encode/translate/poll/download API operations.
+- `src/step.rs`: expected filament manifest validation and atomic downloads.
 - `src/template.rs`: SVG template contract and icon-box metadata.
 - `src/compose.rs`: shared label composition pipeline.
 - `src/color.rs`: SVG fill/stroke discovery, sidecars, overrides, preview colors.
@@ -47,10 +52,12 @@ is in `../std-library/`.
 
 ### Paths and discovery
 
+- New label TOML uses `kind = "label"` and `version = 1`; legacy files without
+  those fields remain compatible.
 - There is no required project marker or directory layout.
 - Absolute paths work everywhere.
 - Paths in saved label TOML resolve relative to that TOML.
-- `quick` paths resolve relative to the current working directory.
+- `gfty label create` paths resolve relative to the current working directory.
 - Pathless `validate` recursively scans `ROOT/labels`; `--root` overrides ROOT.
 - `.svg` icon values are paths. Other icon values are aliases in `[icon.NAME]`.
 
@@ -156,8 +163,8 @@ Current JSON is version 2:
 - Outputs are accessed as `packages.labels.<name>` and
   `packages.plates.<name>`. `packages.labels.all` is a link farm containing one
   symlink per label name.
-- Label bundles contain `label.svg`, `label.json`, and `label.toml`; plate
-  bundles contain `plate.svg` and `plate.json`.
+- Label bundles contain `label.svg` and `label.toml`; plate bundles contain
+  `plate.svg`. Runtime exporters generate geometry JSON in memory.
 - Every module label and plate has a JSON-serializable `gfty-ultimate` attribute
   set. Plates use their own configuration; child configurations are ignored
   except that `size_x_units` and `size_y_units` must match.

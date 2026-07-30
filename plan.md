@@ -155,7 +155,7 @@ parameter can be sent beside `Config` in the same API request.
 JSON remains an internal wire format because the current FeatureScripts consume
 it, but users should not need to manage geometry JSON.
 
-Remove these public outputs after API export is working:
+The API exporter is working and these public outputs have been removed:
 
 - The current compact-JSON `export` command.
 - `quick --json`.
@@ -482,12 +482,15 @@ large path-only change during API debugging.
 
 ### 4. Reorganize and simplify label commands
 
-1. Move commands below `gfty label`.
-2. Rename `quick` to `create` and add its optional direct export action.
-3. Move plate behavior below `gfty label plate`.
-4. Remove public geometry JSON flags, commands, and package artifacts.
-5. Internalize or remove `build`.
-6. Update the example and consumer flakes.
+1. **Done:** move authoring commands below `gfty label`, while retaining generic
+   `gfty export LABEL` dispatch.
+2. **Done:** rename `quick` to `create` and support direct `--export`.
+3. **Done:** move plate creation/export below `gfty label plate`.
+4. **Done:** remove public geometry JSON flags, commands, and package artifacts.
+5. **Done:** remove public `build`; pure Nix builders use render/create commands.
+6. **Partly done:** update the package examples and compatibility wrapper. The
+   separate `gfty-label-library` lock/input migration remains after these commits
+   are published.
 
 ### 5. Verify the Gridfinity Ultimate model
 
