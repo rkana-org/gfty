@@ -4,7 +4,7 @@ let
   inherit (flake-parts-lib) mkPerSystemOption;
   inherit (lib) mkOption types;
 
-  defaultOnshapeBaseUrl = "https://cad.onshape.com/documents/089ad0a2edf08cd2cfdc9875/w/5ce345793596671ec8f90331/e/5bba513a46b691f2bf439aaa";
+  defaultOnshapeBaseUrl = "https://cad.onshape.com/documents/089ad0a2edf08cd2cfdc9875/v/02d1ce92af09ce405aff8f7d/e/5bba513a46b691f2bf439aaa";
 
   # Onshape configuration assignments are semicolon-separated. Each value is
   # form-encoded first, then the complete assignment string is URL-encoded as

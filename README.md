@@ -233,8 +233,6 @@ let
   };
 in {
   gfty-label = {
-    # Optional; this is already the module's default workspace.
-    onshapeBaseUrl = "https://cad.onshape.com/documents/089ad0a2edf08cd2cfdc9875/w/5ce345793596671ec8f90331/e/5bba513a46b691f2bf439aaa";
     labels.screws = {
       template = ./templates/label.svg;
       text.main = "Screws";
