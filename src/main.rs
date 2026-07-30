@@ -2,10 +2,13 @@ mod cli;
 mod color;
 mod compose;
 mod config;
+mod credentials;
 mod export;
 mod layout;
+mod onshape;
 mod plate;
 mod quick;
+mod step;
 mod svg;
 mod template;
 mod terminal_preview;
@@ -18,7 +21,7 @@ use anyhow::{Context, Result};
 use clap::Parser;
 use colored::Colorize;
 
-use crate::cli::{Cli, Command};
+use crate::cli::{Cli, Command, ExportArgs};
 
 fn main() {
     if let Err(error) = run() {
@@ -86,15 +89,7 @@ fn run() -> Result<()> {
                 .with_context(|| format!("failed to export label {}", loaded.path.display()))?;
             write_json(&output.join("label.json"), &document)?;
         }
-        Command::Export { label, output } => {
-            let loaded = config::LoadedLabel::load(&label)
-                .with_context(|| format!("failed to load label {}", label.display()))?;
-            let rendered = compose::render_label(&loaded, &font_options)
-                .with_context(|| format!("failed to render label {}", loaded.path.display()))?;
-            let document = export::export_rendered(&rendered)
-                .with_context(|| format!("failed to export label {}", loaded.path.display()))?;
-            write_json(&output, &document)?;
-        }
+        Command::Export(args) => export_step(args, &font_options)?,
         Command::Quick {
             template,
             filament,
@@ -167,6 +162,80 @@ fn run() -> Result<()> {
         }
     }
     Ok(())
+}
+
+fn export_step(args: ExportArgs, font_options: &svg::FontOptions) -> Result<()> {
+    let output = args
+        .output
+        .unwrap_or_else(|| default_step_path(&args.label));
+    step::ensure_output_available(&output, args.force)?;
+
+    let loaded = config::LoadedLabel::load(&args.label)
+        .with_context(|| format!("failed to load label {}", args.label.display()))?;
+    let rendered = compose::render_label(&loaded, font_options)
+        .with_context(|| format!("failed to render label {}", loaded.path.display()))?;
+    let document = export::export_rendered(&rendered)
+        .with_context(|| format!("failed to generate geometry for {}", loaded.path.display()))?;
+    let label_json = serde_json::to_string(&document)
+        .context("failed to serialize label geometry for Onshape")?;
+    let gridfinity_json = read_gridfinity_config(&args.gridfinity_config)?;
+
+    let credentials = credentials::Credentials::load(args.onshape_credentials)?;
+    let target = onshape::ModelTarget::parse(&args.onshape_model)?;
+    let client = onshape::OnshapeClient::new(credentials)?;
+    let destination_name = output
+        .file_stem()
+        .and_then(|name| name.to_str())
+        .context("STEP output must have a UTF-8 file name")?;
+    let contents = client
+        .export_label_step(&target, &label_json, &gridfinity_json, destination_name)
+        .with_context(|| format!("failed to export label {}", loaded.path.display()))?;
+    step::validate_label_step(&contents, &document.filaments)
+        .context("downloaded Onshape STEP failed label part validation")?;
+    step::write_atomic(&output, &contents, args.force)?;
+    eprintln!(
+        "{} {} ({} bytes)",
+        "Finished".green().bold(),
+        output.display(),
+        contents.len()
+    );
+    Ok(())
+}
+
+fn default_step_path(label: &std::path::Path) -> std::path::PathBuf {
+    let stem = label
+        .file_stem()
+        .and_then(|name| name.to_str())
+        .filter(|name| !name.is_empty())
+        .unwrap_or("label");
+    std::path::PathBuf::from(format!("{stem}.step"))
+}
+
+fn read_gridfinity_config(path: &std::path::Path) -> Result<String> {
+    let source = std::fs::read_to_string(path).with_context(|| {
+        format!(
+            "failed to read Gridfinity Ultimate configuration {}",
+            path.display()
+        )
+    })?;
+    let value: serde_json::Value = serde_json::from_str(&source).with_context(|| {
+        format!(
+            "failed to parse Gridfinity Ultimate configuration {} as JSON",
+            path.display()
+        )
+    })?;
+    if !value.is_object() {
+        anyhow::bail!(
+            "Gridfinity Ultimate configuration {} must be a JSON object",
+            path.display()
+        );
+    }
+    serde_json::to_string(&value).with_context(|| {
+        format!(
+            "failed to serialize Gridfinity Ultimate configuration {}",
+            path.display()
+        )
+    })
 }
 
 fn validate_labels(

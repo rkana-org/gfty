@@ -114,22 +114,19 @@ then reported as likely disconnected/out-of-bounds artwork.
 API operations must be runtime commands, not Nix derivation build steps. Nix
 builds must remain pure and credentials must never enter the Nix store.
 
-A reasonable incremental interface is:
+The transitional label interface is:
 
 ```text
-gfty-label onshape inspect TARGET_URL
-gfty-label onshape export LABEL \
-  --gfty-config gfty-ultimate.json \
-  --target TARGET_URL \
-  --format step \
+gfty-label export LABEL \
+  --gridfinity-config gfty-ultimate.json \
+  --onshape-credentials ~/.config/gfty/onshape.toml \
   --output label.step
-
-gfty-label onshape export-plate plate.json \
-  --gfty-config gfty-ultimate.json \
-  --target TARGET_URL \
-  --format step \
-  --output plate.step
 ```
+
+It generates geometry in memory, signs requests, downloads atomically, and
+validates expected STEP product/body names. `plan.md` defines the future
+entity-oriented `gfty` command structure, generic TOML dispatch, plate support,
+and Nix apps.
 
 The Nix module could expose non-secret passthru metadata such as the target
 version URL, generated geometry path, Gridfinity JSON path, and a ready-to-run

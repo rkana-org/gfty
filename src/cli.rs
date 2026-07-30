@@ -1,6 +1,8 @@
 use std::path::PathBuf;
 
-use clap::{Parser, Subcommand, ValueEnum};
+use clap::{Args, Parser, Subcommand, ValueEnum};
+
+pub const DEFAULT_LABEL_MODEL_URL: &str = "https://cad.onshape.com/documents/089ad0a2edf08cd2cfdc9875/v/02d1ce92af09ce405aff8f7d/e/5bba513a46b691f2bf439aaa";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub enum TerminalPreviewMode {
@@ -65,13 +67,8 @@ pub enum Command {
         output: PathBuf,
     },
 
-    /// Export a label as compact Onshape JSON.
-    Export {
-        label: PathBuf,
-        /// Write JSON to PATH; defaults to stdout.
-        #[arg(short, long, default_value = "-")]
-        output: PathBuf,
-    },
+    /// Generate a configured label in Onshape and download a grouped STEP.
+    Export(ExportArgs),
 
     /// Build an unsaved label from command-line values.
     Quick {
@@ -139,4 +136,30 @@ pub enum Command {
         #[arg(long)]
         json: Option<PathBuf>,
     },
+}
+
+#[derive(Debug, Args)]
+pub struct ExportArgs {
+    /// Label TOML to render and export.
+    pub label: PathBuf,
+
+    /// Gridfinity Ultimate configuration JSON for the label prototype.
+    #[arg(long, value_name = "PATH")]
+    pub gridfinity_config: PathBuf,
+
+    /// Destination STEP path; defaults to LABEL's file stem in the current directory.
+    #[arg(short, long, value_name = "PATH")]
+    pub output: Option<PathBuf>,
+
+    /// Protected TOML file containing access-key and secret-key.
+    #[arg(long, value_name = "PATH")]
+    pub onshape_credentials: Option<PathBuf>,
+
+    /// Immutable Onshape label model version URL.
+    #[arg(long, default_value = DEFAULT_LABEL_MODEL_URL, value_name = "URL")]
+    pub onshape_model: String,
+
+    /// Replace an existing output file.
+    #[arg(long)]
+    pub force: bool,
 }

@@ -20,7 +20,7 @@ to scan another root. `inspect` always takes an explicit file.
 gfty-label validate [LABEL]
 gfty-label render LABEL [--output PREVIEW.svg]
 gfty-label build LABEL --output DIR
-gfty-label export LABEL [--output FILLS.json]
+gfty-label export LABEL --gridfinity-config CONFIG.json [--output LABEL.step]
 gfty-label quick --template TEMPLATE --text ID CONTENT --icon BOX ICON [--save LABEL.toml]
 gfty-label inspect FILE [--preview]
 gfty-label plate --dimensions WIDTH HEIGHT [OPTIONS] LABEL...
@@ -49,11 +49,40 @@ gfty-label quick \
 can be used by itself or together with SVG/JSON output; the label is fully
 rendered and validated before it is saved.
 
-`export` writes compact JSON to stdout by default. `quick --json` also uses
-stdout when its optional path is omitted:
+`export` renders the label, sends its geometry and Gridfinity Ultimate
+configuration to the pinned immutable Onshape model in POST bodies, and
+downloads one grouped AP242 STEP containing every named filament part:
 
 ```sh
-gfty-label export labels/m3.toml | wl-copy
+gfty-label export labels/m3.toml \
+  --gridfinity-config gridfinity-1x1.json \
+  --output m3.step
+```
+
+The output defaults to the label file stem in the current directory. Existing
+files are rejected unless `--force` is given. The downloaded STEP is checked for
+exactly the expected `part-N` products and solid bodies before it is installed.
+Use `--onshape-model URL` to override the pinned immutable model version.
+
+Prefer a mode-0600 credentials file:
+
+```toml
+access-key = "..."
+secret-key = "..."
+```
+
+Pass it with `--onshape-credentials PATH`, set
+`GFTY_ONSHAPE_CREDENTIALS_FILE`, or install it as
+`$XDG_CONFIG_HOME/gfty/onshape.toml` (defaulting to
+`~/.config/gfty/onshape.toml`). `ONSHAPE_ACCESS_KEY` and
+`ONSHAPE_SECRET_KEY` are a fallback. Credentials are loaded only at runtime and
+requests use Onshape HMAC signatures. A read-only document API key is sufficient
+because exports use `storeInDocument=false`.
+
+`quick --json` writes compact internal geometry JSON to stdout when its optional
+path is omitted during the transition to the future `gfty` command structure:
+
+```sh
 gfty-label quick --template templates/label-1x1.svg --text main M3 --json | wl-copy
 ```
 
@@ -299,7 +328,8 @@ Colors are disabled for redirected output and when `NO_COLOR` is set.
 
 ## Onshape JSON
 
-`export` and `quick --json` emit compact structured geometry. Coordinates are
+`build`, `quick --json`, `plate --json`, and `watch --json` use compact
+structured geometry internally. Coordinates are
 millimeters, centered on the template viewport, with SVG's downward Y axis
 converted to an upward Y axis. Filament indices remain arbitrary non-negative
 integers.
