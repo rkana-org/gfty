@@ -340,3 +340,10 @@ higher IDs, is `#EAEAEA`, `#43484D`, `#A7D293`, `#8AAED6`, `#E1927A`,
 
 `featurescript/gfty_label_importer.fs` is retained only for legacy version 1
 JSON and is not part of the current workflow.
+
+For workflows which derive the blank prototype from another configured Part
+Studio, `featurescript/variable_configured_derived.fs` wraps Onshape's native
+Derived implementation and forwards current Part Studio variables into selected
+source configuration inputs. See
+`featurescript/variable_configured_derived.md` for installation, mapping, and
+limitations.
