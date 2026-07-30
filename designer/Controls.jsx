@@ -128,6 +128,10 @@ function Controls({ flat, set, divider, setDivider, hotMerge, setHotMerge }) {
                 <Switch checked={flat.bin_tub_label_is_swappable} onChange={(v) => set({ bin_tub_label_is_swappable: v })} />
               </Field>
               <Nest open={flat.bin_tub_label_is_swappable}>
+                <Field name="Embossing clearance" hint="Fit clearance around the embossed artwork that is added to the swappable label.">
+                  <NumUnit value={flat.bin_tub_label_swappable_embossing_clearance_mm} unit="mm" min={0} max={5} step={0.1}
+              onChange={(v) => set({ bin_tub_label_swappable_embossing_clearance_mm: v })} />
+                </Field>
                 <Field name="Embossing inset" hint="Depth of the recess cut into the top of the swappable label, leaving room to emboss text or icons on top.">
                   <NumUnit value={flat.bin_tub_label_swappable_embossing_inset_height_mm} unit="mm" min={0} max={5} step={0.1}
               onChange={(v) => set({ bin_tub_label_swappable_embossing_inset_height_mm: v })} />

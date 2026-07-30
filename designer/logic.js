@@ -43,7 +43,8 @@
       bin_tub_label_is_swappable: true,
       bin_tub_label_supports_mode: 'auto',          // 'always' | 'auto' | 'off'
       bin_tub_label_swappable_supports_enable: true,
-      bin_tub_label_swappable_embossing_inset_height_mm: 0.4,  // recess at label top for embossed text
+      bin_tub_label_swappable_embossing_clearance_mm: 0.4,     // fit clearance around embossed label artwork
+      bin_tub_label_swappable_embossing_inset_height_mm: 0,    // recess at label top for embossed text
       bin_tub_label_is_fullwidth: true,
       bin_tub_label_width_units: 1,
 
@@ -374,6 +375,7 @@
     'size_z_units',
     'bin_tub_divider_config',
     'bin_tub_label_swappable_supports_enable',
+    'bin_tub_label_swappable_embossing_clearance',
     'bin_tub_label_swappable_embossing_inset_height',
   ];
 
@@ -402,6 +404,7 @@
       size_z_units: num(flat.size_z_units),
       bin_tub_divider_config: dividerToObject(flat, divider),
       bin_tub_label_swappable_supports_enable: supportsEnabled(flat, divider),
+      bin_tub_label_swappable_embossing_clearance: fmtMeter(flat.bin_tub_label_swappable_embossing_clearance_mm),
       bin_tub_label_swappable_embossing_inset_height: fmtMeter(flat.bin_tub_label_swappable_embossing_inset_height_mm),
     };
     const ordered = {};
@@ -534,6 +537,7 @@
       bin_tub_label_is_swappable: bool(obj.bin_tub_label_is_swappable, d.bin_tub_label_is_swappable),
       bin_tub_label_supports_mode: d.bin_tub_label_supports_mode,
       bin_tub_label_swappable_supports_enable: bool(obj.bin_tub_label_swappable_supports_enable, d.bin_tub_label_swappable_supports_enable),
+      bin_tub_label_swappable_embossing_clearance_mm: obj.bin_tub_label_swappable_embossing_clearance === undefined ? d.bin_tub_label_swappable_embossing_clearance_mm : parseLenMm(obj.bin_tub_label_swappable_embossing_clearance, 'bin_tub_label_swappable_embossing_clearance'),
       bin_tub_label_swappable_embossing_inset_height_mm: obj.bin_tub_label_swappable_embossing_inset_height === undefined ? d.bin_tub_label_swappable_embossing_inset_height_mm : parseLenMm(obj.bin_tub_label_swappable_embossing_inset_height, 'bin_tub_label_swappable_embossing_inset_height'),
       bin_tub_label_is_fullwidth: bool(obj.bin_tub_label_is_fullwidth, d.bin_tub_label_is_fullwidth),
       bin_tub_label_width_units: posNum(obj.bin_tub_label_width_units, d.bin_tub_label_width_units),

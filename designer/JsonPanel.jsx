@@ -1,6 +1,6 @@
 /* Right live-JSON panel. Exposes JsonPanel. */
-const ONSHAPE_VERSION = "V41";
-const ONSHAPE_BASE = "https://cad.onshape.com/documents/044aa38d921c6673acd89aef/v/dd3c2e6e541581476ebd2823/e/47f09ccd9b344504691f98d4";
+const ONSHAPE_VERSION = "V42";
+const ONSHAPE_BASE = "https://cad.onshape.com/documents/044aa38d921c6673acd89aef/v/793cbd4a9bdd57cb44baa08a/e/47f09ccd9b344504691f98d4";
 
 /* Build the Onshape configurable-document URL. Onshape expects the query param
    configuration=<urlencode("Config=" + formEncode(minifiedJSON))>, where the
