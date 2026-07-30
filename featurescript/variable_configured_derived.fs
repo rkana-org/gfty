@@ -5,6 +5,15 @@ const VARIABLE_DERIVED_MATE_CONNECTOR_COUNT = {
         (unitless) : [-1, -1, 50]
     } as IntegerBoundSpec;
 
+/** Placement options mirrored from the standard Derived feature. */
+export enum VariableDerivedPlacementType
+{
+    annotation { "Name" : "Base origin" }
+    AT_ORIGIN,
+    annotation { "Name" : "Base mate connector" }
+    AT_MATE_CONNECTOR
+}
+
 /**
  * Derived feature whose source Part Studio configuration can be driven by
  * variables in the current Part Studio.
@@ -58,9 +67,9 @@ export const variableConfiguredDerived = defineFeature(function(context is Conte
         definition.location is Query;
 
         annotation { "Name" : "Placement", "UIHint" : UIHint.SHOW_LABEL }
-        definition.placement is DerivedPlacementType;
+        definition.placement is VariableDerivedPlacementType;
 
-        if (definition.placement == DerivedPlacementType.AT_MATE_CONNECTOR)
+        if (definition.placement == VariableDerivedPlacementType.AT_MATE_CONNECTOR)
         {
             annotation { "Name" : "Mate connector index", "UIHint" : UIHint.ALWAYS_HIDDEN }
             isInteger(definition.mateConnectorIndex, VARIABLE_DERIVED_MATE_CONNECTOR_COUNT);
@@ -84,7 +93,7 @@ export const variableConfiguredDerived = defineFeature(function(context is Conte
     }, {
         configurationOverrides : [],
         location : qNothing(),
-        placement : DerivedPlacementType.AT_ORIGIN,
+        placement : VariableDerivedPlacementType.AT_ORIGIN,
         mateConnectorIndex : -1,
         includeMateConnectors : true,
         mateConnectorId : 0,
@@ -169,7 +178,8 @@ function nativeDerivedDefinition(definition is map) returns map
             "partStudio" : definition.partStudio,
             "preserveActiveSheetMetal" : definition.preserveActiveSheetMetal,
             "location" : definition.location,
-            "placement" : definition.placement,
+            "placement" : definition.placement == VariableDerivedPlacementType.AT_MATE_CONNECTOR ?
+                DerivedPlacementType.AT_MATE_CONNECTOR : DerivedPlacementType.AT_ORIGIN,
             "mateConnectorIndex" : definition.mateConnectorIndex,
             "mateConnectorId" : definition.mateConnectorId,
             "mateConnectorIndexInFeature" : definition.mateConnectorIndexInFeature,
