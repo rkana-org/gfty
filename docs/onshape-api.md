@@ -72,6 +72,14 @@ configuration variable consumed by FeatureScript:
 - The translation response referenced the requested version and no workspace,
   proving that no mutable workspace was needed.
 
+The production label model was then tested with `gfty-label-library` inputs. A
+6,223-byte single-label geometry request downloaded a 771,162-byte STEP, and a
+9,738-byte two-label plate request downloaded a 1,472,745-byte STEP. Each file
+contained exactly four `PRODUCT` and `MANIFOLD_SOLID_BREP` records named
+`part-0`, `part-1`, `part-2`, and `part-3`, with no generic/helper parts. The
+existing `Config` and `GFTYUltimateConfig` string parameters require no upstream
+change for complete label/plate exports.
+
 The authenticated live OpenAPI document is available from `/api/openapi`. It
 shows an important endpoint distinction:
 
@@ -86,6 +94,20 @@ shows an important endpoint distinction:
 support. STEP preserves multiple named parts in the validated output; the exact
 behavior in OrcaSlicer must still be tested. STL may produce one file per part
 or a ZIP depending on export options.
+
+### Feature warnings
+
+The translation response exposes `requestState` and `failureReason`, but not
+warnings from successful FeatureScript regeneration. `getPartStudioFeatures`
+returns an `OK`/`INFO`/`WARNING`/`ERROR` state per feature, but takes
+`configuration` in the URL query and the public schema does not include warning
+text. It is therefore unsuitable for diagnostics with large label
+configurations.
+
+Output invariants should be hard FeatureScript regeneration errors where
+possible. The downloader should also verify that a label/plate STEP contains
+exactly the expected filament part names and count; an unexpected `Part 1` is
+then reported as likely disconnected/out-of-bounds artwork.
 
 ## Suggested CLI shape
 

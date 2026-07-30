@@ -126,31 +126,29 @@ output indefinitely.
 ## Exporting components
 
 A label is tied to the bin configuration that provides its blank/prototype, so a
-label definition may reference a bin definition. The default export should
-produce the complete printable object represented by the TOML.
+label definition may reference a bin definition. Label and label-plate exports
+always contain every generated filament part; component selection does not apply
+to them. An unexpected additional body is an invalid label rather than an
+optional export component.
 
-Users may also need a subset such as only the label parts, only the bin, or only
-the base. The intended interface is a semantic component selector rather than a
-separate file kind for every subset:
+Component selection remains useful for standalone Gridfinity objects, for
+example:
 
 ```sh
-gfty export labels/screws.toml --component all
-gfty export labels/screws.toml --component label
-gfty export labels/screws.toml --component bin
+gfty export bins/small-parts.toml
 gfty export bins/small-parts.toml --component base
 ```
 
-The supported component values must be defined per TOML kind and validated
-before making an API request.
+The supported component values are defined per TOML kind and validated before
+making an API request. A future separate base/baseplate kind can still be added
+if it has its own useful authoring model.
 
 Configured Onshape part IDs are configuration-dependent, and obtaining them
 through a large configuration query would recreate the URL-size problem.
-Therefore `partIds` should not be the primary design. If the production models
-cannot already suppress unwanted components through existing enable flags, add
-a small configuration parameter such as `ExportComponent` and make the model
-produce only the requested bodies. That parameter can be sent beside the large
-JSON values in the same API request. We will decide the exact model change only
-after inspecting a real label STEP.
+Therefore `partIds` should not be the primary design. If the Gridfinity Ultimate
+model cannot suppress unwanted standalone-bin components through existing enable
+flags, add a small configuration parameter such as `ExportComponent`. That
+parameter can be sent beside `Config` in the same API request.
 
 ## JSON policy
 
@@ -186,18 +184,19 @@ Expected parameters:
 - `Config`: gfty label/plate geometry JSON.
 - `GFTYUltimateConfig`: Gridfinity Ultimate JSON used to create the bin and
   label prototype.
-- Potential future `ExportComponent`: small enum/string selecting all, label,
-  bin, or base output.
 
-The currently pinned label model has already been inspected through the API:
+The currently pinned label model has already been inspected and exported through
+the API:
 
 - `Config` is `BTMConfigurationParameterString-872` with parameter ID `Config`.
 - `GFTYUltimateConfig` is `BTMConfigurationParameterString-872` with parameter ID
   `GFTYUltimateConfig`.
 
-It is already structurally compatible with POST-body configuration. No upstream
-change should be made until a real generated label is exported and its parts are
-inspected.
+A `gfty-label-library` label and two-label plate were exported from the immutable
+version. Both STEP files contained exactly four solid/product records named
+`part-0`, `part-1`, `part-2`, and `part-3`, with no generic or helper parts. The
+model is already structurally and geometrically compatible with POST-body
+configuration; it needs no component selector.
 
 ### Gridfinity Ultimate model
 
@@ -241,8 +240,13 @@ Implement only the narrow API surface required by gfty:
 4. Download every external result.
 5. Report `failureReason` and useful Onshape request context.
 
-Use `grouping = true` to preserve separate named parts in one STEP. Actual label,
-bin, appearance, and OrcaSlicer behavior must be smoke-tested.
+Use `grouping = true` to preserve separate named parts in one STEP. After
+writing the temporary STEP, validate that label/plate `PRODUCT` and
+`MANIFOLD_SOLID_BREP` names and counts exactly match the expected filament parts.
+A generic `Part 1` or extra body is an actionable label/model error, likely from
+artwork disconnected from the blank. Reject the export and do not install the
+temporary file. Actual bin, appearance, and OrcaSlicer behavior must still be
+smoke-tested.
 
 Downloads must:
 
@@ -257,6 +261,20 @@ The initial implementation may call `encodeConfigurationMap` for correctness.
 Later, its simple text-parameter encoding can be reproduced and tested locally
 to save one API call per export. Annual API quotas make unnecessary discovery
 and polling calls worth avoiding.
+
+### FeatureScript diagnostics
+
+The translation response exposes `requestState` and `failureReason`, but not
+successful-regeneration warnings. `getPartStudioFeatures` exposes each feature's
+`OK`, `INFO`, `WARNING`, or `ERROR` state, but its `configuration` is a query
+parameter and therefore reintroduces the large-URL limit; the public response
+schema also does not include the warning text. It is not a reliable diagnostic
+channel for large labels.
+
+Invalid output invariants should therefore be hard FeatureScript regeneration
+errors where practical, not warnings. The CLI should additionally validate the
+downloaded STEP part manifest. This gives useful protection even when Onshape's
+translation response reports only `DONE`.
 
 ## Credentials
 
@@ -326,7 +344,8 @@ nix run .#export-bin-small-parts
 
 Each app references only non-secret store inputs and invokes the same generic
 `gfty export FILE` path. It writes the STEP to the caller's current directory.
-Extra CLI arguments can select a component, output path, or overwrite behavior.
+Extra CLI arguments can select a supported bin component, output path, or
+overwrite behavior.
 
 The final STEP is not a Nix package or fixed-output derivation. Even with an
 immutable model version, Onshape translator updates and file metadata may make
@@ -421,16 +440,18 @@ large path-only change during API debugging.
 
 ### 1. Verify and prepare the label Onshape model
 
-1. Inspect the pinned immutable version's configuration contract. **Done:** both
-   required parameters already exist as strings with the expected IDs.
-2. Build a representative real label and a multi-label plate with current Nix
-   inputs.
-3. Export both through the validated generic translation endpoint.
-4. Inspect the STEP body count, names, unwanted helper/bin parts, and configured
-   geometry.
-5. Decide whether `ExportComponent` or another model-side selector is needed.
-6. Only then edit the source workspace, compile/smoke-test FeatureScript, create
-   a new immutable version, and update the pinned target.
+1. **Done:** inspect the pinned immutable version's configuration contract; both
+   required parameters exist as strings with the expected IDs.
+2. **Done:** build `gfty-label-library`'s `machine-torx-M3x2` label and `test`
+   two-label plate with the current local gfty package.
+3. **Done:** export both through the generic translation endpoint. The 6,223-byte
+   label geometry produced a 771,162-byte STEP; the 9,738-byte plate geometry
+   produced a 1,472,745-byte STEP.
+4. **Done:** inspect both STEP files. Each contains exactly four named filament
+   solids/products (`part-0` through `part-3`) and no generic/helper bodies.
+5. No label component selector or upstream document change is required.
+6. Add downstream expected-part validation; optionally add the same invariant as
+   a FeatureScript regeneration error after its query behavior is smoke-tested.
 
 ### 2. Add minimal label STEP export
 
@@ -441,7 +462,8 @@ large path-only change during API debugging.
    `gfty label export FILE` as the entity-oriented spelling.
 5. Initially accept the existing Gridfinity JSON/Nix-generated configuration;
    named bin TOML follows later.
-6. Test actual label and plate downloads against the pinned model.
+6. Reuse the successful library label/plate fixtures for integration tests; the
+   ad-hoc downloads against the pinned model have already succeeded.
 
 ### 3. Introduce `gfty` and the Nix export apps
 

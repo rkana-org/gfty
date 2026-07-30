@@ -189,12 +189,15 @@ a browser URL:
    via `downloadFileWorkspace`.
 
 This was validated against an immutable version with 65,595 bytes of raw JSON.
-The downloaded AP242 STEP contained both separately named PoC bodies, and the
-translation referenced a version with no workspace. The generic
-`createPartStudioTranslation` body schema has `configuration`; the
-format-specific `createPartStudioExportStep` schema currently does not. See
-`docs/onshape-api.md` for the request body and test details. The authenticated
-live schema can be retrieved from `/api/openapi`.
+The production model was also exported with `gfty-label-library` single-label
+and two-label plate inputs; each STEP contained exactly the four expected named
+filament bodies and no helper parts. The generic `createPartStudioTranslation`
+body schema has `configuration`; the format-specific
+`createPartStudioExportStep` schema currently does not. Translation responses do
+not expose successful FeatureScript warnings, so enforce invalid output as
+regeneration errors and validate downloaded STEP part names/counts. See
+`docs/onshape-api.md` for request and test details. The authenticated live schema
+can be retrieved from `/api/openapi`.
 
 Fallbacks which mutate a workspace are possible but less desirable:
 
