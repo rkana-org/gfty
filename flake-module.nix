@@ -4,21 +4,7 @@ let
   inherit (flake-parts-lib) mkPerSystemOption;
   inherit (lib) mkOption types;
 
-  defaultOnshapeBaseUrl = "https://cad.onshape.com/documents/089ad0a2edf08cd2cfdc9875/v/02d1ce92af09ce405aff8f7d/e/5bba513a46b691f2bf439aaa";
-
-  # Onshape configuration assignments are semicolon-separated. Each value is
-  # form-encoded first, then the complete assignment string is URL-encoded as
-  # the outer `configuration` query parameter.
-  formEncode = value: lib.replaceStrings [ "%20" ] [ "+" ] (lib.escapeURL value);
-  makeOnshapeUrl =
-    baseUrl: configJsonPath: gftyUltimateConfig:
-    let
-      configJson = lib.removeSuffix "\n" (builtins.readFile configJsonPath);
-      configuration =
-        "Config=${formEncode configJson}"
-        + ";GFTYUltimateConfig=${formEncode (builtins.toJSON gftyUltimateConfig)}";
-    in
-    "${baseUrl}?renderMode=&configuration=${lib.escapeURL configuration}";
+  defaultLabelModelUrl = "https://cad.onshape.com/documents/089ad0a2edf08cd2cfdc9875/v/02d1ce92af09ce405aff8f7d/e/5bba513a46b691f2bf439aaa";
 
   jsonAttrsType = types.addCheck types.attrs (
     value: (builtins.tryEval (builtins.toJSON value)).success
@@ -108,19 +94,63 @@ let
 in
 {
   options.perSystem = mkPerSystemOption (
-    { config, system, ... }:
+    {
+      config,
+      system,
+      ...
+    }:
     let
       package = self.packages.${system}.default;
-      withOnshapeUrl =
-        output: jsonFile: gftyUltimateConfig:
-        output.overrideAttrs (old: {
-          passthru = (old.passthru or { }) // {
-            onshapeUrl =
-              makeOnshapeUrl config.gfty-label.onshapeBaseUrl "${output}/${jsonFile}"
-                gftyUltimateConfig;
-          };
-        });
-      rawLabelPackages = lib.mapAttrs (
+      fontArguments =
+        fonts:
+        lib.concatMap (font: [
+          "--font-dir"
+          (toString font)
+        ]) fonts;
+      makeExportApp =
+        {
+          name,
+          arguments,
+          fonts,
+          gftyUltimateConfig,
+        }:
+        let
+          gridfinityConfig = package.writeExportText "${name}-gridfinity.json" (
+            builtins.toJSON gftyUltimateConfig
+          );
+          command = lib.escapeShellArgs (
+            [ "${package}/bin/gfty" ]
+            ++ fontArguments fonts
+            ++ arguments
+            ++ [
+              "--gridfinity-config"
+              (toString gridfinityConfig)
+              "--onshape-model"
+              config.gfty-label.labelModelUrl
+            ]
+          );
+          defaultOutputName = lib.escapeShellArg "${name}.step";
+          script = package.writeExportScript "export-${name}" ''
+            set -euo pipefail
+            has_output=false
+            for argument in "$@"; do
+              if [[ "$argument" == "-o" || "$argument" == -o?* || "$argument" == "--output" || "$argument" == --output=* ]]; then
+                has_output=true
+                break
+              fi
+            done
+            if [[ "$has_output" == false ]]; then
+              set -- --output "$PWD"/${defaultOutputName} "$@"
+            fi
+            exec ${command} "$@"
+          '';
+        in
+        {
+          type = "app";
+          program = toString script;
+          meta.description = "Export ${name} as a configured Onshape STEP";
+        };
+      labelPackages = lib.mapAttrs (
         labelName: definition:
         package.mkLabel {
           name = if definition.name == null then labelName else definition.name;
@@ -133,10 +163,6 @@ in
             ;
         }
       ) config.gfty-label.labels;
-      labelPackages = lib.mapAttrs (
-        labelName: output:
-        withOnshapeUrl output "label.json" config.gfty-label.labels.${labelName}.gfty-ultimate
-      ) rawLabelPackages;
       allLabels = package.mkOutputSet {
         name = "all-labels";
         entries = labelPackages;
@@ -150,7 +176,7 @@ in
             entries = labelPackages;
             extra.all = allLabels;
           };
-      rawPlatePackages = lib.mapAttrs (
+      platePackages = lib.mapAttrs (
         plateName: definition:
         let
           plateSize = baseSize "gfty-label.plates.${plateName}" definition.gfty-ultimate;
@@ -181,21 +207,51 @@ in
           ) definition.labels;
         }
       ) config.gfty-label.plates;
-      platePackages = lib.mapAttrs (
-        plateName: output:
-        withOnshapeUrl output "plate.json" config.gfty-label.plates.${plateName}.gfty-ultimate
-      ) rawPlatePackages;
       platesOutput = package.mkOutputSet {
         name = "plates";
         entries = platePackages;
       };
+      labelExportApps = lib.mapAttrs' (
+        labelName: output:
+        lib.nameValuePair "export-label-${labelName}" (makeExportApp {
+          name = labelName;
+          arguments = [
+            "export"
+            (toString output.labelConfig)
+          ];
+          fonts = output.labelFonts;
+          gftyUltimateConfig = config.gfty-label.labels.${labelName}.gfty-ultimate;
+        })
+      ) labelPackages;
+      plateExportApps = lib.mapAttrs' (
+        plateName: output:
+        let
+          definition = config.gfty-label.plates.${plateName};
+        in
+        lib.nameValuePair "export-plate-${plateName}" (makeExportApp {
+          name = plateName;
+          arguments = [
+            "export-plate"
+            "--dimensions"
+            (builtins.elemAt definition.dimensions 0)
+            (builtins.elemAt definition.dimensions 1)
+            "--column-gap"
+            definition.columnGap
+            "--row-gap"
+            definition.rowGap
+          ]
+          ++ map (label: toString label.labelConfig) output.plateLabels;
+          fonts = output.labelFonts;
+          gftyUltimateConfig = definition.gfty-ultimate;
+        })
+      ) platePackages;
     in
     {
       options.gfty-label = {
-        onshapeBaseUrl = mkOption {
+        labelModelUrl = mkOption {
           type = types.str;
-          default = defaultOnshapeBaseUrl;
-          description = "Base Onshape workspace URL used by generated package onshapeUrl passthru values.";
+          default = defaultLabelModelUrl;
+          description = "Immutable Onshape label model version used by generated export apps.";
         };
         labels = mkOption {
           type = types.attrsOf labelType;
@@ -209,9 +265,12 @@ in
         };
       };
 
-      config.packages = {
-        labels = labelsOutput;
-        plates = platesOutput;
+      config = {
+        apps = labelExportApps // plateExportApps;
+        packages = {
+          labels = labelsOutput;
+          plates = platesOutput;
+        };
       };
     }
   );

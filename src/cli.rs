@@ -17,7 +17,7 @@ pub enum TerminalPreviewMode {
 }
 
 #[derive(Debug, Parser)]
-#[command(name = "gfty-label", version, about)]
+#[command(name = "gfty", version, about)]
 pub struct Cli {
     /// Also make fonts installed on the host available to the renderer.
     #[arg(long, global = true)]
@@ -69,6 +69,10 @@ pub enum Command {
 
     /// Generate a configured label in Onshape and download a grouped STEP.
     Export(ExportArgs),
+
+    /// Generate a configured label plate in Onshape and download a grouped STEP.
+    #[command(hide = true)]
+    ExportPlate(ExportPlateArgs),
 
     /// Build an unsaved label from command-line values.
     Quick {
@@ -143,11 +147,37 @@ pub struct ExportArgs {
     /// Label TOML to render and export.
     pub label: PathBuf,
 
+    #[command(flatten)]
+    pub remote: RemoteExportArgs,
+}
+
+#[derive(Debug, Args)]
+pub struct ExportPlateArgs {
+    /// Maximum plate width and height, for example: --dimensions 200mm 250mm.
+    #[arg(long, value_names = ["WIDTH", "HEIGHT"], num_args = 2, required = true)]
+    pub dimensions: Vec<String>,
+
+    #[arg(long, default_value = "5mm")]
+    pub column_gap: String,
+
+    #[arg(long, default_value = "5mm")]
+    pub row_gap: String,
+
+    /// Labels in top-left, row-major order. Repeat a path to repeat a label.
+    #[arg(required = true)]
+    pub labels: Vec<PathBuf>,
+
+    #[command(flatten)]
+    pub remote: RemoteExportArgs,
+}
+
+#[derive(Debug, Args)]
+pub struct RemoteExportArgs {
     /// Gridfinity Ultimate configuration JSON for the label prototype.
     #[arg(long, value_name = "PATH")]
     pub gridfinity_config: PathBuf,
 
-    /// Destination STEP path; defaults to LABEL's file stem in the current directory.
+    /// Destination STEP path; defaults to the input name in the current directory.
     #[arg(short, long, value_name = "PATH")]
     pub output: Option<PathBuf>,
 

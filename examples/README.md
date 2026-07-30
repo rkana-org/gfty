@@ -28,13 +28,14 @@ result/
 Each individual label contains `label.svg`, `label.json`, and `label.toml`.
 Each plate contains `plate.svg` and `plate.json`.
 
-Every individual output also exposes an Onshape URL containing both its geometry
-JSON and the corresponding pure-Nix Gridfinity Ultimate configuration:
+Every individual definition also exposes an explicit runtime export app:
 
 ```sh
-nix eval --raw ./examples#labels.module-example.onshapeUrl
-nix eval --raw ./examples#plates.module-example.onshapeUrl
+nix run ./examples#export-label-module-example
+nix run ./examples#export-plate-module-example
 ```
 
-Evaluating a URL builds the corresponding package so its generated JSON can be
-embedded in the link.
+These commands obtain credentials through `gfty` at runtime, send the generated
+geometry and pure-Nix Gridfinity configuration in API POST bodies, and download
+the STEP to the current directory. Credentials never enter Nix evaluation or the
+store.

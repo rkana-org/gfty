@@ -149,7 +149,9 @@ Current JSON is version 2:
 ## Nix interfaces
 
 - `packages.default` exposes `mkLabel` and `mkPlate` passthru builders.
-- `overlays.default` is generated with flake-parts `easyOverlay`.
+- The packaged main program is `gfty`; `gfty-label` is a compatibility symlink.
+- `overlays.default` is generated with flake-parts `easyOverlay` and exposes both
+  `pkgs.gfty` and the compatibility name `pkgs.gfty-label`.
 - The flake module uses typed options under `perSystem.gfty-label`.
 - Outputs are accessed as `packages.labels.<name>` and
   `packages.plates.<name>`. `packages.labels.all` is a link farm containing one
@@ -159,12 +161,12 @@ Current JSON is version 2:
 - Every module label and plate has a JSON-serializable `gfty-ultimate` attribute
   set. Plates use their own configuration; child configurations are ignored
   except that `size_x_units` and `size_y_units` must match.
-- `onshapeUrl` passthru values currently embed both generated `Config` JSON and
-  `GFTYUltimateConfig`. This is only viable for very small output: Onshape/web
-  infrastructure returns HTTP 414 around 5-6 KB. Do not treat these URLs as the
-  long-term plate transport.
-- Evaluating an `onshapeUrl` causes import-from-derivation because the generated
-  JSON must be read from the package output.
+- Browser `onshapeUrl` passthru values were removed because they fail around
+  5-6 KB. The module generates `export-label-<name>` and
+  `export-plate-<name>` apps instead. These perform runtime API exports outside
+  the Nix sandbox; credentials must never be captured by Nix.
+- `perSystem.gfty-label.labelModelUrl` pins the immutable model version used by
+  generated apps.
 
 ## Onshape REST API direction
 

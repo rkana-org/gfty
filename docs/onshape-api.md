@@ -117,7 +117,7 @@ builds must remain pure and credentials must never enter the Nix store.
 The transitional label interface is:
 
 ```text
-gfty-label export LABEL \
+gfty export LABEL \
   --gridfinity-config gfty-ultimate.json \
   --onshape-credentials ~/.config/gfty/onshape.toml \
   --output label.step

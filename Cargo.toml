@@ -2,8 +2,13 @@
 name = "gfty-label"
 version = "0.1.0"
 edition = "2024"
+autobins = false
 description = "File-based Gridfinity label composer and Onshape exporter"
 license = "MIT"
+
+[[bin]]
+name = "gfty"
+path = "src/main.rs"
 
 [dependencies]
 anyhow = "1.0"

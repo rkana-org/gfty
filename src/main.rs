@@ -21,7 +21,7 @@ use anyhow::{Context, Result};
 use clap::Parser;
 use colored::Colorize;
 
-use crate::cli::{Cli, Command, ExportArgs};
+use crate::cli::{Cli, Command, ExportArgs, ExportPlateArgs, RemoteExportArgs};
 
 fn main() {
     if let Err(error) = run() {
@@ -89,7 +89,8 @@ fn run() -> Result<()> {
                 .with_context(|| format!("failed to export label {}", loaded.path.display()))?;
             write_json(&output.join("label.json"), &document)?;
         }
-        Command::Export(args) => export_step(args, &font_options)?,
+        Command::Export(args) => export_label_step(args, &font_options)?,
+        Command::ExportPlate(args) => export_plate_step(args, &font_options)?,
         Command::Quick {
             template,
             filament,
@@ -164,11 +165,13 @@ fn run() -> Result<()> {
     Ok(())
 }
 
-fn export_step(args: ExportArgs, font_options: &svg::FontOptions) -> Result<()> {
+fn export_label_step(args: ExportArgs, font_options: &svg::FontOptions) -> Result<()> {
     let output = args
+        .remote
         .output
+        .clone()
         .unwrap_or_else(|| default_step_path(&args.label));
-    step::ensure_output_available(&output, args.force)?;
+    step::ensure_output_available(&output, args.remote.force)?;
 
     let loaded = config::LoadedLabel::load(&args.label)
         .with_context(|| format!("failed to load label {}", args.label.display()))?;
@@ -176,12 +179,44 @@ fn export_step(args: ExportArgs, font_options: &svg::FontOptions) -> Result<()> 
         .with_context(|| format!("failed to render label {}", loaded.path.display()))?;
     let document = export::export_rendered(&rendered)
         .with_context(|| format!("failed to generate geometry for {}", loaded.path.display()))?;
-    let label_json = serde_json::to_string(&document)
-        .context("failed to serialize label geometry for Onshape")?;
-    let gridfinity_json = read_gridfinity_config(&args.gridfinity_config)?;
+    download_document_step(
+        &document,
+        args.remote,
+        output,
+        &format!("label {}", loaded.path.display()),
+    )
+}
 
-    let credentials = credentials::Credentials::load(args.onshape_credentials)?;
-    let target = onshape::ModelTarget::parse(&args.onshape_model)?;
+fn export_plate_step(args: ExportPlateArgs, font_options: &svg::FontOptions) -> Result<()> {
+    let output = args
+        .remote
+        .output
+        .clone()
+        .unwrap_or_else(|| std::path::PathBuf::from("plate.step"));
+    step::ensure_output_available(&output, args.remote.force)?;
+    let plate = plate::build_plate(
+        &args.labels,
+        &args.dimensions,
+        &args.column_gap,
+        &args.row_gap,
+        font_options,
+    )
+    .context("failed to generate label plate geometry")?;
+    download_document_step(&plate.document, args.remote, output, "label plate")
+}
+
+fn download_document_step(
+    document: &export::ExportDocument,
+    remote: RemoteExportArgs,
+    output: std::path::PathBuf,
+    description: &str,
+) -> Result<()> {
+    let label_json = serde_json::to_string(document)
+        .context("failed to serialize label geometry for Onshape")?;
+    let gridfinity_json = read_gridfinity_config(&remote.gridfinity_config)?;
+
+    let credentials = credentials::Credentials::load(remote.onshape_credentials)?;
+    let target = onshape::ModelTarget::parse(&remote.onshape_model)?;
     let client = onshape::OnshapeClient::new(credentials)?;
     let destination_name = output
         .file_stem()
@@ -189,10 +224,10 @@ fn export_step(args: ExportArgs, font_options: &svg::FontOptions) -> Result<()> 
         .context("STEP output must have a UTF-8 file name")?;
     let contents = client
         .export_label_step(&target, &label_json, &gridfinity_json, destination_name)
-        .with_context(|| format!("failed to export label {}", loaded.path.display()))?;
+        .with_context(|| format!("failed to export {description}"))?;
     step::validate_label_step(&contents, &document.filaments)
         .context("downloaded Onshape STEP failed label part validation")?;
-    step::write_atomic(&output, &contents, args.force)?;
+    step::write_atomic(&output, &contents, remote.force)?;
     eprintln!(
         "{} {} ({} bytes)",
         "Finished".green().bold(),

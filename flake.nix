@@ -83,7 +83,10 @@
           };
 
           packages.default = pkgs.callPackage ./package.nix { };
-          overlayAttrs.gfty-label = config.packages.default;
+          overlayAttrs = {
+            gfty = config.packages.default;
+            gfty-label = config.packages.default;
+          };
         };
     };
 }

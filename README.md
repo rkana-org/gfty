@@ -17,15 +17,18 @@ to scan another root. `inspect` always takes an explicit file.
 ## Commands
 
 ```text
-gfty-label validate [LABEL]
-gfty-label render LABEL [--output PREVIEW.svg]
-gfty-label build LABEL --output DIR
-gfty-label export LABEL --gridfinity-config CONFIG.json [--output LABEL.step]
-gfty-label quick --template TEMPLATE --text ID CONTENT --icon BOX ICON [--save LABEL.toml]
-gfty-label inspect FILE [--preview]
-gfty-label plate --dimensions WIDTH HEIGHT [OPTIONS] LABEL...
-gfty-label watch LABEL --svg PREVIEW.svg --json FILLS.json
+gfty validate [LABEL]
+gfty render LABEL [--output PREVIEW.svg]
+gfty build LABEL --output DIR
+gfty export LABEL --gridfinity-config CONFIG.json [--output LABEL.step]
+gfty quick --template TEMPLATE --text ID CONTENT --icon BOX ICON [--save LABEL.toml]
+gfty inspect FILE [--preview]
+gfty plate --dimensions WIDTH HEIGHT [OPTIONS] LABEL...
+gfty watch LABEL --svg PREVIEW.svg --json FILLS.json
 ```
+
+`gfty` is the main executable. `gfty-label` remains a compatibility symlink while
+the command hierarchy and downstream flakes migrate.
 
 Rendering resolves bundled and explicitly supplied fonts, converts text and SVG
 primitives to paths with `usvg`, applies filament
@@ -35,7 +38,7 @@ physical-millimeter paths grouped by filament for Onshape.
 `quick` accepts ordinary relative or absolute template and icon paths:
 
 ```sh
-gfty-label quick \
+gfty quick \
   --template templates/label-1x1.svg \
   --filament 0 \
   --text main 'M{3}x[10]' \
@@ -54,7 +57,7 @@ configuration to the pinned immutable Onshape model in POST bodies, and
 downloads one grouped AP242 STEP containing every named filament part:
 
 ```sh
-gfty-label export labels/m3.toml \
+gfty export labels/m3.toml \
   --gridfinity-config gridfinity-1x1.json \
   --output m3.step
 ```
@@ -83,7 +86,7 @@ because exports use `storeInDocument=false`.
 path is omitted during the transition to the future `gfty` command structure:
 
 ```sh
-gfty-label quick --template templates/label-1x1.svg --text main M3 --json | wl-copy
+gfty quick --template templates/label-1x1.svg --text main M3 --json | wl-copy
 ```
 
 `inspect` accepts a label TOML, template SVG, or icon SVG. It reports known
@@ -91,8 +94,8 @@ size, fields, icon boxes, color mappings, filaments, and resolved paths. Add
 `--preview` for a terminal thumbnail:
 
 ```sh
-gfty-label inspect templates/label.svg
-gfty-label inspect labels/m3.toml --preview
+gfty inspect templates/label.svg
+gfty inspect labels/m3.toml --preview
 ```
 
 `plate` takes label TOML paths directly on the command line; no plate config
@@ -100,9 +103,9 @@ file is needed. Repeat a path to repeat that label. With no `--svg` or `--json`
 option, plate JSON goes to stdout; `--json` without a path does the same:
 
 ```sh
-gfty-label plate --dimensions 200mm 250mm labels/*.toml | wl-copy
+gfty plate --dimensions 200mm 250mm labels/*.toml | wl-copy
 
-gfty-label plate \
+gfty plate \
   --dimensions 200mm 250mm \
   --svg plate.svg \
   --json plate.json \
@@ -122,7 +125,7 @@ icons, sidecars, and explicit font directories. Failed rebuilds are reported wit
 stopping the watcher:
 
 ```sh
-gfty-label watch labels/m3.toml --svg preview.svg --json label.json
+gfty watch labels/m3.toml --svg preview.svg --json label.json
 ```
 
 `validate LABEL` checks one label. With no path, it validates every TOML below
@@ -216,12 +219,13 @@ families is available.
 
 The default package exposes `mkLabel` and `mkPlate` passthru functions. Add the
 flake's `easyOverlay`-generated `overlays.default` to nixpkgs to make the same
-package available as `pkgs.gfty-label`:
+package available as `pkgs.gfty` (`pkgs.gfty-label` remains a compatibility
+alias):
 
 ```nix
 # Import nixpkgs with overlays = [ inputs.gfty-label.overlays.default ].
 let
-  screws = pkgs.gfty-label.mkLabel {
+  screws = pkgs.gfty.mkLabel {
     name = "screws-label"; # Derivation pname only.
     template = ./templates/label.svg;
     filament = 0;
@@ -234,7 +238,7 @@ let
     text.main = "M{3}x[10]";
   };
 in
-pkgs.gfty-label.mkPlate {
+pkgs.gfty.mkPlate {
   name = "fastener-plate";
   dimensions = [ "200mm" "250mm" ];
   labels = [ screws screws ];
@@ -286,21 +290,22 @@ A plate uses its own configuration rather than those of its child labels; the
 module verifies that their `size_x_units` and `size_y_units` match.
 
 Outputs are grouped as `packages.labels.<name>` and
-`packages.plates.<name>`. Each individual output has an `onshapeUrl` passthru
-which configures the workspace's `Config` variable from the generated geometry
-JSON and `GFTYUltimateConfig` from the Nix attribute set:
+`packages.plates.<name>`. The module also generates explicit runtime apps which
+build local inputs through Nix, then download the configured STEP outside the
+Nix sandbox and store:
 
 ```sh
-nix eval --raw .#labels.screws.onshapeUrl
-nix eval --raw .#plates.all.onshapeUrl
+nix run .#export-label-screws
+nix run .#export-plate-all
+nix run .#export-label-screws -- --output custom.step --force
 ```
 
-Evaluating this property realizes the package because its generated JSON is
-embedded in the URL. These links are only suitable for small labels: Onshape or
-an upstream web server returns HTTP 414 once the URL reaches roughly 5-6 KB, and
-plates exceed that quickly. General automated export should send the
-configuration in Onshape API POST bodies instead; see `docs/onshape-api.md` for
-the investigated workflow and alternatives.
+The default output is `<name>.step` in the caller's current directory. Apps use
+normal runtime credential discovery and never capture credentials in Nix. They
+are intentionally manual `nix run` actions rather than derivations because
+Onshape translator output is not guaranteed byte-reproducible. Override the
+pinned immutable model with `perSystem.gfty-label.labelModelUrl` when testing a
+new model version.
 
 `packages.labels.all` links every generated label under its definition name,
 making it convenient to install or copy the complete set. See

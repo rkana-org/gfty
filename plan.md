@@ -450,28 +450,35 @@ large path-only change during API debugging.
 4. **Done:** inspect both STEP files. Each contains exactly four named filament
    solids/products (`part-0` through `part-3`) and no generic/helper bodies.
 5. No label component selector or upstream document change is required.
-6. Add downstream expected-part validation; optionally add the same invariant as
-   a FeatureScript regeneration error after its query behavior is smoke-tested.
+6. **Done:** validate downloaded STEP `PRODUCT` and `MANIFOLD_SOLID_BREP`
+   names/counts against expected filaments before atomically installing output.
+   Upstream warning plumbing is intentionally omitted.
 
 ### 2. Add minimal label STEP export
 
-1. Add credentials-file loading and signed API requests.
-2. Add the four narrow encode/translate/poll/download operations.
-3. Generate label geometry JSON in memory.
-4. Add generic `gfty export FILE` dispatch for labels and
-   `gfty label export FILE` as the entity-oriented spelling.
-5. Initially accept the existing Gridfinity JSON/Nix-generated configuration;
-   named bin TOML follows later.
-6. Reuse the successful library label/plate fixtures for integration tests; the
-   ad-hoc downloads against the pinned model have already succeeded.
+1. **Done:** add mode-checked credentials files and HMAC-signed API requests.
+2. **Done:** add the four narrow encode/translate/poll/download operations with
+   bounded polling, redirect re-signing, and useful API errors.
+3. **Done:** generate label and plate geometry JSON in memory.
+4. **Partly done:** `gfty export FILE` handles existing label TOML, and an
+   internal plate export path supports Nix apps. The final `gfty label export`
+   spelling and kind-based dispatch belong to the command reorganization.
+5. **Done for transition:** accept existing Gridfinity JSON/Nix-generated
+   configuration; named bin TOML follows later.
+6. **Done:** live-test signed CLI and Nix-app exports for both a label and plate
+   against the pinned immutable production model.
 
 ### 3. Introduce `gfty` and the Nix export apps
 
-1. Install `gfty`; retain a temporary `gfty-label` compatibility executable.
-2. Add manual per-definition export apps.
-3. Remove `onshapeUrl` and `onshapeBaseUrl`.
-4. Keep pure label/plate previews and definitions.
-5. Ensure credentials are discovered only after `nix run` starts.
+1. **Done:** install `gfty`; retain a temporary `gfty-label` compatibility
+   symlink and `pkgs.gfty-label` overlay alias.
+2. **Done:** add `export-label-<name>` and `export-plate-<name>` runtime apps.
+3. **Done:** remove `onshapeUrl` and `onshapeBaseUrl`; add the immutable
+   `labelModelUrl` option.
+4. **Done:** keep pure label/plate previews and definitions unchanged during the
+   transition.
+5. **Done:** discover credentials only after `nix run` starts; no secret or
+   credentials path is captured by Nix.
 
 ### 4. Reorganize and simplify label commands
 
