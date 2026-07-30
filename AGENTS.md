@@ -181,16 +181,20 @@ a browser URL:
 
 1. POST `Config` and `GFTYUltimateConfig` in the body of
    `Element/encodeConfigurationMap`.
-2. Pass the returned `encodedId` in the JSON body of an asynchronous configured
-   Part Studio export/translation.
+2. Pass the returned `encodedId` as `configuration` in the JSON body of
+   `PartStudio/createPartStudioTranslation`, with `formatName = "STEP"` and
+   `storeInDocument = false` for the validated STEP workflow.
 3. Poll the translation with exponential backoff until `DONE` or `FAILED`.
 4. Download `resultExternalDataIds` with `downloadExternalData`, or a stored blob
    via `downloadFileWorkspace`.
 
-This should avoid URL limits and can target an immutable model version. Confirm
-the exact Part Studio translation request schema in the live API Explorer before
-implementation; the checked-in docs demonstrate configured async assemblies but
-do not show every Part Studio field.
+This was validated against an immutable version with 65,595 bytes of raw JSON.
+The downloaded AP242 STEP contained both separately named PoC bodies, and the
+translation referenced a version with no workspace. The generic
+`createPartStudioTranslation` body schema has `configuration`; the
+format-specific `createPartStudioExportStep` schema currently does not. See
+`docs/onshape-api.md` for the request body and test details. The authenticated
+live schema can be retrieved from `/api/openapi`.
 
 Fallbacks which mutate a workspace are possible but less desirable:
 

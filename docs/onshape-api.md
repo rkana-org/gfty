@@ -15,8 +15,8 @@ viable transport for general plates.
 
 ## Recommended approach: configured API export
 
-The checked-in Onshape API documentation indicates that a complete automatic
-export should be feasible without modifying the model workspace.
+An ad-hoc API test has confirmed that a complete automatic export works without
+modifying the model workspace.
 
 1. Authenticate at runtime with a personal API key or OAuth2.
 2. POST the two configuration values to
@@ -32,7 +32,19 @@ export should be feasible without modifying the model workspace.
    ```
 
 3. Use the returned `encodedId` as the `configuration` field in the JSON request
-   body of an asynchronous Part Studio export/translation.
+   body of `PartStudio/createPartStudioTranslation`. For STEP, the essential
+   fields are:
+
+   ```json
+   {
+     "formatName": "STEP",
+     "storeInDocument": false,
+     "configuration": "<encodedId>",
+     "grouping": true,
+     "stepVersionString": "AP242"
+   }
+   ```
+
 4. Poll `Translation/getTranslation` with exponential backoff until its state is
    `DONE` or `FAILED`.
 5. With `storeInDocument=false`, download each `resultExternalDataId` through
@@ -44,27 +56,36 @@ is carried in POST bodies, not in a browser URL or synchronous export query
 string. The configured model can be evaluated from an immutable Onshape version,
 so this path should avoid workspace history, races, and cleanup.
 
-The docs explicitly demonstrate:
+### Validated proof of concept
 
-- Configuration discovery and `encodeConfigurationMap`.
-- `encodedId` in asynchronous export request bodies.
-- Asynchronous Part Studio exports/translations.
-- Polling and external-data/blob downloads.
-- Configured asynchronous assembly export.
+The method was tested against an immutable Part Studio version with a text
+configuration variable consumed by FeatureScript:
 
-The local snapshot does not show the complete request schema for every Part
-Studio translator. Before implementing this path, use the live API Explorer to
-confirm which of these accepts `configuration`, desired part selection, and the
-required format options:
+- Raw configuration JSON: 65,595 bytes, including 65,536 checked padding
+  characters and an end sentinel.
+- Encoded configuration: 65,637 characters.
+- `encodeConfigurationMap`: HTTP 200.
+- Generic asynchronous Part Studio translation to STEP: `DONE` with no failure.
+- `downloadExternalData`: a 14,839-byte AP242 STEP file.
+- The STEP contained two `MANIFOLD_SOLID_BREP` and two `PRODUCT` records, named
+  `api-poc-A-65536` and `api-poc-B-65536` as generated from the large payload.
+- The translation response referenced the requested version and no workspace,
+  proving that no mutable workspace was needed.
 
-- `PartStudio/createPartStudioExportStep`
-- `PartStudio/createPartStudioTranslation`
-- Any format-specific asynchronous STL/3MF endpoint currently available
+The authenticated live OpenAPI document is available from `/api/openapi`. It
+shows an important endpoint distinction:
+
+- `PartStudio/createPartStudioTranslation` uses `BTTranslateFormatParams`, which
+  has a request-body `configuration` field plus `formatName`, `partIds`,
+  `grouping`, and format options. This is the endpoint validated above.
+- The format-specific `PartStudio/createPartStudioExportStep` request uses
+  `BTBStepExportParams`, which currently has no `configuration` field. Do not use
+  that endpoint for this workflow unless its schema changes.
 
 `Translation/getAllTranslatorFormats` should be used to discover actual format
-support. STEP is a promising first target because it can preserve multiple named
-parts; the exact behavior in OrcaSlicer must be tested. STL may produce one file
-per part or a ZIP depending on export options.
+support. STEP preserves multiple named parts in the validated output; the exact
+behavior in OrcaSlicer must still be tested. STL may produce one file per part
+or a ZIP depending on export options.
 
 ## Suggested CLI shape
 
