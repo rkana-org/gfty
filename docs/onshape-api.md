@@ -80,6 +80,12 @@ contained exactly four `PRODUCT` and `MANIFOLD_SOLID_BREP` records named
 existing `Config` and `GFTYUltimateConfig` string parameters require no upstream
 change for complete label/plate exports.
 
+The Gridfinity Ultimate designer model was also verified without modification.
+Its immutable version exposes one string parameter with ID `Config`. A
+1,007-byte representative 1x1 configuration downloaded an 843,064-byte grouped
+STEP containing exactly `Bin`, `SwappableRim`, `SwappableLabel`, `Base`, and
+`ConnectorPin`, with no generic parts or workspace mutation.
+
 The authenticated live OpenAPI document is available from `/api/openapi`. It
 shows an important endpoint distinction:
 

@@ -494,12 +494,19 @@ large path-only change during API debugging.
 
 ### 5. Verify the Gridfinity Ultimate model
 
-1. Inspect its `Config` contract.
-2. Export a representative immutable configured bin to grouped STEP.
-3. Check base/bin/rim/helper parts and names.
-4. Determine component-selection behavior.
-5. Preserve and test the web designer's existing Open in Onshape URL.
-6. Create a new immutable version only if the model contract changes.
+1. **Done:** inspect the designer's pinned immutable version; `Config` is a
+   string parameter with ID `Config`.
+2. **Done:** export the representative 1x1 Gridfinity configuration used by the
+   label library. A 1,007-byte config produced an 843,064-byte grouped AP242
+   STEP from the immutable version.
+3. **Done:** inspect five named products/solids: `Bin`, `SwappableRim`,
+   `SwappableLabel`, `Base`, and `ConnectorPin`, with no generic parts.
+4. Existing enable flags are sufficient for the normal complete export. Exact
+   standalone component semantics can be added with bin TOML; no new Onshape
+   parameter is currently required.
+5. The web designer continues to use the unchanged `Config` browser URL and
+   pinned version.
+6. No upstream model change or new version is required.
 
 ### 6. Add bins
 

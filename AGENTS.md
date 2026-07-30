@@ -198,9 +198,12 @@ a browser URL:
    via `downloadFileWorkspace`.
 
 This was validated against an immutable version with 65,595 bytes of raw JSON.
-The production model was also exported with `gfty-label-library` single-label
-and two-label plate inputs; each STEP contained exactly the four expected named
-filament bodies and no helper parts. The generic `createPartStudioTranslation`
+The production label model was also exported with `gfty-label-library`
+single-label and two-label plate inputs; each STEP contained exactly the four
+expected named filament bodies and no helper parts. The Gridfinity Ultimate
+designer model exported five expected named bodies from its existing `Config`
+parameter, so neither upstream model needs an API-specific change. The generic
+`createPartStudioTranslation`
 body schema has `configuration`; the format-specific
 `createPartStudioExportStep` schema currently does not. Translation responses do
 not expose successful FeatureScript warnings, so enforce invalid output as
