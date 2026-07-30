@@ -267,8 +267,14 @@ nix eval --raw .#plates.all.onshapeUrl
 ```
 
 Evaluating this property realizes the package because its generated JSON is
-embedded in the URL. `packages.labels.all` links every generated label under its
-definition name, making it convenient to install or copy the complete set. See
+embedded in the URL. These links are only suitable for small labels: Onshape or
+an upstream web server returns HTTP 414 once the URL reaches roughly 5-6 KB, and
+plates exceed that quickly. General automated export should send the
+configuration in Onshape API POST bodies instead; see `docs/onshape-api.md` for
+the investigated workflow and alternatives.
+
+`packages.labels.all` links every generated label under its definition name,
+making it convenient to install or copy the complete set. See
 `examples/flake.nix` and `examples/labels.nix` for a buildable module example.
 
 ## Terminal previews
