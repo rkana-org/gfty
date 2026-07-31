@@ -198,11 +198,16 @@ designer.
 gfty bin validate bins/small-parts.toml
 gfty bin inspect bins/small-parts.toml
 gfty export bins/small-parts.toml
+gfty export bins/small-parts.toml --image small-parts.png
 gfty bin export bins/small-parts.toml --component bin
 ```
 
 A complete bin STEP is checked against the expected named `Bin`, rim, label,
-base, and connector products. `--component bin` uses the model's existing enable
+base, and connector products. Optional `--image PATH` downloads a 512×512
+isometric PNG from Onshape's configured Part Studio shaded-view endpoint. It is
+opt-in because it consumes an additional API request. Shaded views are currently bin-only: Onshape exposes them through a GET query,
+and label geometry can exceed reliable URL limits even though STEP translation
+uses POST bodies. `--component bin` uses the model's existing enable
 flags and has been live-tested. A clean standalone base export is intentionally
 not exposed yet: disabling the bin in the current model leaves a generic helper
 body, so base export needs an upstream `ExportComponent` contract or a separate

@@ -47,6 +47,7 @@ Every definition that supports remote export has an explicit runtime app:
 
 ```sh
 nix run ./examples#export-bin-module-example
+nix run ./examples#export-bin-module-example -- --image preview.png
 nix run ./examples#export-bin-bin-only
 nix run ./examples#export-label-module-example
 nix run ./examples#export-plate-module-example

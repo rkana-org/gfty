@@ -72,7 +72,7 @@ configuration variable consumed by FeatureScript:
 - The translation response referenced the requested version and no workspace,
   proving that no mutable workspace was needed.
 
-The production label model was then tested with `gfty-label-library` inputs. A
+The production label model was then tested with `gfty-library` inputs. A
 6,223-byte single-label geometry request downloaded a 771,162-byte STEP, and a
 9,738-byte two-label plate request downloaded a 1,472,745-byte STEP. Each file
 contained exactly four `PRODUCT` and `MANIFOLD_SOLID_BREP` records named
@@ -147,6 +147,33 @@ immutable model/configuration and
 font inputs; normal runtime credential discovery happens after `nix run` starts.
 Model parameter contracts were verified separately and are pinned by immutable
 version, avoiding a redundant `getConfiguration` call on each export.
+
+## Configured image previews
+
+The live OpenAPI schema exposes `PartStudio/getPartStudioShadedViews`:
+
+```text
+GET /api/v11/partstudios/d/{did}/v/{vid}/e/{eid}/shadedviews
+```
+
+It accepts `configuration`, `viewMatrix`, output dimensions, edge treatment,
+anti-aliasing, and `showAllParts`, then returns base64-encoded image data in
+`BTShadedViewsInfo`. A configured 2×2 bin was live-tested with a 2,978-character
+request URL and produced a 512×512 RGBA PNG isometric view.
+
+`gfty export BIN --image preview.png` uses this endpoint after STEP validation.
+The image is optional because it costs another API request. It uses the same
+component-adjusted bin configuration, so `--component bin` previews no base.
+
+This does not solve three-dimensional label previews. Shaded views are GET-only
+and place configuration in the URL; typical label geometry already exceeds the
+roughly 5–6 KB reliable URL range, while the STEP translator accepts it in a POST
+body. Configured element thumbnails do not help: the arbitrary-configuration
+thumbnail endpoint targets workspaces, while ordinary immutable-version
+thumbnails represent the saved/default element state. Per-part shaded views are
+available too, but require configured part IDs and the same GET configuration.
+A future label preview therefore needs either local STEP rendering or a new
+POST-capable Onshape endpoint.
 
 ## Alternative upload approaches
 

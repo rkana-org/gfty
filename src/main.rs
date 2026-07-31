@@ -191,6 +191,11 @@ fn export_config(args: GenericExportArgs, font_options: &svg::FontOptions) -> Re
             if args.component.is_some() {
                 anyhow::bail!("--component is only supported for standalone bin exports");
             }
+            if args.image.is_some() {
+                anyhow::bail!(
+                    "--image is currently supported only for bin exports; configured label geometry is too large for Onshape's GET-only shaded-view endpoint"
+                );
+            }
             export_label_step(
                 ExportArgs {
                     label: args.file,
@@ -216,6 +221,7 @@ fn export_config(args: GenericExportArgs, font_options: &svg::FontOptions) -> Re
                 bin: args.file,
                 component: args.component.unwrap_or(bin_config::BinComponent::All),
                 output: args.output,
+                image: args.image,
                 onshape_credentials: args.onshape_credentials,
                 onshape_model: args
                     .onshape_model
@@ -392,6 +398,12 @@ fn export_bin_step(args: BinExportArgs) -> Result<()> {
         .clone()
         .unwrap_or_else(|| default_step_path(&args.bin));
     step::ensure_output_available(&output, args.force)?;
+    if let Some(image) = &args.image {
+        if image == &output {
+            anyhow::bail!("STEP and PNG outputs must use different paths");
+        }
+        step::ensure_output_available(image, args.force)?;
+    }
     let loaded = bin_config::LoadedBin::load(&args.bin)?;
     let gridfinity_json = loaded.config.canonical_json(args.component)?;
     let expected_parts = loaded.config.expected_parts(args.component)?;
@@ -407,6 +419,13 @@ fn export_bin_step(args: BinExportArgs) -> Result<()> {
         .with_context(|| format!("failed to export bin {}", loaded.path.display()))?;
     step::validate_bin_step(&contents, &expected_parts)
         .context("downloaded Onshape STEP failed bin part validation")?;
+    let preview = args
+        .image
+        .as_ref()
+        .map(|_| client.render_bin_preview(&target, &gridfinity_json))
+        .transpose()
+        .with_context(|| format!("failed to render bin preview for {}", loaded.path.display()))?;
+
     step::write_atomic(&output, &contents, args.force)?;
     eprintln!(
         "{} {} ({} bytes)",
@@ -414,6 +433,15 @@ fn export_bin_step(args: BinExportArgs) -> Result<()> {
         output.display(),
         contents.len()
     );
+    if let (Some(path), Some(preview)) = (args.image, preview) {
+        step::write_atomic(&path, &preview, args.force)?;
+        eprintln!(
+            "{} {} ({} bytes)",
+            "Finished".green().bold(),
+            path.display(),
+            preview.len()
+        );
+    }
     Ok(())
 }
 

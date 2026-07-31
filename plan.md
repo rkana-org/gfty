@@ -192,7 +192,7 @@ the API:
 - `GFTYUltimateConfig` is `BTMConfigurationParameterString-872` with parameter ID
   `GFTYUltimateConfig`.
 
-A `gfty-label-library` label and two-label plate were exported from the immutable
+A `gfty-library` label and two-label plate were exported from the immutable
 version. Both STEP files contained exactly four solid/product records named
 `part-0`, `part-1`, `part-2`, and `part-3`, with no generic or helper parts. The
 model is already structurally and geometrically compatible with POST-body
@@ -432,7 +432,7 @@ The target names are:
 
 The `gfty` binary and final command hierarchy were introduced after the label
 API exporter worked. Temporary `gfty-label` binary/Nix aliases were retained
-through the `gfty-label-library` migration and have now been removed. The hosted
+through the `gfty-library` migration and have now been removed. The hosted
 repository, local directory, package, overlay, and module namespace all use the
 target names above.
 
@@ -442,7 +442,7 @@ target names above.
 
 1. **Done:** inspect the pinned immutable version's configuration contract; both
    required parameters exist as strings with the expected IDs.
-2. **Done:** build `gfty-label-library`'s `machine-torx-M3x2` label and `test`
+2. **Done:** build `gfty-library`'s `machine-torx-M3x2` label and `test`
    two-label plate with the current local gfty package.
 3. **Done:** export both through the generic translation endpoint. The 6,223-byte
    label geometry produced a 771,162-byte STEP; the 9,738-byte plate geometry
@@ -488,7 +488,7 @@ target names above.
 3. **Done:** move plate creation/export below `gfty label plate`.
 4. **Done:** remove public geometry JSON flags, commands, and package artifacts.
 5. **Done:** remove public `build`; pure Nix builders use render/create commands.
-6. **Done:** update package examples and migrate `gfty-label-library` after the
+6. **Done:** update package examples and migrate `gfty-library` after the
    new interfaces were published.
 
 ### 5. Verify the Gridfinity Ultimate model
@@ -525,13 +525,17 @@ target names above.
    live-tested. Base-only export still produces an unexpected generic `Part N`
    even after dependent flags are disabled; do not expose it until the model has
    an `ExportComponent` contract or a separate base model.
+7. **Done for bins:** optional `--image PATH` uses the configured Part Studio
+   shaded-view endpoint to download a 512×512 PNG. Label shaded views remain
+   unavailable because the endpoint is GET-only and label configurations exceed
+   reliable URL sizes.
 
 ### 7. Complete migration
 
 1. **Done:** Cargo/Nix package names, development outputs, environment variables,
    examples, flake-parts namespace, local directory, GitHub repository, and
    local remote are now `gfty`.
-2. **Done:** migrate `gfty-label-library` to `inputs.gfty`, `perSystem.gfty`, and
+2. **Done:** migrate `gfty-library` to `inputs.gfty`, `perSystem.gfty`, and
    a shared named bin; its lock now references the renamed GitHub repository.
 3. **Done:** remove the deprecated `gfty-label` command wrapper and
    `pkgs.gfty-label` overlay alias after the consumer migration.

@@ -22,7 +22,11 @@ const JSON_CONTENT_TYPE: &str = "application/json;charset=UTF-8; qs=0.09";
 const JSON_ACCEPT: &str = "application/json;charset=UTF-8; qs=0.09";
 const BINARY_ACCEPT: &str = "application/octet-stream";
 const MAX_REDIRECTS: usize = 5;
+const MAX_SHADED_VIEW_URL_LENGTH: usize = 6_000;
 const TRANSLATION_TIMEOUT: Duration = Duration::from_secs(5 * 60);
+const ISOMETRIC_VIEW_MATRIX: &str =
+    "0.612372,-0.707107,0.353553,0,0.612372,0.707107,0.353553,0,-0.5,0,0.866025,0";
+const PNG_SIGNATURE: &[u8] = b"\x89PNG\r\n\x1a\n";
 static NONCE_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Debug, Clone)]
@@ -145,6 +149,58 @@ impl OnshapeClient {
             }],
             destination_name,
         )
+    }
+
+    pub fn render_bin_preview(
+        &self,
+        target: &ModelTarget,
+        gridfinity_json: &str,
+    ) -> Result<Vec<u8>> {
+        let mut url = target.url(&format!(
+            "/api/{API_VERSION}/partstudios/d/{}/v/{}/e/{}/shadedviews",
+            target.document_id, target.version_id, target.element_id
+        ))?;
+        let configuration = format!("Config={}", form_encode(gridfinity_json));
+        url.query_pairs_mut()
+            .append_pair("configuration", &configuration)
+            .append_pair("viewMatrix", ISOMETRIC_VIEW_MATRIX)
+            .append_pair("outputWidth", "512")
+            .append_pair("outputHeight", "512")
+            .append_pair("pixelSize", "0")
+            .append_pair("edges", "show")
+            .append_pair("showAllParts", "true")
+            .append_pair("useAntiAliasing", "true");
+        if url.as_str().len() > MAX_SHADED_VIEW_URL_LENGTH {
+            bail!(
+                "configured shaded-view URL is {} characters; Onshape exposes previews only through GET and URLs above about {MAX_SHADED_VIEW_URL_LENGTH} characters are unreliable",
+                url.as_str().len()
+            );
+        }
+
+        eprintln!("Rendering configured PNG preview");
+        let response = self
+            .request(Method::GET, url, None, JSON_ACCEPT)
+            .context("failed to request Onshape shaded view")?;
+        let response: ShadedViewsResponse = serde_json::from_slice(&response)
+            .context("Onshape returned an invalid shaded-view response")?;
+        let images = response
+            .images
+            .into_iter()
+            .flat_map(ShadedImageGroup::into_images)
+            .collect::<Vec<_>>();
+        if images.len() != 1 {
+            bail!(
+                "Onshape shaded view returned {} images; expected exactly one",
+                images.len()
+            );
+        }
+        let image = BASE64
+            .decode(&images[0])
+            .context("Onshape shaded view contains invalid base64 image data")?;
+        if !image.starts_with(PNG_SIGNATURE) {
+            bail!("Onshape shaded view is not a PNG image");
+        }
+        Ok(image)
     }
 
     fn export_configured_step(
@@ -398,6 +454,25 @@ fn read_response(response: Response) -> Result<Vec<u8>> {
     bail!("Onshape API returned HTTP {status}: {detail}{request_context}")
 }
 
+fn form_encode(value: &str) -> String {
+    let mut encoded = String::with_capacity(value.len());
+    for byte in value.bytes() {
+        match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                encoded.push(char::from(byte));
+            }
+            b' ' => encoded.push('+'),
+            _ => {
+                const HEX: &[u8; 16] = b"0123456789ABCDEF";
+                encoded.push('%');
+                encoded.push(char::from(HEX[usize::from(byte >> 4)]));
+                encoded.push(char::from(HEX[usize::from(byte & 0x0f)]));
+            }
+        }
+    }
+    encoded
+}
+
 fn nonce() -> String {
     let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -405,6 +480,27 @@ fn nonce() -> String {
         .as_nanos();
     let sequence = NONCE_SEQUENCE.fetch_add(1, Ordering::Relaxed);
     format!("{nanos:x}{:x}{sequence:x}", std::process::id())
+}
+
+#[derive(Deserialize)]
+struct ShadedViewsResponse {
+    images: Vec<ShadedImageGroup>,
+}
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum ShadedImageGroup {
+    Image(String),
+    Images(Vec<String>),
+}
+
+impl ShadedImageGroup {
+    fn into_images(self) -> Vec<String> {
+        match self {
+            Self::Image(image) => vec![image],
+            Self::Images(images) => images,
+        }
+    }
 }
 
 #[derive(Serialize)]
@@ -506,6 +602,14 @@ mod tests {
         assert_ne!(first, second);
         assert!(first.len() >= 16);
         assert!(first.bytes().all(|byte| byte.is_ascii_alphanumeric()));
+    }
+
+    #[test]
+    fn form_encodes_configuration_values() {
+        assert_eq!(
+            form_encode(r#"{"label":"A B","size":[1,2]}"#),
+            "%7B%22label%22%3A%22A+B%22%2C%22size%22%3A%5B1%2C2%5D%7D"
+        );
     }
 
     #[test]

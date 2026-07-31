@@ -183,16 +183,19 @@ pub fn write_atomic(path: &Path, contents: &[u8], force: bool) -> Result<()> {
     let result = (|| -> Result<()> {
         file.write_all(contents).with_context(|| {
             format!(
-                "failed to write temporary STEP {}",
+                "failed to write temporary output {}",
                 temporary_path.display()
             )
         })?;
         file.sync_all().with_context(|| {
-            format!("failed to sync temporary STEP {}", temporary_path.display())
+            format!(
+                "failed to sync temporary output {}",
+                temporary_path.display()
+            )
         })?;
         drop(file);
         replace_file(&temporary_path, path, force)
-            .with_context(|| format!("failed to install STEP {}", path.display()))?;
+            .with_context(|| format!("failed to install output {}", path.display()))?;
         Ok(())
     })();
     if result.is_err() {

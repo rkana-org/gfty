@@ -206,6 +206,10 @@ pub struct GenericExportArgs {
     #[arg(short, long, value_name = "PATH")]
     pub output: Option<PathBuf>,
 
+    /// Download a 512×512 isometric PNG preview (bin exports only).
+    #[arg(long, value_name = "PATH")]
+    pub image: Option<PathBuf>,
+
     /// Protected TOML file containing access-key and secret-key.
     #[arg(long, value_name = "PATH")]
     pub onshape_credentials: Option<PathBuf>,
@@ -305,6 +309,10 @@ pub struct BinExportArgs {
     /// Destination STEP path; defaults to the input name in the current directory.
     #[arg(short, long, value_name = "PATH")]
     pub output: Option<PathBuf>,
+
+    /// Download a 512×512 isometric PNG preview.
+    #[arg(long, value_name = "PATH")]
+    pub image: Option<PathBuf>,
 
     /// Protected TOML file containing access-key and secret-key.
     #[arg(long, value_name = "PATH")]

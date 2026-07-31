@@ -190,8 +190,10 @@ Current JSON is version 2:
   the Nix sandbox; credentials must never be captured by Nix.
 - `perSystem.gfty.labelModelUrl` and `binModelUrl` pin immutable model
   versions used by generated apps.
-- Standalone `--component bin` is validated and live-tested. Do not expose base
-  selection with the current model: disabling the bin leaves a generic `Part N`
+- Standalone `--component bin` and optional bin `--image` shaded previews are
+  validated and live-tested. Shaded views are GET-only, so do not offer them for
+  large label configurations. Do not expose base selection with the current
+  model: disabling the bin leaves a generic `Part N`
   body, so base export needs a new model contract or separate model.
 
 ## Onshape REST API direction
@@ -217,7 +219,7 @@ a browser URL:
    via `downloadFileWorkspace`.
 
 This was validated against an immutable version with 65,595 bytes of raw JSON.
-The production label model was also exported with `gfty-label-library`
+The production label model was also exported with `gfty-library`
 single-label and two-label plate inputs; each STEP contained exactly the four
 expected named filament bodies and no helper parts. The Gridfinity Ultimate
 designer model exported five expected named bodies from its existing `Config`
