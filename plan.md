@@ -529,10 +529,16 @@ large path-only change during API debugging.
 
 ### 7. Complete migration
 
-1. Rename package, overlay, flake module namespace, and repository.
-2. Migrate `gfty-label-library`.
-3. Remove compatibility aliases after consumers have moved.
-4. Update all documentation and examples.
+1. **Mostly done:** Cargo/Nix package names, development outputs, environment
+   variables, examples, flake-parts namespace, and local directory are now
+   `gfty`. The GitHub repository and remote URL still use `gfty-label` until the
+   hosted repository is renamed.
+2. Migrate `gfty-label-library` to `perSystem.gfty` and named bins after the new
+   gfty commits are pushed so its portable GitHub lock can reference them.
+3. Remove the deprecated `gfty-label` command wrapper and `pkgs.gfty-label`
+   overlay alias after that consumer migration.
+4. **Done for current interfaces:** update primary documentation and examples to
+   use `gfty`; retain only explicit compatibility and historical references.
 
 ## Out of scope for the first implementation
 
