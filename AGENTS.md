@@ -2,9 +2,10 @@
 
 ## Scope and purpose
 
-`gfty` is a Rust CLI/package, Nix module, and small set of Onshape FeatureScripts for reproducibly turning SVG
-label artwork and typed bin TOML into colored Onshape geometry. It supports
-standalone bins, individual labels, and row-major multi-label plates.
+`gfty` is a Rust CLI/package, Nix module, browser designer, and Onshape FeatureScripts for reproducibly turning
+SVG label artwork and typed bin TOML into colored Onshape geometry. It supports
+standalone bins, individual labels, row-major multi-label plates, and the
+Gridfinity Ultimate web workflow.
 
 The current end-to-end model is:
 
@@ -24,6 +25,8 @@ is in `../std-library/`.
 
 ## Repository map
 
+- `gridfinity-ultimate/`: imported browser designer, configuration helpers, wall
+  generator, and its preserved domain-specific development guide.
 - `src/main.rs`: command dispatch, output behavior, and inspection.
 - `src/cli.rs`: Clap interface. Keep stdout clean for data-producing commands.
 - `src/config.rs`: label TOML schema, path resolution, discovery, and validation.
@@ -50,6 +53,10 @@ is in `../std-library/`.
 - `flake-module.nix`: typed flake-parts label/plate definitions and nested output
   packages.
 - `examples/`: standalone flake-parts integration test and documentation.
+- `tests/bin-designer-conformance.js`: verifies the browser and Rust default bin
+  configuration against the same frozen JSON fixture.
+- `.github/workflows/designer-pages.yml`: deploys `packages.designer` from
+  `designer-v*` tags.
 
 ## Core behavior and invariants
 
@@ -258,6 +265,7 @@ nix flake check ./examples
 nix build ./examples#labels.module-example --no-link
 nix build ./examples#labels.all --no-link
 nix build ./examples#plates.module-example --no-link
+nix build .#designer --no-link
 ```
 
 `nix fmt` runs treefmt (Rust and Nix formatting plus deadnix/statix checks).

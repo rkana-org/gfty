@@ -529,16 +529,30 @@ large path-only change during API debugging.
 
 ### 7. Complete migration
 
-1. **Mostly done:** Cargo/Nix package names, development outputs, environment
-   variables, examples, flake-parts namespace, and local directory are now
-   `gfty`. The GitHub repository and remote URL still use `gfty-label` until the
-   hosted repository is renamed.
+1. **Done:** Cargo/Nix package names, development outputs, environment variables,
+   examples, flake-parts namespace, local directory, GitHub repository, and
+   local remote are now `gfty`.
 2. Migrate `gfty-label-library` to `perSystem.gfty` and named bins after the new
    gfty commits are pushed so its portable GitHub lock can reference them.
 3. Remove the deprecated `gfty-label` command wrapper and `pkgs.gfty-label`
    overlay alias after that consumer migration.
 4. **Done for current interfaces:** update primary documentation and examples to
    use `gfty`; retain only explicit compatibility and historical references.
+
+### 8. Integrate Gridfinity Ultimate
+
+1. **Done:** merge the complete nine-commit `gridfinity-ultimate` history as a
+   second parent and place its tracked tree under `gridfinity-ultimate/`.
+2. **Done:** expose the static browser designer as root `packages.designer` and
+   add `designer-dev`/`designer-preview` to the root development shell.
+3. **Done:** move the Pages workflow to the root and use `designer-v*` tags so
+   designer releases do not collide with CLI releases.
+4. **Done:** remove the redundant nested flake/devshell/lock while retaining the
+   designer derivation and domain-specific guide.
+5. **Done:** run the browser's default serializer against the same JSON fixture
+   used by Rust during `nix flake check`.
+6. Keep the old standalone checkout only as a local backup until the integrated
+   history and deployment have been pushed and verified.
 
 ## Out of scope for the first implementation
 

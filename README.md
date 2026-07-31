@@ -4,6 +4,18 @@ Reproducible Gridfinity bin and label authoring with immutable Onshape STEP
 export. Labels use SVG templates and reusable icons; bins, labels, and their Nix
 definitions remain the source of truth.
 
+The repository also contains the complete Gridfinity Ultimate browser designer,
+Onshape configuration helpers, and wall-generator FeatureScript under
+[`gridfinity-ultimate/`](gridfinity-ultimate/README.md). That project's original
+Git history is preserved as a second parent of the import commit.
+
+Build or develop the designer from the same root flake:
+
+```sh
+nix build .#designer
+nix develop             # then: designer-dev or designer-preview
+```
+
 ## Paths
 
 No project marker or fixed directory structure is required. Absolute paths work

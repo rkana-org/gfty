@@ -1,4 +1,5 @@
 /target
 /result
+/public
 /.pre-commit-config.yaml
 /.direnv

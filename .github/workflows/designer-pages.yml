@@ -1,16 +1,15 @@
-name: Deploy designer to GitHub Pages
+name: Deploy Gridfinity Ultimate designer
 
 on:
   push:
     tags:
-      - "v*"
+      - "designer-v*"
 
 permissions:
   contents: read
   pages: write
   id-token: write
 
-# Only one Pages deployment at a time; newer tags win.
 concurrency:
   group: pages
   cancel-in-progress: true
@@ -23,22 +22,20 @@ jobs:
 
       - uses: cachix/install-nix-action@v31
 
-      # The tag (e.g. v40) must match the model version the app links to,
-      # so a published site never points at a stale Onshape version.
+      # designer-v42 must match the immutable model version linked by the app.
       - name: Check tag matches pinned Onshape model version
         run: |
-          ver="$(sed -n 's/^const ONSHAPE_VERSION = "\(.*\)";.*/\1/p' designer/JsonPanel.jsx)"
-          tag="$GITHUB_REF_NAME"
+          ver="$(sed -n 's/^const ONSHAPE_VERSION = "\(.*\)";.*/\1/p' gridfinity-ultimate/designer/JsonPanel.jsx)"
+          tag="${GITHUB_REF_NAME#designer-}"
           if [[ "${tag,,}" != "${ver,,}" ]]; then
-            echo "::error::Tag '$tag' does not match ONSHAPE_VERSION '$ver' in designer/JsonPanel.jsx"
+            echo "::error::Tag '$GITHUB_REF_NAME' does not match ONSHAPE_VERSION '$ver'"
             exit 1
           fi
 
       - name: Build static site
-        run: nix build --print-build-logs
+        run: nix build --print-build-logs .#designer
 
-      # Pages tooling cannot handle read-only Nix store permissions, so
-      # stage a writable copy first.
+      # Pages tooling cannot handle read-only Nix store permissions.
       - name: Stage artifact
         run: |
           cp -rL result public

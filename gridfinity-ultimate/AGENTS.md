@@ -1,15 +1,16 @@
 # Gridfinity Ultimate — development notes
 
 Parametric [Gridfinity](https://gridfinity.xyz) system built as an Onshape CAD model,
-configured via JSON. This repo holds:
+configured via JSON. This directory was imported with its complete Git history into the `gfty`
+repository. It holds:
 
 | Path | Role |
 |------|------|
 | `designer/` | Static, fully client-side web configurator that builds the JSON config. Published to GitHub Pages. |
 | `extract_json_config.fs` | Onshape FeatureScript: turns a schema JSON + values JSON into Part Studio variables (the entry point for the JSON config inside the CAD model). |
 | `wall-generator/` | Onshape FeatureScript that generates the divider wall grid from the layout JSON (see its README for the JSON format). |
-| `nix/` | Nix build of the designer site + devshell. |
-| `.github/workflows/pages.yml` | Deploys the designer to GitHub Pages on `v*` tags. |
+| `nix/designer.nix` | Nix build of the designer site, exposed by the root flake. |
+| `../.github/workflows/designer-pages.yml` | Deploys the designer to GitHub Pages on `designer-v*` tags. |
 
 ## Designer architecture
 
@@ -31,18 +32,17 @@ Adding a new JSX module: add a `<script type="text/babel" src="X.jsx">` tag to
 
 ## Development
 
-Everything runs through the flake devshell (`nix develop`, or direnv):
+Run everything from the `gfty` repository root through its devshell:
 
-- `dev` — serve `designer/` on :8080 with live reload. JSX is compiled in the
-  browser by `@babel/standalone`; just edit and the page reloads. No build step.
-- `preview` — `nix build` and serve the production result on :8081.
-- `nix build` — builds the static site to `./result` (what CI deploys).
-- `nix fmt .` — format Nix files (note: bare `nix fmt` without `.` does not work
-  with plain nixfmt).
-- pre-commit hooks (nixfmt, deadnix, statix) are installed on shell entry;
-  run manually with `pre-commit run -a`.
+- `designer-dev` — serve `gridfinity-ultimate/designer/` on :8080 with live
+  reload. JSX is compiled in the browser by `@babel/standalone`.
+- `designer-preview` — build and serve the production result on :8081.
+- `nix build .#designer` — build the deployable static site.
+- `nix fmt` — format/check Rust and Nix across the monorepo.
+- `nix flake check` — includes the Rust/web default-configuration conformance
+  fixture as well as the normal repository checks.
 
-## Production build (`nix/designer.nix`)
+## Production build (`gridfinity-ultimate/nix/designer.nix`)
 
 No npm/node_modules. The derivation:
 
@@ -65,5 +65,6 @@ model version ships, bump **both** constants together so existing configs keep
 working against a known-good version.
 
 Release flow: bump `ONSHAPE_VERSION` + `ONSHAPE_BASE`, commit, then tag and push
-`v<version>` (e.g. `v40`). CI refuses to deploy if the tag does not match
-`ONSHAPE_VERSION` (case-insensitive).
+`designer-v<version>` (for example `designer-v42`). CI strips `designer-` and
+refuses to deploy if the remainder does not match `ONSHAPE_VERSION`
+(case-insensitive).
