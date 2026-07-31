@@ -1,14 +1,14 @@
 {
   inputs = {
     flake-parts.url = "github:hercules-ci/flake-parts";
-    gfty-label.url = "path:../";
+    gfty.url = "path:../";
   };
 
   outputs =
     inputs:
     inputs.flake-parts.lib.mkFlake { inherit inputs; } {
       imports = [
-        inputs.gfty-label.flakeModules.default
+        inputs.gfty.flakeModules.default
         ./labels.nix
       ];
 

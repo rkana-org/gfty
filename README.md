@@ -33,8 +33,8 @@ gfty label plate create --dimensions WIDTH HEIGHT [OPTIONS] LABEL...
 gfty label plate export --dimensions WIDTH HEIGHT [EXPORT OPTIONS] LABEL...
 ```
 
-`gfty` is the main executable. `gfty-label` remains a compatibility wrapper for
-old local label commands while downstream flakes migrate.
+`gfty` is the package and main executable. `gfty-label` remains a deprecated
+command wrapper for old local label invocations during the repository rename.
 
 Rendering resolves bundled and explicitly supplied fonts, converts text and SVG
 primitives to paths with `usvg`, applies filament colors, and lays out icons
@@ -292,7 +292,7 @@ package available as `pkgs.gfty` (`pkgs.gfty-label` remains a compatibility
 alias):
 
 ```nix
-# Import nixpkgs with overlays = [ inputs.gfty-label.overlays.default ].
+# Import nixpkgs with overlays = [ inputs.gfty.overlays.default ].
 let
   smallParts = pkgs.gfty.mkBin {
     name = "small-parts";
@@ -324,18 +324,18 @@ pkgs.gfty.mkPlate {
 A bin derivation contains `bin.toml`, a label contains `label.svg` and
 `label.toml`, and a plate contains `plate.svg`. Geometry JSON is generated in memory by runtime export
 apps rather than exposed as a package artifact. Font outputs are added at build
-time through `--font-dir` and do not rebuild `gfty-label`.
+time through `--font-dir` and do not rebuild `gfty`.
 Adjacent SVG color sidecars are retained automatically.
 
 Without an overlay, use
-`inputs'.gfty-label.packages.default.mkLabel`. A flake-parts module is also
-exported as `inputs.gfty-label.flakeModules.default`:
+`inputs'.gfty.packages.default.mkLabel`. A flake-parts module is also exported
+as `inputs.gfty.flakeModules.default`:
 
 ```nix
-imports = [ inputs.gfty-label.flakeModules.default ];
+imports = [ inputs.gfty.flakeModules.default ];
 
 perSystem = { ... }: {
-  gfty-label = {
+  gfty = {
     bins.small-parts = {
       size = [ 2 2 6 ];
       divider.columns = [ "auto" "auto" "auto" ];
@@ -378,7 +378,7 @@ The default output is `<name>.step` in the caller's current directory. Apps use
 normal runtime credential discovery and never capture credentials in Nix. They
 are intentionally manual `nix run` actions rather than derivations because
 Onshape translator output is not guaranteed byte-reproducible. Override the pinned immutable models with
-`perSystem.gfty-label.labelModelUrl` or `binModelUrl` when testing a new model
+`perSystem.gfty.labelModelUrl` or `binModelUrl` when testing a new model
 version.
 
 `packages.bins.all` and `packages.labels.all` link every generated definition,

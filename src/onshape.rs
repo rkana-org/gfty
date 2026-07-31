@@ -102,7 +102,7 @@ impl OnshapeClient {
             .connect_timeout(Duration::from_secs(30))
             .timeout(Duration::from_secs(2 * 60))
             .redirect(reqwest::redirect::Policy::none())
-            .user_agent(concat!("gfty-label/", env!("CARGO_PKG_VERSION")))
+            .user_agent(concat!("gfty/", env!("CARGO_PKG_VERSION")))
             .build()
             .context("failed to initialize HTTP client")?;
         Ok(Self { http, credentials })

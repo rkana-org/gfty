@@ -16,7 +16,7 @@
   ],
 }:
 rustPlatform.buildRustPackage (finalAttrs: {
-  pname = "gfty-label";
+  pname = "gfty";
   version = "0.1.0";
   src = lib.cleanSource ./.;
 
@@ -25,7 +25,7 @@ rustPlatform.buildRustPackage (finalAttrs: {
   nativeBuildInputs = [ makeWrapper ];
   postFixup = ''
     wrapProgram $out/bin/gfty \
-      --prefix GFTY_LABEL_FONT_DIRS : ${lib.escapeShellArg (lib.concatStringsSep ":" (map toString fonts))}
+      --prefix GFTY_FONT_DIRS : ${lib.escapeShellArg (lib.concatStringsSep ":" (map toString fonts))}
     rm -f $out/bin/gfty-label
     cat > $out/bin/gfty-label <<EOF
     #!${runtimeShell}
@@ -61,13 +61,13 @@ rustPlatform.buildRustPackage (finalAttrs: {
     mkLabel =
       args:
       callPackage ./nix/mk-label.nix {
-        gftyLabel = finalAttrs.finalPackage;
+        gfty = finalAttrs.finalPackage;
         inherit args;
       };
     mkPlate =
       args:
       callPackage ./nix/mk-plate.nix {
-        gftyLabel = finalAttrs.finalPackage;
+        gfty = finalAttrs.finalPackage;
         inherit args;
       };
     mkBin = args: callPackage ./nix/mk-bin.nix { inherit args; };

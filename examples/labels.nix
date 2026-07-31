@@ -1,6 +1,6 @@
 {
   perSystem = {
-    gfty-label = {
+    gfty = {
       bins.module-example = {
         size = [
           1

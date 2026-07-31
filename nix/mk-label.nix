@@ -2,7 +2,7 @@
   lib,
   runCommand,
   formats,
-  gftyLabel,
+  gfty,
   args,
 }:
 let
@@ -22,7 +22,7 @@ let
       let
         directory = builtins.path {
           path = builtins.dirOf path;
-          name = "gfty-label-assets";
+          name = "gfty-assets";
         };
       in
       "${directory}/${builtins.baseNameOf path}"
@@ -56,7 +56,7 @@ let
 in
 runCommand name
   {
-    nativeBuildInputs = [ gftyLabel ];
+    nativeBuildInputs = [ gfty ];
     passthru = {
       labelConfig = config;
       labelFonts = fonts;

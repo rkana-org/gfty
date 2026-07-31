@@ -20,7 +20,7 @@
     "devshell": {
       "inputs": {
         "nixpkgs": [
-          "gfty-label",
+          "gfty",
           "nixpkgs"
         ]
       },
@@ -41,7 +41,7 @@
     "dream2nix": {
       "inputs": {
         "nixpkgs": [
-          "gfty-label",
+          "gfty",
           "nci",
           "nixpkgs"
         ],
@@ -130,7 +130,7 @@
         "type": "github"
       }
     },
-    "gfty-label": {
+    "gfty": {
       "inputs": {
         "devshell": "devshell",
         "flake-parts": "flake-parts_2",
@@ -171,7 +171,7 @@
         "dream2nix": "dream2nix",
         "mk-naked-shell": "mk-naked-shell",
         "nixpkgs": [
-          "gfty-label",
+          "gfty",
           "nixpkgs"
         ],
         "parts": "parts",
@@ -194,11 +194,11 @@
     },
     "nixpkgs": {
       "locked": {
-        "lastModified": 1785318670,
-        "narHash": "sha256-dN6Ou5x/+23FZLEpYP3IffO+NyJFzUlGumt1uu3MMaY=",
+        "lastModified": 1785090369,
+        "narHash": "sha256-m0pDuRJG7EDo9ri+4Ksu83VsI+PlxNC9lNBfydejce4=",
         "owner": "NixOS",
         "repo": "nixpkgs",
-        "rev": "0954f7ee2f6bb3dc7d4e3d0d8bcb8fd4bde4cfc5",
+        "rev": "624af665418d3c65d544145b4d34ad696439570e",
         "type": "github"
       },
       "original": {
@@ -241,7 +241,7 @@
     "parts": {
       "inputs": {
         "nixpkgs-lib": [
-          "gfty-label",
+          "gfty",
           "nci",
           "nixpkgs"
         ]
@@ -264,7 +264,7 @@
       "inputs": {
         "flake-compat": "flake-compat_2",
         "nixpkgs": [
-          "gfty-label",
+          "gfty",
           "nixpkgs"
         ]
       },
@@ -286,7 +286,7 @@
       "inputs": {
         "flake-compat": "flake-compat",
         "nixpkgs": [
-          "gfty-label",
+          "gfty",
           "nci",
           "dream2nix",
           "nixpkgs"
@@ -310,7 +310,7 @@
     "pyproject-nix": {
       "inputs": {
         "nixpkgs": [
-          "gfty-label",
+          "gfty",
           "nci",
           "dream2nix",
           "nixpkgs"
@@ -333,13 +333,13 @@
     "root": {
       "inputs": {
         "flake-parts": "flake-parts",
-        "gfty-label": "gfty-label"
+        "gfty": "gfty"
       }
     },
     "rust-overlay": {
       "inputs": {
         "nixpkgs": [
-          "gfty-label",
+          "gfty",
           "nci",
           "nixpkgs"
         ]
@@ -361,7 +361,7 @@
     "slimlock": {
       "inputs": {
         "nixpkgs": [
-          "gfty-label",
+          "gfty",
           "nci",
           "dream2nix",
           "purescript-overlay",
@@ -385,7 +385,7 @@
     "treefmt": {
       "inputs": {
         "nixpkgs": [
-          "gfty-label",
+          "gfty",
           "nci",
           "nixpkgs"
         ]
@@ -407,7 +407,7 @@
     "treefmt-nix": {
       "inputs": {
         "nixpkgs": [
-          "gfty-label",
+          "gfty",
           "nixpkgs"
         ]
       },

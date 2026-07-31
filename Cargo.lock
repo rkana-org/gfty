@@ -606,7 +606,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "gfty-label"
+name = "gfty"
 version = "0.1.0"
 dependencies = [
  "anyhow",

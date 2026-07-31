@@ -280,7 +280,7 @@ let
       bin = mkOption {
         type = types.nullOr types.str;
         default = null;
-        description = "Named bin from gfty-label.bins used as the label prototype.";
+        description = "Named bin from gfty.bins used as the label prototype.";
       };
       gfty-ultimate = mkOption {
         type = types.nullOr jsonAttrsType;
@@ -409,14 +409,14 @@ in
             print
             ;
         }
-      ) config.gfty-label.bins;
+      ) config.gfty.bins;
       allBins = package.mkOutputSet {
         name = "all-bins";
         entries = binPackages;
       };
       binsOutput =
         if builtins.hasAttr "all" binPackages then
-          throw "gfty-label.bins.all is reserved for the combined bin output"
+          throw "gfty.bins.all is reserved for the combined bin output"
         else
           package.mkOutputSet {
             name = "bins";
@@ -430,8 +430,7 @@ in
         else if definition.bin != null then
           let
             namedDefinition =
-              config.gfty-label.bins.${definition.bin}
-                or (throw "${owner} refers to unknown bin ${definition.bin}");
+              config.gfty.bins.${definition.bin} or (throw "${owner} refers to unknown bin ${definition.bin}");
           in
           {
             size = lib.take 2 namedDefinition.size;
@@ -455,7 +454,7 @@ in
       labelPackages = lib.mapAttrs (
         labelName: definition:
         let
-          prototype = prototypeFor "gfty-label.labels.${labelName}" definition;
+          prototype = prototypeFor "gfty.labels.${labelName}" definition;
         in
         package.mkLabel {
           name = if definition.name == null then labelName else definition.name;
@@ -468,14 +467,14 @@ in
             ;
           bin = prototype.binPackage;
         }
-      ) config.gfty-label.labels;
+      ) config.gfty.labels;
       allLabels = package.mkOutputSet {
         name = "all-labels";
         entries = labelPackages;
       };
       labelsOutput =
         if builtins.hasAttr "all" labelPackages then
-          throw "gfty-label.labels.all is reserved for the combined label output"
+          throw "gfty.labels.all is reserved for the combined label output"
         else
           package.mkOutputSet {
             name = "labels";
@@ -485,17 +484,17 @@ in
       platePackages = lib.mapAttrs (
         plateName: definition:
         let
-          prototype = prototypeFor "gfty-label.plates.${plateName}" definition;
+          prototype = prototypeFor "gfty.plates.${plateName}" definition;
           mismatchedLabels = builtins.filter (
             labelName:
-            (prototypeFor "gfty-label.labels.${labelName}" (
-              config.gfty-label.labels.${labelName}
-                or (throw "gfty-label plate ${plateName} refers to unknown label ${labelName}")
+            (prototypeFor "gfty.labels.${labelName}" (
+              config.gfty.labels.${labelName}
+                or (throw "gfty plate ${plateName} refers to unknown label ${labelName}")
             )).size != prototype.size
           ) (lib.unique definition.labels);
         in
         assert lib.assertMsg (mismatchedLabels == [ ]) (
-          "gfty-label plate ${plateName} has a different Gridfinity base size than labels: "
+          "gfty plate ${plateName} has a different Gridfinity base size than labels: "
           + lib.concatStringsSep ", " mismatchedLabels
         );
         package.mkPlate {
@@ -508,11 +507,10 @@ in
             ;
           labels = map (
             labelName:
-            labelPackages.${labelName}
-              or (throw "gfty-label plate ${plateName} refers to unknown label ${labelName}")
+            labelPackages.${labelName} or (throw "gfty plate ${plateName} refers to unknown label ${labelName}")
           ) definition.labels;
         }
-      ) config.gfty-label.plates;
+      ) config.gfty.plates;
       platesOutput = package.mkOutputSet {
         name = "plates";
         entries = platePackages;
@@ -520,8 +518,8 @@ in
       labelExportApps = lib.mapAttrs' (
         labelName: output:
         let
-          definition = config.gfty-label.labels.${labelName};
-          prototype = prototypeFor "gfty-label.labels.${labelName}" definition;
+          definition = config.gfty.labels.${labelName};
+          prototype = prototypeFor "gfty.labels.${labelName}" definition;
         in
         lib.nameValuePair "export-label-${labelName}" (makeExportApp {
           name = labelName;
@@ -530,15 +528,15 @@ in
             (toString output.labelConfig)
           ];
           fonts = output.labelFonts;
-          modelUrl = config.gfty-label.labelModelUrl;
+          modelUrl = config.gfty.labelModelUrl;
           gftyUltimateConfig = prototype.legacy;
         })
       ) labelPackages;
       plateExportApps = lib.mapAttrs' (
         plateName: output:
         let
-          definition = config.gfty-label.plates.${plateName};
-          prototype = prototypeFor "gfty-label.plates.${plateName}" definition;
+          definition = config.gfty.plates.${plateName};
+          prototype = prototypeFor "gfty.plates.${plateName}" definition;
         in
         lib.nameValuePair "export-plate-${plateName}" (makeExportApp {
           name = plateName;
@@ -560,7 +558,7 @@ in
           ]
           ++ map (label: toString label.labelConfig) output.plateLabels;
           fonts = output.labelFonts;
-          modelUrl = config.gfty-label.labelModelUrl;
+          modelUrl = config.gfty.labelModelUrl;
           gftyUltimateConfig = prototype.legacy;
         })
       ) platePackages;
@@ -572,12 +570,12 @@ in
             "export"
             (toString output.binConfig)
           ];
-          modelUrl = config.gfty-label.binModelUrl;
+          modelUrl = config.gfty.binModelUrl;
         })
       ) binPackages;
     in
     {
-      options.gfty-label = {
+      options.gfty = {
         labelModelUrl = mkOption {
           type = types.str;
           default = defaultLabelModelUrl;

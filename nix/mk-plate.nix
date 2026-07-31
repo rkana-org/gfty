@@ -1,13 +1,13 @@
 {
   lib,
   runCommand,
-  gftyLabel,
+  gfty,
   args,
 }:
 let
   name = args.name or "plate";
   labels = args.labels or [ ];
-  dimensions = args.dimensions or (throw "gfty-label.mkPlate requires dimensions = [ WIDTH HEIGHT ]");
+  dimensions = args.dimensions or (throw "gfty.mkPlate requires dimensions = [ WIDTH HEIGHT ]");
   columnGap = args.columnGap or "5mm";
   rowGap = args.rowGap or "5mm";
 
@@ -27,11 +27,11 @@ let
 in
 assert lib.assertMsg (
   builtins.length dimensions == 2
-) "gfty-label.mkPlate dimensions must contain WIDTH and HEIGHT";
-assert lib.assertMsg (configs != [ ]) "gfty-label.mkPlate requires at least one label";
+) "gfty.mkPlate dimensions must contain WIDTH and HEIGHT";
+assert lib.assertMsg (configs != [ ]) "gfty.mkPlate requires at least one label";
 runCommand name
   {
-    nativeBuildInputs = [ gftyLabel ];
+    nativeBuildInputs = [ gfty ];
     passthru = {
       plateLabels = labels;
       labelFonts = fonts;

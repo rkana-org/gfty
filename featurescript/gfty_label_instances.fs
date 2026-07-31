@@ -56,7 +56,7 @@ export const gftyLabelInstances = defineFeature(function(context is Context, id 
         definition.bottomMateConnector is Query;
 
         annotation { "Name" : "Read label JSON from variable",
-                     "Description" : "Use a Part Studio variable containing gfty-label JSON instead of pasted text." }
+                     "Description" : "Use a Part Studio variable containing gfty JSON instead of pasted text." }
         definition.useJsonVariable is boolean;
 
         if (definition.useJsonVariable)
@@ -70,13 +70,13 @@ export const gftyLabelInstances = defineFeature(function(context is Context, id 
             annotation { "Name" : "Label JSON",
                          "Default" : "{\"version\":2,\"size\":[1,1],\"filaments\":[0,1],\"labels\":[{\"center\":[0,0],\"size\":[1,1],\"filament\":0,\"parts\":[{\"filament\":1,\"shapes\":[{\"path\":\"M -0.5 -0.5 L 0.5 -0.5 L 0.5 0.5 L -0.5 0.5 Z\"}]}]}]}",
                          "MaxLength" : 500000,
-                         "Description" : "Version 2 JSON emitted by gfty-label export or plate." }
+                         "Description" : "Version 2 JSON emitted by gfty export or plate." }
             definition.labelJson is string;
         }
 
         annotation { "Name" : "JSON unit scale",
                      "Default" : 1 * millimeter,
-                     "Description" : "Length represented by one JSON coordinate. Keep 1 mm for gfty-label output." }
+                     "Description" : "Length represented by one JSON coordinate. Keep 1 mm for gfty output." }
         isLength(definition.unitScale, GFTY_INSTANCE_LENGTH_BOUNDS);
 
         annotation { "Name" : "Artwork depth", "Default" : 1 * millimeter }
@@ -476,7 +476,7 @@ function buildConnectorPlate(context is Context, id is Id, artworkCSys is CoordS
     return qCreatedBy(id + "Extrude", EntityType.BODY);
 }
 
-// Parse the compact absolute path notation emitted by gfty-label. Only M, L,
+// Parse the compact absolute path notation emitted by gfty. Only M, L,
 // C, and Z are accepted, and every command must be explicit.
 function addPathToSketch(sketch is Sketch, prefix is string, pathData is string,
                          unitScale is ValueWithUnits, faultyParameter is string)

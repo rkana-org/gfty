@@ -24,7 +24,7 @@ pub struct SvgParser {
 impl SvgParser {
     pub fn new(font_options: &FontOptions) -> Self {
         let mut fontdb = usvg::fontdb::Database::new();
-        if let Some(font_dirs) = env::var_os("GFTY_LABEL_FONT_DIRS") {
+        if let Some(font_dirs) = env::var_os("GFTY_FONT_DIRS") {
             for directory in env::split_paths(&font_dirs) {
                 if directory.is_dir() {
                     fontdb.load_fonts_dir(directory);

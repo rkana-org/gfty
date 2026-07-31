@@ -1,7 +1,7 @@
-# gfty-label flake-parts example
+# gfty flake-parts example
 
 This directory is a standalone flake using
-`inputs.gfty-label.flakeModules.default`. Named bin, label, and plate definitions
+`inputs.gfty.flakeModules.default`. Named bin, label, and plate definitions
 live in `labels.nix`; no project marker or checked-in generated files are
 required.
 
@@ -21,7 +21,7 @@ nix build ./examples#labels.all
 ```
 
 The combined derivation contains one symlink per label, named after its
-`gfty-label.labels` attribute:
+`gfty.labels` attribute:
 
 ```text
 result/

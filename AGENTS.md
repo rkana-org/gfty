@@ -1,9 +1,8 @@
-# gfty-label development guide
+# gfty development guide
 
 ## Scope and purpose
 
-`gfty` (in the transitional `gfty-label` repository/package) is a Rust CLI, Nix
-module, and small set of Onshape FeatureScripts for reproducibly turning SVG
+`gfty` is a Rust CLI/package, Nix module, and small set of Onshape FeatureScripts for reproducibly turning SVG
 label artwork and typed bin TOML into colored Onshape geometry. It supports
 standalone bins, individual labels, and row-major multi-label plates.
 
@@ -161,10 +160,11 @@ Current JSON is version 2:
 ## Nix interfaces
 
 - `packages.default` exposes `mkBin`, `mkLabel`, and `mkPlate` passthru builders.
-- The packaged main program is `gfty`; `gfty-label` is a compatibility symlink.
+- The package and main program are `gfty`; `gfty-label` is a deprecated command
+  compatibility wrapper.
 - `overlays.default` is generated with flake-parts `easyOverlay` and exposes both
   `pkgs.gfty` and the compatibility name `pkgs.gfty-label`.
-- The flake module uses typed options under `perSystem.gfty-label`.
+- The flake module uses typed options under `perSystem.gfty`.
 - Outputs are accessed as `packages.bins.<name>`, `packages.labels.<name>`, and
   `packages.plates.<name>`. `packages.labels.all` is a link farm containing one
   symlink per label name.
@@ -177,7 +177,7 @@ Current JSON is version 2:
   5-6 KB. The module generates `export-label-<name>` and
   `export-plate-<name>` apps instead. These perform runtime API exports outside
   the Nix sandbox; credentials must never be captured by Nix.
-- `perSystem.gfty-label.labelModelUrl` and `binModelUrl` pin immutable model
+- `perSystem.gfty.labelModelUrl` and `binModelUrl` pin immutable model
   versions used by generated apps.
 - Standalone `--component bin` is validated and live-tested. Do not expose base
   selection with the current model: disabling the bin leaves a generic `Part N`

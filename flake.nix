@@ -45,7 +45,7 @@
           ...
         }:
         let
-          projectName = "gfty-label";
+          projectName = "gfty";
         in
         {
           devshells.default = {
@@ -60,7 +60,7 @@
                 value = "${pkgs.rustPlatform.rustLibSrc}";
               }
               {
-                name = "GFTY_LABEL_FONT_DIRS";
+                name = "GFTY_FONT_DIRS";
                 value = "${pkgs.dejavu_fonts}:${pkgs.liberation_ttf}:${pkgs.jetbrains-mono}";
               }
             ];
