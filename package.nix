@@ -70,13 +70,14 @@ rustPlatform.buildRustPackage (finalAttrs: {
         gftyLabel = finalAttrs.finalPackage;
         inherit args;
       };
+    mkBin = args: callPackage ./nix/mk-bin.nix { inherit args; };
     mkOutputSet = args: callPackage ./nix/mk-output-set.nix args;
     writeExportScript = name: text: writeShellScript name text;
     writeExportText = name: text: writeText name text;
   };
 
   meta = {
-    description = "File-based Gridfinity label composer and Onshape exporter";
+    description = "Reproducible Gridfinity bin and label authoring with Onshape export";
     license = lib.licenses.mit;
     mainProgram = "gfty";
   };

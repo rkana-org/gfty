@@ -439,6 +439,7 @@ mod tests {
                 kind: None,
                 version: None,
                 template: "template.svg".to_owned(),
+                bin: None,
                 filament: 0,
                 text: BTreeMap::from([(
                     "main".to_owned(),
@@ -491,6 +492,7 @@ mod tests {
                 kind: None,
                 version: None,
                 template: "templates/label.svg".to_owned(),
+                bin: None,
                 filament: 0,
                 text: BTreeMap::new(),
                 icon: BTreeMap::new(),

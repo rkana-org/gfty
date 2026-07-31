@@ -13,6 +13,8 @@ pub const LABEL_CONFIG_VERSION: u32 = 1;
 #[serde(rename_all = "kebab-case")]
 pub enum ConfigKind {
     Label,
+    LabelPlate,
+    Bin,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -25,6 +27,10 @@ pub struct LabelConfig {
     pub version: Option<u32>,
 
     pub template: String,
+
+    /// Optional bin TOML used as the Gridfinity prototype configuration.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bin: Option<String>,
 
     /// Filament used for the blank prototype body.
     #[serde(default)]
@@ -117,6 +123,13 @@ impl LoadedLabel {
         self.resolve_path(&self.config.template)
     }
 
+    pub fn bin_path(&self) -> Option<PathBuf> {
+        self.config
+            .bin
+            .as_deref()
+            .map(|path| self.resolve_path(path))
+    }
+
     pub fn icon_path(&self, icon: &IconDefinition) -> PathBuf {
         self.resolve_path(&icon.src)
     }
@@ -151,10 +164,23 @@ impl LoadedLabel {
     }
 
     pub fn validate(&self) -> Result<()> {
+        if let Some(kind) = self.config.kind
+            && kind != ConfigKind::Label
+        {
+            bail!("label TOML kind must be \"label\"");
+        }
         if let Some(version) = self.config.version
             && version != LABEL_CONFIG_VERSION
         {
             bail!("unsupported label TOML version {version}; expected {LABEL_CONFIG_VERSION}");
+        }
+        if let Some(bin) = self.bin_path() {
+            crate::bin_config::LoadedBin::load(&bin).with_context(|| {
+                format!(
+                    "failed to load bin referenced by label {}",
+                    self.path.display()
+                )
+            })?;
         }
         ensure_file(&self.template_path(), "template")?;
         let template = crate::template::TemplateInfo::load(&self.template_path())?;
@@ -261,6 +287,31 @@ fn ensure_file(path: &Path, description: &str) -> Result<()> {
     Ok(())
 }
 
+pub fn detect_config_kind(path: &Path) -> Result<ConfigKind> {
+    let source = fs::read_to_string(path)
+        .with_context(|| format!("failed to read configuration {}", path.display()))?;
+    let value: toml::Value = toml::from_str(&source)
+        .with_context(|| format!("failed to parse configuration {}", path.display()))?;
+    let Some(kind) = value.get("kind") else {
+        return Ok(ConfigKind::Label);
+    };
+    let kind = kind.as_str().with_context(|| {
+        format!(
+            "configuration {} field `kind` must be a string",
+            path.display()
+        )
+    })?;
+    match kind {
+        "label" => Ok(ConfigKind::Label),
+        "label-plate" => Ok(ConfigKind::LabelPlate),
+        "bin" => Ok(ConfigKind::Bin),
+        other => bail!(
+            "unsupported configuration kind {other:?} in {}; expected label, label-plate, or bin",
+            path.display()
+        ),
+    }
+}
+
 pub fn discover_labels(root: Option<&Path>) -> Result<(PathBuf, Vec<PathBuf>)> {
     let root = match root {
         Some(root) if root.is_absolute() => root.to_owned(),
@@ -355,6 +406,7 @@ mod tests {
                 kind: None,
                 version: None,
                 template: "template.svg".to_owned(),
+                bin: None,
                 filament: 0,
                 text: BTreeMap::new(),
                 icon: BTreeMap::from([(
@@ -381,6 +433,17 @@ mod tests {
     }
 
     #[test]
+    fn detects_versioned_kinds_and_legacy_labels() {
+        let temp = tempfile::tempdir().unwrap();
+        let bin = temp.path().join("bin.toml");
+        let label = temp.path().join("label.toml");
+        fs::write(&bin, "kind = \"bin\"\nversion = 1\nsize = [1, 1, 1]\n").unwrap();
+        fs::write(&label, "template = \"label.svg\"\n").unwrap();
+        assert_eq!(detect_config_kind(&bin).unwrap(), ConfigKind::Bin);
+        assert_eq!(detect_config_kind(&label).unwrap(), ConfigKind::Label);
+    }
+
+    #[test]
     fn discovers_nested_labels_without_a_project_marker() {
         let temp = tempfile::tempdir().unwrap();
         fs::create_dir_all(temp.path().join("labels/nested")).unwrap();
@@ -404,6 +467,7 @@ mod tests {
                 kind: Some(ConfigKind::Label),
                 version: Some(LABEL_CONFIG_VERSION + 1),
                 template: "missing.svg".to_owned(),
+                bin: None,
                 filament: 0,
                 text: BTreeMap::new(),
                 icon: BTreeMap::new(),

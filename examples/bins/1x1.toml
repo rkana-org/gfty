@@ -1,0 +1,7 @@
+kind = "bin"
+version = 1
+size = [1, 1, 6]
+
+[divider]
+columns = ["auto"]
+rows = ["auto"]

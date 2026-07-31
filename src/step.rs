@@ -28,8 +28,42 @@ pub fn validate_label_step(contents: &[u8], filaments: &[u32]) -> Result<()> {
     }
 
     let expected = expected_filament_names(filaments);
-    validate_records(source, "PRODUCT('", "product", &expected)?;
-    validate_records(source, "MANIFOLD_SOLID_BREP('", "solid body", &expected)?;
+    validate_records(
+        source,
+        "PRODUCT('",
+        "product",
+        &expected,
+        "Artwork may be disconnected from or outside the label blank",
+    )?;
+    validate_records(
+        source,
+        "MANIFOLD_SOLID_BREP('",
+        "solid body",
+        &expected,
+        "Artwork may be disconnected from or outside the label blank",
+    )?;
+    Ok(())
+}
+
+pub fn validate_bin_step(contents: &[u8], expected: &[String]) -> Result<()> {
+    let source = std::str::from_utf8(contents).context("downloaded STEP is not UTF-8 text")?;
+    if !source.starts_with("ISO-10303-21;") {
+        bail!("downloaded file is not an ISO-10303-21 STEP file");
+    }
+    validate_records(
+        source,
+        "PRODUCT('",
+        "product",
+        expected,
+        "The bin configuration or pinned Onshape model may not match the expected component manifest",
+    )?;
+    validate_records(
+        source,
+        "MANIFOLD_SOLID_BREP('",
+        "solid body",
+        expected,
+        "The bin configuration or pinned Onshape model may not match the expected component manifest",
+    )?;
     Ok(())
 }
 
@@ -38,6 +72,7 @@ fn validate_records(
     marker: &str,
     description: &str,
     expected: &[String],
+    hint: &str,
 ) -> Result<()> {
     let mut actual = Vec::new();
     for line in source.lines() {
@@ -54,7 +89,7 @@ fn validate_records(
     let actual_counts = counts(actual.iter().cloned());
     if actual_counts != expected_counts {
         bail!(
-            "Onshape generated unexpected {description}s; expected {}, received {}. Artwork may be disconnected from or outside the label blank",
+            "Onshape generated unexpected {description}s; expected {}, received {}. {hint}",
             display_names(expected),
             display_names(&actual)
         );
@@ -212,6 +247,24 @@ mod tests {
     fn validates_exact_filament_products_and_bodies() {
         let contents = step(&["part-0", "part-3"], &["part-0", "part-3"]);
         validate_label_step(&contents, &[0, 3]).unwrap();
+    }
+
+    #[test]
+    fn validates_exact_bin_manifest() {
+        let expected = [
+            "Bin".to_owned(),
+            "SwappableRim".to_owned(),
+            "Base".to_owned(),
+        ];
+        let contents = step(
+            &["Bin", "SwappableRim", "Base"],
+            &["Bin", "SwappableRim", "Base"],
+        );
+        validate_bin_step(&contents, &expected).unwrap();
+        let error = validate_bin_step(&contents, &["Bin".to_owned()])
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("component manifest"));
     }
 
     #[test]

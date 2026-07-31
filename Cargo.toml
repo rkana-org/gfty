@@ -3,7 +3,7 @@ name = "gfty-label"
 version = "0.1.0"
 edition = "2024"
 autobins = false
-description = "File-based Gridfinity label composer and Onshape exporter"
+description = "Reproducible Gridfinity bin and label authoring with Onshape export"
 license = "MIT"
 
 [[bin]]

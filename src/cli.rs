@@ -49,11 +49,14 @@ pub struct Cli {
 
 #[derive(Debug, Subcommand)]
 pub enum Command {
-    /// Dispatch a TOML file to its configured remote STEP exporter.
-    Export(ExportArgs),
+    /// Dispatch a versioned TOML file to its configured remote STEP exporter.
+    Export(GenericExportArgs),
 
     /// Author, inspect, render, and export labels.
     Label(LabelArgs),
+
+    /// Validate, inspect, and export Gridfinity bins.
+    Bin(BinArgs),
 }
 
 #[derive(Debug, Args)]
@@ -140,9 +143,13 @@ pub struct CreateArgs {
     #[arg(long, num_args = 0..=1, default_missing_value = "label.step", value_name = "PATH")]
     pub export: Option<PathBuf>,
 
-    /// Gridfinity Ultimate JSON required by --export.
-    #[arg(long, value_name = "PATH")]
+    /// Legacy Gridfinity Ultimate JSON required by --export unless --bin is used.
+    #[arg(long, value_name = "PATH", conflicts_with = "bin")]
     pub gridfinity_config: Option<PathBuf>,
+
+    /// Versioned bin TOML used by --export and saved into the label definition.
+    #[arg(long, value_name = "PATH", conflicts_with = "gridfinity_config")]
+    pub bin: Option<PathBuf>,
 
     /// Protected TOML file containing access-key and secret-key.
     #[arg(long, value_name = "PATH")]
@@ -179,6 +186,40 @@ pub struct PlateCreateArgs {
 }
 
 #[derive(Debug, Args)]
+pub struct GenericExportArgs {
+    /// Versioned label or bin TOML to export.
+    pub file: PathBuf,
+
+    /// Legacy Gridfinity Ultimate JSON used by label exports.
+    #[arg(long, value_name = "PATH", conflicts_with = "bin")]
+    pub gridfinity_config: Option<PathBuf>,
+
+    /// Override the bin TOML referenced by a label.
+    #[arg(long, value_name = "PATH", conflicts_with = "gridfinity_config")]
+    pub bin: Option<PathBuf>,
+
+    /// Select a supported standalone-bin component.
+    #[arg(long, value_enum)]
+    pub component: Option<crate::bin_config::BinComponent>,
+
+    /// Destination STEP path; defaults to the input name in the current directory.
+    #[arg(short, long, value_name = "PATH")]
+    pub output: Option<PathBuf>,
+
+    /// Protected TOML file containing access-key and secret-key.
+    #[arg(long, value_name = "PATH")]
+    pub onshape_credentials: Option<PathBuf>,
+
+    /// Override the immutable Onshape model version URL for this file kind.
+    #[arg(long, value_name = "URL")]
+    pub onshape_model: Option<String>,
+
+    /// Replace an existing output file.
+    #[arg(long)]
+    pub force: bool,
+}
+
+#[derive(Debug, Args)]
 pub struct ExportArgs {
     /// Label TOML to render and export.
     pub label: PathBuf,
@@ -209,9 +250,13 @@ pub struct ExportPlateArgs {
 
 #[derive(Debug, Args)]
 pub struct RemoteExportArgs {
-    /// Gridfinity Ultimate configuration JSON for the label prototype.
-    #[arg(long, value_name = "PATH")]
-    pub gridfinity_config: PathBuf,
+    /// Legacy Gridfinity Ultimate JSON for the label prototype.
+    #[arg(long, value_name = "PATH", conflicts_with = "bin")]
+    pub gridfinity_config: Option<PathBuf>,
+
+    /// Bin TOML for the label prototype; defaults to the label's `bin` field.
+    #[arg(long, value_name = "PATH", conflicts_with = "gridfinity_config")]
+    pub bin: Option<PathBuf>,
 
     /// Destination STEP path; defaults to the input name in the current directory.
     #[arg(short, long, value_name = "PATH")]
@@ -223,6 +268,50 @@ pub struct RemoteExportArgs {
 
     /// Immutable Onshape label model version URL.
     #[arg(long, default_value = DEFAULT_LABEL_MODEL_URL, value_name = "URL")]
+    pub onshape_model: String,
+
+    /// Replace an existing output file.
+    #[arg(long)]
+    pub force: bool,
+}
+
+#[derive(Debug, Args)]
+pub struct BinArgs {
+    #[command(subcommand)]
+    pub command: BinCommand,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum BinCommand {
+    /// Validate a versioned bin TOML file.
+    Validate { bin: PathBuf },
+
+    /// Inspect resolved dimensions, dividers, supports, and generated parts.
+    Inspect { bin: PathBuf },
+
+    /// Generate a configured bin in Onshape and download a grouped STEP.
+    Export(BinExportArgs),
+}
+
+#[derive(Debug, Args)]
+pub struct BinExportArgs {
+    /// Versioned bin TOML to export.
+    pub bin: PathBuf,
+
+    /// Export the complete configuration or only the bin assembly.
+    #[arg(long, value_enum, default_value_t = crate::bin_config::BinComponent::All)]
+    pub component: crate::bin_config::BinComponent,
+
+    /// Destination STEP path; defaults to the input name in the current directory.
+    #[arg(short, long, value_name = "PATH")]
+    pub output: Option<PathBuf>,
+
+    /// Protected TOML file containing access-key and secret-key.
+    #[arg(long, value_name = "PATH")]
+    pub onshape_credentials: Option<PathBuf>,
+
+    /// Immutable Gridfinity Ultimate model version URL.
+    #[arg(long, default_value = crate::bin_config::DEFAULT_BIN_MODEL_URL, value_name = "URL")]
     pub onshape_model: String,
 
     /// Replace an existing output file.

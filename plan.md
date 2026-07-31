@@ -294,8 +294,8 @@ Resolution order:
 2. `GFTY_ONSHAPE_CREDENTIALS_FILE` pointing to a file.
 3. `$XDG_CONFIG_HOME/gfty/onshape.toml`, or
    `~/.config/gfty/onshape.toml` when XDG is unset.
-4. Optional `ONSHAPE_ACCESS_KEY` and `ONSHAPE_SECRET_KEY` compatibility fallback
-   for CI or ephemeral shells.
+4. Optional `GFTY_ONSHAPE_ACCESS_KEY` and `GFTY_ONSHAPE_SECRET_KEY` fallback for
+   CI or ephemeral shells.
 
 The credentials file should be a regular file readable only by its owner; warn
 or fail on unsafe permissions on Unix. API requests should use Onshape request
@@ -460,9 +460,9 @@ large path-only change during API debugging.
 2. **Done:** add the four narrow encode/translate/poll/download operations with
    bounded polling, redirect re-signing, and useful API errors.
 3. **Done:** generate label and plate geometry JSON in memory.
-4. **Partly done:** `gfty export FILE` handles existing label TOML, and an
-   internal plate export path supports Nix apps. The final `gfty label export`
-   spelling and kind-based dispatch belong to the command reorganization.
+4. **Done for current kinds:** `gfty export FILE` dispatches legacy/versioned
+   labels and versioned bins; entity commands share the same implementations.
+   Saved label-plate TOML remains a separate future addition.
 5. **Done for transition:** accept existing Gridfinity JSON/Nix-generated
    configuration; named bin TOML follows later.
 6. **Done:** live-test signed CLI and Nix-app exports for both a label and plate
@@ -510,13 +510,22 @@ large path-only change during API debugging.
 
 ### 6. Add bins
 
-1. Define versioned bin TOML and typed Rust structures.
-2. Port designer defaults, unit handling, divider validation, easy-grab logic,
-   and canonical JSON conversion with fixtures.
-3. Add `gfty bin validate`, `inspect`, and `export`.
-4. Add typed Nix `bins` and per-bin export apps.
-5. Let labels and plates reference named bins.
-6. Add explicit component export once model support is validated.
+1. **Done:** define required `kind = "bin"`, version 1 hierarchical TOML and
+   typed Rust structures.
+2. **Done:** port designer defaults, unit handling, track sizing, merge and
+   easy-grab face validation, automatic supports, and canonical JSON conversion.
+   A frozen designer-default fixture checks the complete resulting JSON value.
+3. **Done:** add `gfty bin validate`, `inspect`, and `export`, plus generic
+   `gfty export BIN` dispatch and exact expected STEP manifest validation.
+4. **Done:** add typed Nix `bins`, `packages.bins.<name>`, `packages.bins.all`,
+   `pkgs.gfty.mkBin`, `binModelUrl`, and `export-bin-<name>` runtime apps.
+5. **Done:** labels may reference bin TOML and Nix labels/plates may reference a
+   named bin. The legacy inline `gfty-ultimate` set remains an exclusive
+   transition alternative.
+6. **Partly done:** `--component bin` works through existing enable flags and was
+   live-tested. Base-only export still produces an unexpected generic `Part N`
+   even after dependent flags are disabled; do not expose it until the model has
+   an `ExportComponent` contract or a separate base model.
 
 ### 7. Complete migration
 

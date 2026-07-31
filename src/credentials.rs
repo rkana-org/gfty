@@ -4,8 +4,8 @@ use anyhow::{Context, Result, bail};
 use serde::Deserialize;
 
 const CREDENTIALS_ENV: &str = "GFTY_ONSHAPE_CREDENTIALS_FILE";
-const ACCESS_KEY_ENV: &str = "ONSHAPE_ACCESS_KEY";
-const SECRET_KEY_ENV: &str = "ONSHAPE_SECRET_KEY";
+const ACCESS_KEY_ENV: &str = "GFTY_ONSHAPE_ACCESS_KEY";
+const SECRET_KEY_ENV: &str = "GFTY_ONSHAPE_SECRET_KEY";
 
 #[derive(Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]

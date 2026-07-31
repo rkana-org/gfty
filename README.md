@@ -1,10 +1,8 @@
 # gfty
 
-Reproducible Gridfinity authoring and Onshape export, currently focused on
-file-based labels and label plates.
-
-The project is under active development. The intended workflow uses SVG templates,
-reusable SVG icons with optional TOML color sidecars, and saved label TOML files.
+Reproducible Gridfinity bin and label authoring with immutable Onshape STEP
+export. Labels use SVG templates and reusable icons; bins, labels, and their Nix
+definitions remain the source of truth.
 
 ## Paths
 
@@ -18,7 +16,11 @@ to scan another root. `inspect` always takes an explicit file.
 ## Commands
 
 ```text
-gfty export LABEL [EXPORT OPTIONS]
+gfty export FILE [EXPORT OPTIONS]
+
+gfty bin validate BIN
+gfty bin inspect BIN
+gfty bin export BIN [--component all|bin] [EXPORT OPTIONS]
 
 gfty label validate [LABEL]
 gfty label render LABEL [--output PREVIEW.svg]
@@ -58,7 +60,7 @@ It can also export an unsaved label directly:
 gfty label create \
   --template templates/label-1x1.svg \
   --text main M3 \
-  --gridfinity-config gridfinity-1x1.json \
+  --bin bins/1x1.toml \
   --export m3.step
 ```
 
@@ -66,15 +68,17 @@ gfty label create \
 and validated before any save, SVG, or export output is written.
 
 Both `gfty export LABEL` and `gfty label export LABEL` render the label, send its
-geometry and Gridfinity Ultimate configuration to the pinned immutable Onshape
-model in POST bodies, and download one grouped AP242 STEP containing every named
+geometry and referenced bin configuration to the pinned immutable Onshape model
+in POST bodies, and download one grouped AP242 STEP containing every named
 filament part:
 
 ```sh
-gfty export labels/m3.toml \
-  --gridfinity-config gridfinity-1x1.json \
-  --output m3.step
+gfty export labels/m3.toml --output m3.step
 ```
+
+A label normally declares `bin = "../bins/1x1.toml"`. The transitional
+`--gridfinity-config legacy.json` option remains available for existing raw
+Gridfinity Ultimate JSON.
 
 The output defaults to the label file stem in the current directory. Existing
 files are rejected unless `--force` is given. The downloaded STEP is checked for
@@ -91,8 +95,8 @@ secret-key = "..."
 Pass it with `--onshape-credentials PATH`, set
 `GFTY_ONSHAPE_CREDENTIALS_FILE`, or install it as
 `$XDG_CONFIG_HOME/gfty/onshape.toml` (defaulting to
-`~/.config/gfty/onshape.toml`). `ONSHAPE_ACCESS_KEY` and
-`ONSHAPE_SECRET_KEY` are a fallback. Credentials are loaded only at runtime and
+`~/.config/gfty/onshape.toml`). `GFTY_ONSHAPE_ACCESS_KEY` and
+`GFTY_ONSHAPE_SECRET_KEY` are a fallback. Credentials are loaded only at runtime and
 requests use Onshape HMAC signatures. A read-only document API key is sufficient
 because exports use `storeInDocument=false`.
 
@@ -136,6 +140,63 @@ below `labels/`, prints failures, and finishes with an `X/N valid` summary.
 `label render LABEL` writes an SVG when `--output` is supplied; without it, the
 label is rendered directly in a supported interactive terminal.
 
+## Bin TOML
+
+Bin files use a typed, hierarchical format which is converted to the flat
+Gridfinity Ultimate `Config` JSON in memory:
+
+```toml
+kind = "bin"
+version = 1
+size = [2, 2, 6]
+
+[base]
+enabled = true
+magnets = true
+rounded-corners = false
+
+[bin]
+enabled = true
+nesting = true
+swappable-rim = true
+
+[label]
+enabled = true
+depth = "10mm"
+swappable = true
+supports = "auto"
+embossing-clearance = "0.4mm"
+
+[divider]
+columns = ["auto", "auto", "auto"]
+rows = ["auto", "auto"]
+
+[easy-grab]
+mode = "all"
+side = "south"
+radius = "21mm"
+```
+
+Tracks accept `auto`, fractional values such as `1fr`, or fixed physical lengths
+such as `21mm`. Divider merges use inclusive zero-based ranges. Custom easy-grab
+faces use the same ranges and are rejected unless they describe a complete,
+capped wall face. Defaults and automatic label-support behavior match the web
+designer.
+
+```sh
+gfty bin validate bins/small-parts.toml
+gfty bin inspect bins/small-parts.toml
+gfty export bins/small-parts.toml
+gfty bin export bins/small-parts.toml --component bin
+```
+
+A complete bin STEP is checked against the expected named `Bin`, rim, label,
+base, and connector products. `--component bin` uses the model's existing enable
+flags and has been live-tested. A clean standalone base export is intentionally
+not exposed yet: disabling the bin in the current model leaves a generic helper
+body, so base export needs an upstream `ExportComponent` contract or a separate
+base model rather than silently accepting `Part N`.
+
 ## Template contract
 
 Templates need physical `width`/`height`, a `viewBox`, unique `<text>` elements
@@ -165,6 +226,7 @@ spacers act along the selected direction, and no implicit gaps are added.
 kind = "label"
 version = 1
 template = "../templates/label-1x1.svg"
+bin = "../bins/1x1.toml"
 filament = 0 # Blank prototype filament; defaults to 0.
 
 [text.main]
@@ -224,7 +286,7 @@ families is available.
 
 ## Nix builders
 
-The default package exposes `mkLabel` and `mkPlate` passthru functions. Add the
+The default package exposes `mkBin`, `mkLabel`, and `mkPlate` passthru functions. Add the
 flake's `easyOverlay`-generated `overlays.default` to nixpkgs to make the same
 package available as `pkgs.gfty` (`pkgs.gfty-label` remains a compatibility
 alias):
@@ -232,8 +294,15 @@ alias):
 ```nix
 # Import nixpkgs with overlays = [ inputs.gfty-label.overlays.default ].
 let
+  smallParts = pkgs.gfty.mkBin {
+    name = "small-parts";
+    size = [ 2 2 6 ];
+    divider.columns = [ "auto" "auto" "auto" ];
+    divider.rows = [ "auto" "auto" ];
+  };
   screws = pkgs.gfty.mkLabel {
     name = "screws-label"; # Derivation pname only.
+    bin = smallParts;
     template = ./templates/label.svg;
     filament = 0;
     fonts = [ pkgs.jetbrains-mono ];
@@ -252,8 +321,8 @@ pkgs.gfty.mkPlate {
 }
 ```
 
-A label derivation contains `label.svg` and the generated `label.toml`; a plate
-contains `plate.svg`. Geometry JSON is generated in memory by runtime export
+A bin derivation contains `bin.toml`, a label contains `label.svg` and
+`label.toml`, and a plate contains `plate.svg`. Geometry JSON is generated in memory by runtime export
 apps rather than exposed as a package artifact. Font outputs are added at build
 time through `--font-dir` and do not rebuild `gfty-label`.
 Adjacent SVG color sidecars are retained automatically.
@@ -265,44 +334,41 @@ exported as `inputs.gfty-label.flakeModules.default`:
 ```nix
 imports = [ inputs.gfty-label.flakeModules.default ];
 
-perSystem = { ... }:
-let
-  gftyConfig = {
-    size_x_units = 1;
-    size_y_units = 1;
-    # ...the remaining Gridfinity Ultimate JSON fields as pure Nix...
-  };
-in {
+perSystem = { ... }: {
   gfty-label = {
+    bins.small-parts = {
+      size = [ 2 2 6 ];
+      divider.columns = [ "auto" "auto" "auto" ];
+      divider.rows = [ "auto" "auto" ];
+    };
     labels.screws = {
+      bin = "small-parts";
       template = ./templates/label.svg;
       text.main = "Screws";
-      gfty-ultimate = gftyConfig;
     };
     plates.all = {
+      bin = "small-parts";
       dimensions = [ "200mm" "250mm" ];
       labels = [ "screws" "screws" ];
-      gfty-ultimate = gftyConfig;
     };
   };
 };
 ```
 
-The module validates label definitions with typed options: `template` is a
-path, `filament` is an unsigned integer, `fonts` is a list of packages or paths,
-`text` is an attribute set of strings, and each `icons` value is an ordered list
-of paths. Plate dimensions must contain exactly two strings and plate label
-references must be strings. Every label and plate also requires a
-`gfty-ultimate` attribute set containing its unrolled Gridfinity Ultimate JSON.
-A plate uses its own configuration rather than those of its child labels; the
-module verifies that their `size_x_units` and `size_y_units` match.
+The module validates bins, labels, dividers, merges, easy-grab faces, and plates
+with typed options during evaluation. Labels and plates reference a named bin;
+the module verifies that every plate label has the same X/Y bin size. The legacy
+`gfty-ultimate` attribute remains accepted instead of `bin` during migration,
+but the two sources cannot be specified together.
 
-Outputs are grouped as `packages.labels.<name>` and
+Outputs are grouped as `packages.bins.<name>`, `packages.labels.<name>`, and
 `packages.plates.<name>`. The module also generates explicit runtime apps which
 build local inputs through Nix, then download the configured STEP outside the
 Nix sandbox and store:
 
 ```sh
+nix run .#export-bin-small-parts
+nix run .#export-bin-small-parts -- --component bin
 nix run .#export-label-screws
 nix run .#export-plate-all
 nix run .#export-label-screws -- --output custom.step --force
@@ -311,11 +377,11 @@ nix run .#export-label-screws -- --output custom.step --force
 The default output is `<name>.step` in the caller's current directory. Apps use
 normal runtime credential discovery and never capture credentials in Nix. They
 are intentionally manual `nix run` actions rather than derivations because
-Onshape translator output is not guaranteed byte-reproducible. Override the
-pinned immutable model with `perSystem.gfty-label.labelModelUrl` when testing a
-new model version.
+Onshape translator output is not guaranteed byte-reproducible. Override the pinned immutable models with
+`perSystem.gfty-label.labelModelUrl` or `binModelUrl` when testing a new model
+version.
 
-`packages.labels.all` links every generated label under its definition name,
+`packages.bins.all` and `packages.labels.all` link every generated definition,
 making it convenient to install or copy the complete set. See
 `examples/flake.nix` and `examples/labels.nix` for a buildable module example.
 
@@ -327,10 +393,10 @@ symbols based on terminal capabilities. Previews are skipped when stderr is not
 a terminal, so JSON pipelines remain clean.
 
 ```sh
-gfty-label --terminal-preview auto render labels/m3.toml -o /tmp/m3.svg
-gfty-label --terminal-preview graphics watch labels/m3.toml --svg /tmp/m3.svg
-gfty-label --terminal-preview symbols inspect labels/m3.toml --preview
-gfty-label --terminal-preview never inspect templates/label.svg
+gfty --terminal-preview auto label render labels/m3.toml -o /tmp/m3.svg
+gfty --terminal-preview graphics label watch labels/m3.toml --svg /tmp/m3.svg
+gfty --terminal-preview symbols label inspect labels/m3.toml --preview
+gfty --terminal-preview never label inspect templates/label.svg
 ```
 
 Use `--terminal-preview-width N` to control thumbnail width. Watch mode clears

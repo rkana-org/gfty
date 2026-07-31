@@ -190,6 +190,9 @@ fn watch_inputs(
     let template = label.template_path();
     let mut files = vec![absolute_path(&label.path)?, absolute_path(&template)?];
     files.push(absolute_path(&template.with_extension("toml"))?);
+    if let Some(bin) = label.bin_path() {
+        files.push(absolute_path(&bin)?);
+    }
     for definition in label.config.icon.values() {
         let icon = label.icon_path(definition);
         files.push(absolute_path(&icon)?);

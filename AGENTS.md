@@ -4,17 +4,19 @@
 
 `gfty` (in the transitional `gfty-label` repository/package) is a Rust CLI, Nix
 module, and small set of Onshape FeatureScripts for reproducibly turning SVG
-label artwork into colored Onshape geometry. It supports individual labels and
-row-major multi-label plates, with bins planned next.
+label artwork and typed bin TOML into colored Onshape geometry. It supports
+standalone bins, individual labels, and row-major multi-label plates.
 
 The current end-to-end model is:
 
-1. Label TOML + SVG template/icons -> composed SVG.
-2. Composed SVG -> compact schema-version-2 geometry JSON grouped by filament.
-3. A Gridfinity Ultimate configuration produces the blank prototype in Onshape.
-4. `featurescript/gfty_label_instances.fs` copies that prototype, creates the
+1. Typed bin TOML -> canonical Gridfinity Ultimate configuration JSON.
+2. Label TOML + SVG template/icons -> composed SVG.
+3. Composed SVG -> compact schema-version-2 geometry JSON grouped by filament.
+4. A referenced bin configuration produces the blank prototype in Onshape.
+5. `featurescript/gfty_label_instances.fs` copies that prototype, creates the
    artwork, and joins multi-label output with sacrificial connector plates.
-5. Nix builders expose reproducible label/plate bundles and flake-parts outputs.
+6. Nix builders expose reproducible bin/label/plate bundles and flake-parts
+   outputs.
 
 Read the repository `README.md` before changing user-facing behavior. The parent
 repository also has `/home/malte/onshape/AGENTS.md`; in particular, local
@@ -25,7 +27,9 @@ is in `../std-library/`.
 
 - `src/main.rs`: command dispatch, output behavior, and inspection.
 - `src/cli.rs`: Clap interface. Keep stdout clean for data-producing commands.
-- `src/config.rs`: TOML schema, path resolution, discovery, and validation.
+- `src/config.rs`: label TOML schema, path resolution, discovery, and validation.
+- `src/bin_config.rs`: typed bin TOML, designer-compatible defaults/dividers,
+  canonical JSON conversion, and component manifests.
 - `src/create.rs`: unsaved label creation and reusable TOML saving.
 - `src/credentials.rs`: protected Onshape credential-file discovery.
 - `src/onshape.rs`: signed encode/translate/poll/download API operations.
@@ -52,6 +56,7 @@ is in `../std-library/`.
 
 ### Paths and discovery
 
+- Bin TOML requires `kind = "bin"` and `version = 1`.
 - New label TOML uses `kind = "label"` and `version = 1`; legacy files without
   those fields remain compatible.
 - There is no required project marker or directory layout.
@@ -155,25 +160,28 @@ Current JSON is version 2:
 
 ## Nix interfaces
 
-- `packages.default` exposes `mkLabel` and `mkPlate` passthru builders.
+- `packages.default` exposes `mkBin`, `mkLabel`, and `mkPlate` passthru builders.
 - The packaged main program is `gfty`; `gfty-label` is a compatibility symlink.
 - `overlays.default` is generated with flake-parts `easyOverlay` and exposes both
   `pkgs.gfty` and the compatibility name `pkgs.gfty-label`.
 - The flake module uses typed options under `perSystem.gfty-label`.
-- Outputs are accessed as `packages.labels.<name>` and
+- Outputs are accessed as `packages.bins.<name>`, `packages.labels.<name>`, and
   `packages.plates.<name>`. `packages.labels.all` is a link farm containing one
   symlink per label name.
 - Label bundles contain `label.svg` and `label.toml`; plate bundles contain
   `plate.svg`. Runtime exporters generate geometry JSON in memory.
-- Every module label and plate has a JSON-serializable `gfty-ultimate` attribute
-  set. Plates use their own configuration; child configurations are ignored
-  except that `size_x_units` and `size_y_units` must match.
+- Module labels and plates normally reference a named bin. Legacy
+  JSON-serializable `gfty-ultimate` remains accepted as an exclusive alternative.
+  Plates own the reference, and all child labels must use the same X/Y bin size.
 - Browser `onshapeUrl` passthru values were removed because they fail around
   5-6 KB. The module generates `export-label-<name>` and
   `export-plate-<name>` apps instead. These perform runtime API exports outside
   the Nix sandbox; credentials must never be captured by Nix.
-- `perSystem.gfty-label.labelModelUrl` pins the immutable model version used by
-  generated apps.
+- `perSystem.gfty-label.labelModelUrl` and `binModelUrl` pin immutable model
+  versions used by generated apps.
+- Standalone `--component bin` is validated and live-tested. Do not expose base
+  selection with the current model: disabling the bin leaves a generic `Part N`
+  body, so base export needs a new model contract or separate model.
 
 ## Onshape REST API direction
 

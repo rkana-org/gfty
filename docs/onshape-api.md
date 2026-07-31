@@ -82,9 +82,17 @@ change for complete label/plate exports.
 
 The Gridfinity Ultimate designer model was also verified without modification.
 Its immutable version exposes one string parameter with ID `Config`. A
-1,007-byte representative 1x1 configuration downloaded an 843,064-byte grouped
-STEP containing exactly `Bin`, `SwappableRim`, `SwappableLabel`, `Base`, and
-`ConnectorPin`, with no generic parts or workspace mutation.
+representative 1x1 configuration generated from typed bin TOML downloaded an
+843,064-byte grouped STEP containing exactly `Bin`, `SwappableRim`,
+`SwappableLabel`, `Base`, and `ConnectorPin`, with no generic parts or workspace
+mutation. Suppressing the base cleanly produced a 717,723-byte bin-only STEP with
+the first three names.
+
+A base-only configuration is not clean in the current model: suppressing the bin
+still leaves a generic `Part 2` or `Part 3` alongside `Base` and the optional
+`ConnectorPin`. The downloader correctly rejects this manifest. Base component
+selection therefore remains disabled until the model gains an explicit export
+component contract or a separate base model is pinned.
 
 The authenticated live OpenAPI document is available from `/api/openapi`. It
 shows an important endpoint distinction:
@@ -120,13 +128,12 @@ then reported as likely disconnected/out-of-bounds artwork.
 API operations are runtime commands, not Nix derivation build steps. Nix builds
 remain pure and credentials never enter the Nix store.
 
-The generic label interface is:
+The generic interface dispatches by the TOML `kind` field:
 
 ```text
-gfty export LABEL \
-  --gridfinity-config gfty-ultimate.json \
-  --onshape-credentials ~/.config/gfty/onshape.toml \
-  --output label.step
+gfty export labels/screws.toml --output screws.step
+gfty export bins/small-parts.toml --output small-parts.step
+gfty export bins/small-parts.toml --component bin
 ```
 
 The equivalent entity-oriented commands are `gfty label export` and
@@ -135,7 +142,8 @@ They generate geometry in memory, sign requests, poll with bounded exponential
 backoff, download atomically, and validate expected STEP product/body names.
 
 The Nix module exposes manual apps such as `export-label-screws` and
-`export-plate-all`. Their scripts capture only immutable model/configuration and
+`export-plate-all`, and `export-bin-small-parts`. Their scripts capture only
+immutable model/configuration and
 font inputs; normal runtime credential discovery happens after `nix run` starts.
 Model parameter contracts were verified separately and are pinned by immutable
 version, avoiding a redundant `getConfiguration` call on each export.

@@ -54,6 +54,7 @@ pub fn build_label(
             kind: Some(ConfigKind::Label),
             version: Some(LABEL_CONFIG_VERSION),
             template: path_to_toml_string(&template),
+            bin: None,
             filament,
             text: text_fields,
             icon: BTreeMap::new(),
@@ -118,6 +119,7 @@ mod tests {
                 kind: Some(ConfigKind::Label),
                 version: Some(LABEL_CONFIG_VERSION),
                 template: "basic.svg".to_owned(),
+                bin: None,
                 filament: 0,
                 text: BTreeMap::from([(
                     "main".to_owned(),

@@ -12,6 +12,7 @@ let
   fonts = args.fonts or [ ];
   text = args.text or { };
   icons = args.icons or { };
+  bin = args.bin or null;
 
   # Import a file's complete parent directory so adjacent color sidecars and
   # any SVG-relative resources remain available in the Nix store.
@@ -35,14 +36,19 @@ let
     else
       { icon = assetPath item; };
 
-  config = (formats.toml { }).generate "${name}-label.toml" {
-    kind = "label";
-    version = 1;
-    template = assetPath template;
-    inherit filament;
-    text = lib.mapAttrs (_: content: { inherit content; }) text;
-    icons = lib.mapAttrs (_: items: map iconItem items) icons;
-  };
+  config = (formats.toml { }).generate "${name}-label.toml" (
+    {
+      kind = "label";
+      version = 1;
+      template = assetPath template;
+      inherit filament;
+      text = lib.mapAttrs (_: content: { inherit content; }) text;
+      icons = lib.mapAttrs (_: items: map iconItem items) icons;
+    }
+    // lib.optionalAttrs (bin != null) {
+      bin = toString (if builtins.isAttrs bin && bin ? binConfig then bin.binConfig else bin);
+    }
+  );
 
   fontArgs = lib.concatMapStringsSep " " (
     font: "--font-dir ${lib.escapeShellArg (toString font)}"

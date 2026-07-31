@@ -115,8 +115,7 @@ impl OnshapeClient {
         gridfinity_json: &str,
         destination_name: &str,
     ) -> Result<Vec<u8>> {
-        eprintln!("Encoding Onshape configuration");
-        let encoded = self.encode_configuration(
+        self.export_configured_step(
             target,
             &[
                 ConfigurationValue {
@@ -128,7 +127,34 @@ impl OnshapeClient {
                     parameter_value: gridfinity_json,
                 },
             ],
-        )?;
+            destination_name,
+        )
+    }
+
+    pub fn export_bin_step(
+        &self,
+        target: &ModelTarget,
+        gridfinity_json: &str,
+        destination_name: &str,
+    ) -> Result<Vec<u8>> {
+        self.export_configured_step(
+            target,
+            &[ConfigurationValue {
+                parameter_id: "Config",
+                parameter_value: gridfinity_json,
+            }],
+            destination_name,
+        )
+    }
+
+    fn export_configured_step(
+        &self,
+        target: &ModelTarget,
+        parameters: &[ConfigurationValue<'_>],
+        destination_name: &str,
+    ) -> Result<Vec<u8>> {
+        eprintln!("Encoding Onshape configuration");
+        let encoded = self.encode_configuration(target, parameters)?;
 
         eprintln!("Starting configured STEP export");
         let mut translation = self.start_translation(target, &encoded, destination_name)?;
