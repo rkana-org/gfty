@@ -1,0 +1,59 @@
+name: Deploy designer to GitHub Pages
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Only one Pages deployment at a time; newer tags win.
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: cachix/install-nix-action@v31
+
+      # The tag (e.g. v40) must match the model version the app links to,
+      # so a published site never points at a stale Onshape version.
+      - name: Check tag matches pinned Onshape model version
+        run: |
+          ver="$(sed -n 's/^const ONSHAPE_VERSION = "\(.*\)";.*/\1/p' designer/JsonPanel.jsx)"
+          tag="$GITHUB_REF_NAME"
+          if [[ "${tag,,}" != "${ver,,}" ]]; then
+            echo "::error::Tag '$tag' does not match ONSHAPE_VERSION '$ver' in designer/JsonPanel.jsx"
+            exit 1
+          fi
+
+      - name: Build static site
+        run: nix build --print-build-logs
+
+      # Pages tooling cannot handle read-only Nix store permissions, so
+      # stage a writable copy first.
+      - name: Stage artifact
+        run: |
+          cp -rL result public
+          chmod -R +w public
+
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: public
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v5

@@ -1,0 +1,10 @@
+# Nix build output
+/result
+/result-*
+
+# Pages staging dir produced by CI / local builds
+/public
+
+# OS / editor cruft
+.DS_Store
+*.swp

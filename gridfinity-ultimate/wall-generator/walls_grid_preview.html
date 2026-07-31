@@ -1,0 +1,778 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Walls Grid — Layout Preview</title>
+<style>
+  :root {
+    --bg: #f4f4f6;
+    --panel: #ffffff;
+    --ink: #1d1d1f;
+    --muted: #6b7280;
+    --wall: #2a2a2a;
+    --cell: #eef1f7;
+    --accent: #1f6feb;
+    --merge: #d6e8ff;
+    --merge-border: #1f6feb;
+    --error: #b91c1c;
+    --shadow: 0 1px 2px rgba(0,0,0,.04), 0 1px 4px rgba(0,0,0,.06);
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; padding: 0; background: var(--bg); color: var(--ink);
+              overflow: hidden; font: 16px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  main { width: 100%; height: calc(100vh - 48px); max-width: none; margin: 24px auto; padding: 0 16px; display: grid;
+         grid-template-columns: minmax(0, 1fr) minmax(320px, 420px); gap: 20px; align-items: stretch; overflow: hidden; }
+  h1 { font-size: 22px; margin: 0 0 12px; }
+  .workspace { display: grid; grid-template-rows: auto minmax(0, 1fr); gap: 20px; min-width: 0; min-height: 0; }
+  .panel, .stage { background: var(--panel); border-radius: 10px; padding: 16px; box-shadow: var(--shadow); min-width: 0; min-height: 0; }
+  .stage { display: flex; flex-direction: column; overflow: hidden; }
+  label { display: block; font-size: 14px; color: var(--muted); margin: 10px 0 4px; }
+  input[type=text], input[type=number], textarea, select {
+    width: 100%; padding: 8px 10px; border: 1px solid #d4d4d8; border-radius: 6px;
+    background: #fff; font: 15px var(--mono); color: var(--ink);
+  }
+  select { font-family: inherit; }
+  textarea { resize: vertical; min-height: 140px; font-size: 13px; }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .settings-grid { display: grid; grid-template-columns: max-content max-content 1fr; gap: 10px 24px; align-items: end; }
+  .setting-pair.grid-units { grid-column: 1; grid-row: 1; }
+  .setting-thickness { grid-column: 2; grid-row: 1; }
+  .setting-pair.layout-units { grid-column: 1; grid-row: 2; }
+  .setting-display { grid-column: 2 / span 2; grid-row: 2; }
+  .pair-inputs { display: flex; align-items: center; gap: 8px; }
+  .pair-inputs input { width: 72px; }
+  .setting-thickness input { width: 110px; }
+  .setting-wide { grid-column: span 2; min-width: 260px; }
+  .output-panel { position: sticky; top: 16px; height: 100%; display: flex; flex-direction: column; overflow: hidden; }
+  .output-panel textarea { min-height: 0; height: auto; flex: 1 1 auto; overflow: auto; }
+  button { font: 15px inherit; padding: 7px 12px; border: 1px solid #d4d4d8;
+           background: #fff; border-radius: 6px; cursor: pointer; }
+  button:hover { background: #f5f5f7; }
+  button.ghost { border: none; background: transparent; color: var(--accent); padding: 4px 6px; }
+  .derived { color: var(--muted); font-size: 14px; margin-top: 8px; }
+  .stage-body { display: grid; grid-template-columns: minmax(260px, 340px) minmax(0, 1fr); gap: 16px; align-items: stretch; flex: 1 1 auto; min-height: 0; overflow: hidden; }
+  .merge-sidebar { background: #fafafa; border: 1px solid #e4e4e7; border-radius: 8px; padding: 10px; height: 100%; overflow: auto; }
+  .merges { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
+  .merge-row { display: flex; align-items: center; justify-content: space-between; gap: 8px;
+               font: 12px var(--mono); white-space: nowrap; border-radius: 6px; padding: 3px 4px; }
+  .merge-row.highlight { background: var(--merge); }
+  .hint { font-size: 14px; color: var(--muted); margin: 8px 0 12px; }
+  .err { color: var(--error); font-size: 14px; margin-top: 6px; min-height: 1em; }
+  .layout-editor { display: grid; grid-template-columns: 110px minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr);
+                   gap: 8px; align-items: start; justify-items: start; overflow: hidden; min-height: 0; height: 100%; padding-bottom: 0; }
+  .corner { grid-column: 1; grid-row: 1; color: var(--muted); font-size: 13px; align-self: end; }
+  .col-controls { grid-column: 2; grid-row: 1; display: grid; gap: 0; align-items: end; min-width: 0; overflow: hidden; }
+  .row-controls { grid-column: 1; grid-row: 2; display: grid; gap: 0; min-width: 110px; overflow: hidden; }
+  .track-control { background: #fafafa; border: 1px solid #e4e4e7; border-radius: 6px; padding: 5px;
+                   min-width: 0; min-height: 64px; overflow: hidden; }
+  .track-control .track-title { color: var(--muted); font: 12px var(--mono); margin-bottom: 3px; white-space: nowrap; }
+  .track-control select, .track-control input { padding: 4px 5px; font-size: 13px; border-radius: 4px; }
+  .track-control input { margin-top: 4px; }
+  .grid {
+    grid-column: 2; grid-row: 2;
+    display: grid; background: var(--wall); gap: 0;
+    border: 0; padding: 0; user-select: none;
+    width: 100%; min-width: 0; aspect-ratio: 4 / 3;
+  }
+  .cell {
+    background: var(--cell); position: relative; cursor: crosshair;
+    transition: background 80ms ease;
+    display: flex; align-items: center; justify-content: center;
+    font: 13px var(--mono); color: var(--muted);
+  }
+  .cell:hover { background: #dfe4ec; }
+  .cell.selecting { background: #cfe2ff; }
+  .grid.dragging .cell.selecting { background: rgba(34, 197, 94, .36); }
+  .merge-overlay {
+    background: var(--merge); outline: none;
+    pointer-events: none; z-index: 2;
+    display: flex; align-items: center; justify-content: center;
+    font: 13px var(--mono); color: var(--accent);
+  }
+  .merge-overlay.highlight { background: #bcdcff; z-index: 3; }
+  .grid.dragging .merge-overlay { background: rgba(214, 232, 255, .5); outline: 6px dashed var(--merge-border); outline-offset: -6px; opacity: 1; }
+  .toolbar { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+  details { margin-top: 14px; }
+  summary { cursor: pointer; color: var(--muted); font-size: 12px; }
+  @media (max-width: 900px) {
+    html, body { overflow: auto; }
+    main { height: auto; grid-template-columns: 1fr; margin-top: 12px; overflow: visible; }
+    .workspace { min-height: 0; }
+    .stage { overflow: visible; }
+    .output-panel { position: static; height: auto; }
+    .output-panel textarea { height: auto; min-height: 220px; flex: none; }
+    .settings-grid { grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
+    .setting-pair.grid-units, .setting-thickness, .setting-pair.layout-units, .setting-display { grid-column: auto; grid-row: auto; }
+    .setting-wide { grid-column: 1 / -1; }
+    .stage-body { grid-template-columns: 1fr; overflow: visible; }
+    .merge-sidebar { height: auto; max-height: 220px; }
+    .layout-editor { height: 70vh; min-height: 360px; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <div class="workspace">
+    <section class="panel">
+      <h1>Walls Grid — Layout</h1>
+      <div class="settings-grid">
+        <div class="setting-pair grid-units">
+          <label>Gridfinity units (N × M)</label>
+          <div class="pair-inputs">
+            <input id="boxCols" type="number" value="1" step="1" min="1" aria-label="Gridfinity width units">
+            <span>×</span>
+            <input id="boxRows" type="number" value="1" step="1" min="1" aria-label="Gridfinity depth units">
+          </div>
+        </div>
+        <div class="setting-thickness">
+          <label>Wall thickness (mm)</label>
+          <input id="thickness" type="number" value="1.2" step="0.1" min="0" disabled>
+        </div>
+        <div class="setting-pair layout-units">
+          <label>Layout cells (columns × rows)</label>
+          <div class="pair-inputs">
+            <input id="colCount" type="number" value="3" step="1" min="1" aria-label="Layout columns">
+            <span>×</span>
+            <input id="rowCount" type="number" value="2" step="1" min="1" aria-label="Layout rows">
+          </div>
+        </div>
+        <div class="setting-display">
+          <label>Gridfinity Bin size</label>
+          <div class="derived"><span id="derivedSize"></span></div>
+        </div>
+      </div>
+      <div class="err" id="err"></div>
+    </section>
+
+    <section class="stage">
+      <div class="hint">Set each column/row size next to the preview. Drag across cells to add a merge. Right-click a merge in the grid to remove it. Hover a merge in the preview or list to highlight its counterpart.</div>
+      <div class="stage-body">
+        <aside class="merge-sidebar">
+          <label>Merges</label>
+          <div id="merges" class="merges"></div>
+          <div class="toolbar" style="margin-top:10px">
+            <button id="clearMerges">Clear merges</button>
+          </div>
+        </aside>
+        <div id="layoutEditor" class="layout-editor">
+          <div class="corner">sizes</div>
+          <div id="colControls" class="col-controls"></div>
+          <div id="rowControls" class="row-controls"></div>
+          <div id="grid" class="grid"></div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <aside class="panel output-panel">
+    <h1>JSON output</h1>
+    <div class="hint">Paste this into the FeatureScript feature. You can also paste/edit valid layout JSON here to update the preview.</div>
+    <textarea id="out"></textarea>
+    <div class="toolbar" style="margin-top:8px">
+      <button id="copy">Copy JSON</button>
+    </div>
+  </aside>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const GRIDFINITY_MM = 42;
+const UNIT_FACTORS_TO_MM = {
+  mm: 1, millimeter: 1, millimeters: 1,
+  cm: 10, centimeter: 10, centimeters: 10,
+  m: 1000, meter: 1000, meters: 1000,
+  in: 25.4, inch: 25.4, inches: 25.4,
+};
+const UNIT_NAMES = Object.keys(UNIT_FACTORS_TO_MM).sort((a, b) => b.length - a.length);
+
+const state = {
+  boxCols: 1,
+  boxRows: 1,
+  cols: [
+    { kind: 'auto', expr: '1' },
+    { kind: 'auto', expr: '1' },
+    { kind: 'auto', expr: '1' },
+  ],
+  rows: [
+    { kind: 'auto', expr: '1' },
+    { kind: 'auto', expr: '1' },
+  ],
+  thickness: 1.2,
+  merges: [],
+  highlightedMerge: null,
+};
+
+function newTrack() {
+  return { kind: 'auto', expr: '1' };
+}
+
+function cloneTrack(t) {
+  return { kind: t.kind, expr: t.expr };
+}
+
+function gridWidth() {
+  return state.boxCols * GRIDFINITY_MM;
+}
+
+function gridDepth() {
+  return state.boxRows * GRIDFINITY_MM;
+}
+
+function evalNumberExpression(expr, label) {
+  const s = String(expr ?? '').trim();
+  if (!s) throw new Error(label + ' expression is empty.');
+  if (!/^[0-9+\-*\/().\s]+$/.test(s))
+    throw new Error(label + ' may only use numbers and + - * / ( ).');
+  let value;
+  try {
+    value = Function('"use strict"; return (' + s + ');')();
+  } catch (e) {
+    throw new Error('Cannot evaluate ' + label + ': ' + s);
+  }
+  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0)
+    throw new Error(label + ' must evaluate to a positive number.');
+  return value;
+}
+
+function splitLengthExpression(expr) {
+  let s = String(expr ?? '').trim();
+  for (const unit of UNIT_NAMES) {
+    if (s.toLowerCase().endsWith(unit)) {
+      const body = s.slice(0, -unit.length).trim();
+      if (body && !/[a-zA-Z]$/.test(body))
+        return { body, unit };
+    }
+  }
+  if (/[a-zA-Z]/.test(s))
+    throw new Error('Unknown length unit in: ' + s);
+  return { body: s, unit: 'mm' };
+}
+
+function evalLengthMm(expr, label) {
+  const split = splitLengthExpression(expr);
+  return evalNumberExpression(split.body, label) * UNIT_FACTORS_TO_MM[split.unit.toLowerCase()];
+}
+
+function resolveTrackSizes(tracks, total, label) {
+  let fixedTotal = 0;
+  let flexTotal = 0;
+  const fixed = [];
+  const flex = [];
+  for (let i = 0; i < tracks.length; i++) {
+    const t = tracks[i];
+    if (t.kind === 'fixed') {
+      const mm = evalLengthMm(t.expr, label + ' ' + (i + 1));
+      fixed[i] = mm;
+      fixedTotal += mm;
+    } else if (t.kind === 'frac') {
+      const weight = evalNumberExpression(t.expr, label + ' ' + (i + 1));
+      flex[i] = weight;
+      flexTotal += weight;
+    } else {
+      flex[i] = 1;
+      flexTotal += 1;
+    }
+  }
+
+  const remaining = total - fixedTotal;
+  if (remaining < -1e-9)
+    throw new Error('Fixed ' + label.toLowerCase() + ' sizes exceed total ' + total + ' mm.');
+  if (flexTotal === 0 && remaining > 1e-9)
+    throw new Error('Fixed ' + label.toLowerCase() + ' sizes do not fill the total and there are no auto/fractional tracks.');
+
+  return tracks.map((t, i) => t.kind === 'fixed' ? fixed[i] : remaining * (flex[i] / flexTotal));
+}
+
+function computeLayout() {
+  const width = gridWidth();
+  const depth = gridDepth();
+  return {
+    width,
+    depth,
+    colSizes: resolveTrackSizes(state.cols, width, 'Column'),
+    rowSizes: resolveTrackSizes(state.rows, depth, 'Row'),
+  };
+}
+
+function fallbackLayout() {
+  return {
+    width: gridWidth(),
+    depth: gridDepth(),
+    colSizes: state.cols.map(() => GRIDFINITY_MM),
+    rowSizes: state.rows.map(() => GRIDFINITY_MM),
+  };
+}
+
+function sizeTemplate(sizes) {
+  return sizes.map(v => Math.max(v, 0.001) + 'fr').join(' ');
+}
+
+function trackToJson(t, axis, i) {
+  if (t.kind === 'auto') return 'auto';
+  if (t.kind === 'frac') return +evalNumberExpression(t.expr, axis + ' ' + (i + 1)).toFixed(9);
+  return +evalLengthMm(t.expr, axis + ' ' + (i + 1)).toFixed(6) + ' mm';
+}
+
+function toJson() {
+  return {
+    columns: state.cols.map((t, i) => trackToJson(t, 'Column', i)),
+    rows: state.rows.map((t, i) => trackToJson(t, 'Row', i)),
+    merges: state.merges.map(m => ({ cols: [m.c0, m.c1], rows: [m.r0, m.r1] })),
+  };
+}
+
+function trackFromJson(entry, label) {
+  if (entry === 'auto')
+    return { kind: 'auto', expr: '1' };
+  if (typeof entry === 'number') {
+    if (!Number.isFinite(entry) || entry <= 0)
+      throw new Error(label + ' fraction must be a positive number.');
+    return { kind: 'frac', expr: String(entry) };
+  }
+  if (typeof entry === 'string') {
+    const s = entry.trim();
+    if (s === 'auto')
+      return { kind: 'auto', expr: '1' };
+    if (s.toLowerCase().startsWith('frac:')) {
+      const expr = s.slice(5).trim();
+      evalNumberExpression(expr, label + ' fraction');
+      return { kind: 'frac', expr };
+    }
+    if (s.toLowerCase().startsWith('len:')) {
+      const expr = s.slice(4).trim();
+      evalLengthMm(expr, label + ' length');
+      return { kind: 'fixed', expr };
+    }
+    if (/[a-zA-Z]/.test(s)) {
+      evalLengthMm(s, label + ' length');
+      return { kind: 'fixed', expr: s };
+    }
+    evalNumberExpression(s, label + ' fraction');
+    return { kind: 'frac', expr: s };
+  }
+  throw new Error(label + ' must be "auto", a positive number, a length string, or frac:/len: expression.');
+}
+
+function mergeFromJson(m, ncols, nrows, label) {
+  if (!m || typeof m !== 'object' || !Array.isArray(m.cols) || !Array.isArray(m.rows) || m.cols.length !== 2 || m.rows.length !== 2)
+    throw new Error(label + ' must look like {"cols":[a,b],"rows":[c,d]}.');
+
+  const c0 = Math.floor(Number(m.cols[0]));
+  const c1 = Math.floor(Number(m.cols[1]));
+  const r0 = Math.floor(Number(m.rows[0]));
+  const r1 = Math.floor(Number(m.rows[1]));
+  if (![c0, c1, r0, r1].every(Number.isFinite))
+    throw new Error(label + ' indices must be numbers.');
+  if (c0 < 0 || c1 >= ncols || c0 > c1)
+    throw new Error(label + ' columns are out of range or reversed.');
+  if (r0 < 0 || r1 >= nrows || r0 > r1)
+    throw new Error(label + ' rows are out of range or reversed.');
+  return { c0, c1, r0, r1 };
+}
+
+function positiveIntFromJson(value, fallback, label) {
+  if (value === undefined)
+    return fallback;
+  const n = Math.floor(Number(value));
+  if (!Number.isFinite(n) || n < 1)
+    throw new Error(label + ' must be a positive integer.');
+  return n;
+}
+
+function parseLayoutJsonText(text) {
+  const parsed = JSON.parse(text);
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed))
+    throw new Error('Top-level JSON must be an object.');
+  if (!Array.isArray(parsed.columns) || parsed.columns.length === 0)
+    throw new Error('JSON must contain a non-empty "columns" array.');
+  if (!Array.isArray(parsed.rows) || parsed.rows.length === 0)
+    throw new Error('JSON must contain a non-empty "rows" array.');
+
+  const cols = parsed.columns.map((x, i) => trackFromJson(x, 'Column ' + (i + 1)));
+  const rows = parsed.rows.map((x, i) => trackFromJson(x, 'Row ' + (i + 1)));
+  const mergesRaw = parsed.merges === undefined ? [] : parsed.merges;
+  if (!Array.isArray(mergesRaw))
+    throw new Error('"merges" must be an array.');
+  const merges = mergesRaw.map((m, i) => mergeFromJson(m, cols.length, rows.length, 'Merge ' + (i + 1)));
+
+  const gridfinity = parsed.gridfinity && typeof parsed.gridfinity === 'object' ? parsed.gridfinity : {};
+  return {
+    cols,
+    rows,
+    merges,
+    boxCols: positiveIntFromJson(parsed.boxCols ?? gridfinity.cols, state.boxCols, 'Gridfinity width units'),
+    boxRows: positiveIntFromJson(parsed.boxRows ?? gridfinity.rows, state.boxRows, 'Gridfinity depth units'),
+  };
+}
+
+function applyLayoutJsonText(text) {
+  const next = parseLayoutJsonText(text);
+  state.boxCols = next.boxCols;
+  state.boxRows = next.boxRows;
+  state.cols = next.cols;
+  state.rows = next.rows;
+  state.merges = next.merges;
+  state.highlightedMerge = null;
+}
+
+function isCovered(r, c, merges) {
+  return merges.findIndex(m => c >= m.c0 && c <= m.c1 && r >= m.r0 && r <= m.r1);
+}
+
+function setCount(axis, count) {
+  const arr = axis === 'cols' ? state.cols : state.rows;
+  count = Math.max(1, Math.floor(Number(count) || 1));
+  while (arr.length < count) arr.push(newTrack());
+  if (arr.length > count) arr.length = count;
+  filterMerges();
+}
+
+function setBoxUnits(axis, count) {
+  count = Math.max(1, Math.floor(Number(count) || 1));
+  if (axis === 'cols')
+    state.boxCols = count;
+  else
+    state.boxRows = count;
+}
+
+function filterMerges() {
+  state.merges = state.merges.filter(m =>
+    m.c0 >= 0 && m.c1 < state.cols.length &&
+    m.r0 >= 0 && m.r1 < state.rows.length
+  );
+  if (state.highlightedMerge != null && state.highlightedMerge >= state.merges.length)
+    state.highlightedMerge = null;
+}
+
+function renderTrackControls(layout) {
+  renderAxisControls('cols', $('colControls'), state.cols, layout.colSizes);
+  renderAxisControls('rows', $('rowControls'), state.rows, layout.rowSizes);
+}
+
+function styleAxisControls(axis, wrap, sizes) {
+  if (axis === 'cols') {
+    wrap.style.gridTemplateColumns = sizeTemplate(sizes);
+    wrap.style.gridTemplateRows = '';
+    wrap.style.columnGap = `${(state.thickness / Math.max(gridWidth(), 1)) * 100}%`;
+    wrap.style.rowGap = '0';
+    wrap.style.padding = `0 ${(state.thickness / Math.max(gridWidth(), 1)) * 100}%`;
+  } else {
+    wrap.style.gridTemplateColumns = '';
+    wrap.style.gridTemplateRows = sizeTemplate(sizes);
+    wrap.style.rowGap = `${(state.thickness / Math.max(gridDepth(), 1)) * 100}%`;
+    wrap.style.columnGap = '0';
+    wrap.style.padding = `${(state.thickness / Math.max(gridDepth(), 1)) * 100}% 0`;
+  }
+}
+
+function renderAxisControls(axis, wrap, tracks, sizes) {
+  wrap.innerHTML = '';
+  styleAxisControls(axis, wrap, sizes);
+
+  tracks.forEach((track, i) => {
+    const el = document.createElement('div');
+    el.className = 'track-control';
+    const title = document.createElement('div');
+    title.className = 'track-title';
+    title.textContent = (axis === 'cols' ? 'C' : 'R') + (i + 1);
+    el.appendChild(title);
+
+    const sel = document.createElement('select');
+    sel.innerHTML = '<option value="auto">auto</option><option value="frac">fractional</option><option value="fixed">length</option>';
+    sel.value = track.kind;
+    sel.addEventListener('change', () => {
+      track.kind = sel.value;
+      if (track.kind === 'frac' && !track.expr) track.expr = '1';
+      if (track.kind === 'fixed' && !track.expr) track.expr = '42';
+      render();
+    });
+    el.appendChild(sel);
+
+    if (track.kind !== 'auto') {
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.value = track.expr;
+      input.placeholder = track.kind === 'frac' ? 'e.g. 1/3' : 'mm, e.g. 42/2';
+      input.addEventListener('input', () => {
+        track.expr = input.value;
+        refresh();
+      });
+      el.appendChild(input);
+    }
+
+    wrap.appendChild(el);
+  });
+}
+
+let latestLayout = null;
+
+function renderGrid(layout) {
+  latestLayout = layout;
+  const grid = $('grid');
+  const width = layout.width || 1;
+  const depth = layout.depth || 1;
+  const t = state.thickness || 0;
+
+  grid.style.gridTemplateColumns = sizeTemplate(layout.colSizes);
+  grid.style.gridTemplateRows = sizeTemplate(layout.rowSizes);
+  grid.style.aspectRatio = width + ' / ' + depth;
+  grid.style.columnGap = `${(t / width) * 100}%`;
+  grid.style.rowGap = `${(t / depth) * 100}%`;
+  // CSS top/bottom percentage padding is measured against the element width,
+  // so use width here too; otherwise top/bottom walls get too large when width != depth.
+  grid.style.padding = `${(t / width) * 100}% ${(t / width) * 100}%`;
+  grid.innerHTML = '';
+
+  const nC = state.cols.length, nR = state.rows.length;
+  for (let r = 0; r < nR; r++) {
+    for (let c = 0; c < nC; c++) {
+      const el = document.createElement('div');
+      el.className = 'cell';
+      el.style.gridColumn = `${c + 1} / ${c + 2}`;
+      el.style.gridRow = `${r + 1} / ${r + 2}`;
+      el.dataset.r = r;
+      el.dataset.c = c;
+      el.textContent = `${c},${r}`;
+      grid.appendChild(el);
+    }
+  }
+
+  state.merges.forEach((m, idx) => {
+    const ov = document.createElement('div');
+    ov.className = 'merge-overlay' + (idx === state.highlightedMerge ? ' highlight' : '');
+    ov.style.gridColumn = `${m.c0 + 1} / ${m.c1 + 2}`;
+    ov.style.gridRow = `${m.r0 + 1} / ${m.r1 + 2}`;
+    ov.dataset.mergeIndex = idx;
+    ov.textContent = `[${m.c0}–${m.c1}] × [${m.r0}–${m.r1}]`;
+    grid.appendChild(ov);
+  });
+  fitPreview(layout);
+}
+
+function fitPreview(layout) {
+  requestAnimationFrame(() => {
+    if (layout !== latestLayout) return;
+
+    const editor = $('layoutEditor');
+    const grid = $('grid');
+    const colControls = $('colControls');
+    const rowControls = $('rowControls');
+    const editorStyles = getComputedStyle(editor);
+    const gapX = parseFloat(editorStyles.columnGap) || 8;
+    const gapY = parseFloat(editorStyles.rowGap) || 8;
+    const sideWidth = rowControls.getBoundingClientRect().width || 110;
+    const topHeight = colControls.getBoundingClientRect().height || 0;
+    const availableW = Math.max(1, editor.clientWidth - sideWidth - gapX);
+    const availableH = Math.max(1, editor.clientHeight - topHeight - gapY);
+    const totalW = Math.max(1, layout.width + 2 * state.thickness);
+    const totalD = Math.max(1, layout.depth + 2 * state.thickness);
+    const aspect = totalW / totalD;
+    const fittedW = Math.max(1, Math.min(availableW, availableH * aspect));
+    const fittedH = fittedW / aspect;
+    const pxPerMmX = fittedW / totalW;
+    const pxPerMmY = fittedH / totalD;
+    const wallX = state.thickness * pxPerMmX;
+    const wallY = state.thickness * pxPerMmY;
+
+    grid.style.width = `${fittedW}px`;
+    grid.style.height = `${fittedH}px`;
+    grid.style.aspectRatio = 'auto';
+    grid.style.columnGap = `${wallX}px`;
+    grid.style.rowGap = `${wallY}px`;
+    grid.style.padding = `${wallY}px ${wallX}px`;
+
+    colControls.style.width = `${fittedW}px`;
+    colControls.style.columnGap = `${wallX}px`;
+    colControls.style.padding = `0 ${wallX}px`;
+    rowControls.style.height = `${fittedH}px`;
+    rowControls.style.rowGap = `${wallY}px`;
+    rowControls.style.padding = `${wallY}px 0`;
+  });
+}
+
+function renderMergesList() {
+  const wrap = $('merges');
+  wrap.innerHTML = '';
+  if (state.merges.length === 0) {
+    const m = document.createElement('div');
+    m.style.color = 'var(--muted)'; m.style.fontSize = '12px';
+    m.textContent = '(none — drag across cells to create one)';
+    wrap.appendChild(m);
+    return;
+  }
+  state.merges.forEach((m, i) => {
+    const row = document.createElement('div');
+    row.className = 'merge-row' + (i === state.highlightedMerge ? ' highlight' : '');
+    row.addEventListener('mouseenter', () => setHighlightedMerge(i));
+    row.addEventListener('mouseleave', () => setHighlightedMerge(null));
+    const label = document.createElement('span');
+    label.textContent = `cols [${m.c0}, ${m.c1}], rows [${m.r0}, ${m.r1}]`;
+    const rm = document.createElement('button');
+    rm.className = 'ghost';
+    rm.textContent = 'remove';
+    rm.onclick = () => { state.merges.splice(i, 1); state.highlightedMerge = null; render(); };
+    row.appendChild(label);
+    row.appendChild(rm);
+    wrap.appendChild(row);
+  });
+}
+
+function setHighlightedMerge(idx) {
+  if (idx === -1) idx = null;
+  if (state.highlightedMerge === idx) return;
+  state.highlightedMerge = idx;
+  document.querySelectorAll('.merge-overlay').forEach(el => {
+    el.classList.toggle('highlight', Number(el.dataset.mergeIndex) === idx);
+  });
+  document.querySelectorAll('.merge-row').forEach((el, i) => {
+    el.classList.toggle('highlight', i === idx);
+  });
+}
+
+function refresh() {
+  $('derivedSize').textContent = `${state.boxCols} × ${state.boxRows} = ${gridWidth()} mm × ${gridDepth()} mm`;
+  $('err').textContent = '';
+  let layout;
+  try {
+    layout = computeLayout();
+    styleAxisControls('cols', $('colControls'), layout.colSizes);
+    styleAxisControls('rows', $('rowControls'), layout.rowSizes);
+    renderGrid(layout);
+    $('out').value = JSON.stringify(toJson(), null, 2);
+  } catch (e) {
+    $('err').textContent = e.message;
+    layout = fallbackLayout();
+    styleAxisControls('cols', $('colControls'), layout.colSizes);
+    styleAxisControls('rows', $('rowControls'), layout.rowSizes);
+    renderGrid(layout);
+    $('out').value = '';
+  }
+  renderMergesList();
+}
+
+function render() {
+  $('boxCols').value = state.boxCols;
+  $('boxRows').value = state.boxRows;
+  $('colCount').value = state.cols.length;
+  $('rowCount').value = state.rows.length;
+  state.thickness = Math.max(0, parseFloat($('thickness').value) || 0);
+  let layout;
+  try { layout = computeLayout(); } catch (e) { layout = fallbackLayout(); }
+  renderTrackControls(layout);
+  refresh();
+}
+
+// -------- Drag-select merge creation --------
+let drag = null;
+
+function cellAt(e) {
+  const el = e.target.closest('.cell');
+  if (!el) return null;
+  return { r: +el.dataset.r, c: +el.dataset.c };
+}
+
+function mergeAtPointer(e) {
+  const overlays = Array.from(document.querySelectorAll('.merge-overlay'));
+  for (let i = overlays.length - 1; i >= 0; i--) {
+    const rect = overlays[i].getBoundingClientRect();
+    if (e.clientX >= rect.left && e.clientX <= rect.right && e.clientY >= rect.top && e.clientY <= rect.bottom)
+      return Number(overlays[i].dataset.mergeIndex);
+  }
+  return null;
+}
+
+$('grid').addEventListener('mousedown', e => {
+  if (e.button !== 0) return;
+  const at = cellAt(e);
+  if (!at) return;
+  drag = { startR: at.r, startC: at.c, endR: at.r, endC: at.c };
+  $('grid').classList.add('dragging');
+  setHighlightedMerge(null);
+  paintDrag();
+  e.preventDefault();
+});
+$('grid').addEventListener('mousemove', e => {
+  const at = cellAt(e);
+  if (drag) {
+    if (!at) return;
+    drag.endR = at.r; drag.endC = at.c;
+    paintDrag();
+    return;
+  }
+  const mergeIdx = mergeAtPointer(e);
+  setHighlightedMerge(mergeIdx != null ? mergeIdx : (at ? isCovered(at.r, at.c, state.merges) : null));
+});
+$('grid').addEventListener('mouseleave', () => {
+  if (!drag) setHighlightedMerge(null);
+});
+$('grid').addEventListener('contextmenu', e => {
+  const at = cellAt(e);
+  const idx = mergeAtPointer(e) ?? (at ? isCovered(at.r, at.c, state.merges) : -1);
+  if (idx != null && idx >= 0) {
+    state.merges.splice(idx, 1);
+    state.highlightedMerge = null;
+    render();
+    e.preventDefault();
+  }
+});
+window.addEventListener('mouseup', () => {
+  if (!drag) return;
+  const r0 = Math.min(drag.startR, drag.endR);
+  const r1 = Math.max(drag.startR, drag.endR);
+  const c0 = Math.min(drag.startC, drag.endC);
+  const c1 = Math.max(drag.startC, drag.endC);
+  drag = null;
+  $('grid').classList.remove('dragging');
+  if (r0 !== r1 || c0 !== c1) {
+    state.merges.push({ c0, c1, r0, r1 });
+  }
+  render();
+});
+
+function paintDrag() {
+  if (!drag) return;
+  const r0 = Math.min(drag.startR, drag.endR);
+  const r1 = Math.max(drag.startR, drag.endR);
+  const c0 = Math.min(drag.startC, drag.endC);
+  const c1 = Math.max(drag.startC, drag.endC);
+  document.querySelectorAll('.cell').forEach(el => {
+    const r = +el.dataset.r, c = +el.dataset.c;
+    el.classList.toggle('selecting', r >= r0 && r <= r1 && c >= c0 && c <= c1);
+  });
+}
+
+// -------- Input handling --------
+$('boxCols').addEventListener('input', () => { setBoxUnits('cols', $('boxCols').value); render(); });
+$('boxRows').addEventListener('input', () => { setBoxUnits('rows', $('boxRows').value); render(); });
+$('colCount').addEventListener('input', () => { setCount('cols', $('colCount').value); render(); });
+$('rowCount').addEventListener('input', () => { setCount('rows', $('rowCount').value); render(); });
+$('thickness').addEventListener('input', () => { state.thickness = Math.max(0, parseFloat($('thickness').value) || 0); render(); });
+$('clearMerges').onclick = () => { state.merges = []; state.highlightedMerge = null; render(); };
+$('out').addEventListener('input', () => {
+  const text = $('out').value.trim();
+  if (!text) {
+    $('err').textContent = 'JSON input is empty.';
+    return;
+  }
+  try {
+    applyLayoutJsonText(text);
+    render();
+  } catch (e) {
+    $('err').textContent = 'JSON input: ' + e.message;
+  }
+});
+$('copy').onclick = async () => {
+  try {
+    const minified = $('out').value ? JSON.stringify(JSON.parse($('out').value)) : '';
+    await navigator.clipboard.writeText(minified);
+    $('copy').textContent = 'Copied minified JSON!';
+    setTimeout(()=>$('copy').textContent='Copy JSON', 1200);
+  } catch(e) {}
+};
+window.addEventListener('resize', () => { if (latestLayout) fitPreview(latestLayout); });
+
+render();
+</script>
+</body>
+</html>
