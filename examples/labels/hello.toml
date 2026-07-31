@@ -1,0 +1,11 @@
+kind = "label"
+version = 1
+template = "../templates/1x1.svg"
+bin = "../bins/with-magnetic-base.toml"
+filament = 0
+
+[text.top]
+content = "Gridfinity"
+
+[text.bottom]
+content = "Hello"

@@ -9,7 +9,7 @@
     inputs.flake-parts.lib.mkFlake { inherit inputs; } {
       imports = [
         inputs.gfty.flakeModules.default
-        ./labels.nix
+        ./module.nix
       ];
 
       systems = [

@@ -430,11 +430,11 @@ The target names are:
 - Nix package/overlay: `pkgs.gfty`
 - Flake-parts namespace: `perSystem.gfty`
 
-Introduce the `gfty` binary and final command hierarchy after the real label API
-export works but before publishing export apps. Retain `gfty-label` and the old
-Nix names briefly as compatibility aliases while `gfty-label-library` migrates.
-Rename the repository directory after the interfaces have moved, avoiding a
-large path-only change during API debugging.
+The `gfty` binary and final command hierarchy were introduced after the label
+API exporter worked. Temporary `gfty-label` binary/Nix aliases were retained
+through the `gfty-label-library` migration and have now been removed. The hosted
+repository, local directory, package, overlay, and module namespace all use the
+target names above.
 
 ## Implementation sequence
 
@@ -470,8 +470,8 @@ large path-only change during API debugging.
 
 ### 3. Introduce `gfty` and the Nix export apps
 
-1. **Done:** install `gfty`; retain a temporary `gfty-label` compatibility
-   symlink and `pkgs.gfty-label` overlay alias.
+1. **Done:** install `gfty`; temporary `gfty-label` command and Nix aliases were
+   retained through migration and removed in phase 7.
 2. **Done:** add `export-label-<name>` and `export-plate-<name>` runtime apps.
 3. **Done:** remove `onshapeUrl` and `onshapeBaseUrl`; add the immutable
    `labelModelUrl` option.
@@ -488,9 +488,8 @@ large path-only change during API debugging.
 3. **Done:** move plate creation/export below `gfty label plate`.
 4. **Done:** remove public geometry JSON flags, commands, and package artifacts.
 5. **Done:** remove public `build`; pure Nix builders use render/create commands.
-6. **Partly done:** update the package examples and compatibility wrapper. The
-   separate `gfty-label-library` lock/input migration remains after these commits
-   are published.
+6. **Done:** update package examples and migrate `gfty-label-library` after the
+   new interfaces were published.
 
 ### 5. Verify the Gridfinity Ultimate model
 
@@ -532,17 +531,18 @@ large path-only change during API debugging.
 1. **Done:** Cargo/Nix package names, development outputs, environment variables,
    examples, flake-parts namespace, local directory, GitHub repository, and
    local remote are now `gfty`.
-2. Migrate `gfty-label-library` to `perSystem.gfty` and named bins after the new
-   gfty commits are pushed so its portable GitHub lock can reference them.
-3. Remove the deprecated `gfty-label` command wrapper and `pkgs.gfty-label`
-   overlay alias after that consumer migration.
-4. **Done for current interfaces:** update primary documentation and examples to
-   use `gfty`; retain only explicit compatibility and historical references.
+2. **Done:** migrate `gfty-label-library` to `inputs.gfty`, `perSystem.gfty`, and
+   a shared named bin; its lock now references the renamed GitHub repository.
+3. **Done:** remove the deprecated `gfty-label` command wrapper and
+   `pkgs.gfty-label` overlay alias after the consumer migration.
+4. **Done:** update primary documentation and examples to use `gfty`; retain only
+   historical references where they explain the migration.
 
 ### 8. Integrate Gridfinity Ultimate
 
 1. **Done:** merge the complete nine-commit `gridfinity-ultimate` history as a
-   second parent and place its tracked tree under `gridfinity-ultimate/`.
+   second parent. Its files were imported under a temporary prefix before the
+   monorepo cleanup moved them to their final domain directories.
 2. **Done:** expose the static browser designer as root `packages.designer` and
    add `designer-dev`/`designer-preview` to the root development shell.
 3. **Done:** move the Pages workflow to the root and use `designer-v*` tags so
@@ -551,8 +551,10 @@ large path-only change during API debugging.
    designer derivation and domain-specific guide.
 5. **Done:** run the browser's default serializer against the same JSON fixture
    used by Rust during `nix flake check`.
-6. Keep the old standalone checkout only as a local backup until the integrated
-   history and deployment have been pushed and verified.
+6. **Done:** consolidate the browser app under `designer/` and every maintained
+   FeatureScript under `featurescripts/`, then remove the temporary import prefix.
+7. Keep the old standalone checkout only as a local backup until the cleaned
+   layout and deployment have been pushed and verified.
 
 ## Out of scope for the first implementation
 

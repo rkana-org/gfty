@@ -4,9 +4,9 @@ Reproducible Gridfinity bin and label authoring with immutable Onshape STEP
 export. Labels use SVG templates and reusable icons; bins, labels, and their Nix
 definitions remain the source of truth.
 
-The repository also contains the complete Gridfinity Ultimate browser designer,
-Onshape configuration helpers, and wall-generator FeatureScript under
-[`gridfinity-ultimate/`](gridfinity-ultimate/README.md). That project's original
+The repository also contains the complete Gridfinity Ultimate browser designer
+under [`designer/`](designer/README.md) and every Onshape FeatureScript under
+[`featurescripts/`](featurescripts/README.md). The original Gridfinity Ultimate
 Git history is preserved as a second parent of the import commit.
 
 Build or develop the designer from the same root flake:
@@ -45,8 +45,7 @@ gfty label plate create --dimensions WIDTH HEIGHT [OPTIONS] LABEL...
 gfty label plate export --dimensions WIDTH HEIGHT [EXPORT OPTIONS] LABEL...
 ```
 
-`gfty` is the package and main executable. `gfty-label` remains a deprecated
-command wrapper for old local label invocations during the repository rename.
+`gfty` is the package and executable.
 
 Rendering resolves bundled and explicitly supplied fonts, converts text and SVG
 primitives to paths with `usvg`, applies filament colors, and lays out icons
@@ -300,8 +299,7 @@ families is available.
 
 The default package exposes `mkBin`, `mkLabel`, and `mkPlate` passthru functions. Add the
 flake's `easyOverlay`-generated `overlays.default` to nixpkgs to make the same
-package available as `pkgs.gfty` (`pkgs.gfty-label` remains a compatibility
-alias):
+package available as `pkgs.gfty`:
 
 ```nix
 # Import nixpkgs with overlays = [ inputs.gfty.overlays.default ].
@@ -395,7 +393,7 @@ version.
 
 `packages.bins.all` and `packages.labels.all` link every generated definition,
 making it convenient to install or copy the complete set. See
-`examples/flake.nix` and `examples/labels.nix` for a buildable module example.
+`examples/flake.nix` and `examples/module.nix` for a buildable module example.
 
 ## Terminal previews
 
@@ -458,7 +456,8 @@ is sorted numerically in priority order.
 
 ## Onshape FeatureScript
 
-Only `featurescript/gfty_label_instances.fs` is needed for the current workflow.
+Only `featurescripts/labels/gfty_label_instances.fs` is needed for the current
+label workflow.
 Paste the complete version 2 JSON (or read it from a Part Studio string variable),
 then select:
 
@@ -486,12 +485,14 @@ disabled with **Assign filament appearances**. The default palette, repeated for
 higher IDs, is `#EAEAEA`, `#43484D`, `#A7D293`, `#8AAED6`, `#E1927A`,
 `#F5D578`, `#A795D2`, `#89DAD3`, `#EAB97D`, and `#999487`.
 
-`featurescript/gfty_label_importer.fs` is retained only for legacy version 1
+`featurescripts/labels/gfty_label_importer.fs` is retained only for legacy version 1
 JSON and is not part of the current workflow.
 
 For workflows which derive the blank prototype from another configured Part
-Studio, `featurescript/variable_configured_derived.fs` wraps Onshape's native
+Studio, `featurescripts/configuration/variable_configured_derived.fs` wraps
+Onshape's native
 Derived implementation and forwards current Part Studio variables into selected
 source configuration inputs. See
-`featurescript/variable_configured_derived.md` for installation, mapping, and
+`featurescripts/configuration/variable_configured_derived.md` for installation,
+mapping, and
 limitations.

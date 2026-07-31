@@ -13,7 +13,7 @@ The current end-to-end model is:
 2. Label TOML + SVG template/icons -> composed SVG.
 3. Composed SVG -> compact schema-version-2 geometry JSON grouped by filament.
 4. A referenced bin configuration produces the blank prototype in Onshape.
-5. `featurescript/gfty_label_instances.fs` copies that prototype, creates the
+5. `featurescripts/labels/gfty_label_instances.fs` copies that prototype, creates the
    artwork, and joins multi-label output with sacrificial connector plates.
 6. Nix builders expose reproducible bin/label/plate bundles and flake-parts
    outputs.
@@ -25,8 +25,9 @@ is in `../std-library/`.
 
 ## Repository map
 
-- `gridfinity-ultimate/`: imported browser designer, configuration helpers, wall
-  generator, and its preserved domain-specific development guide.
+- `designer/`: Gridfinity Ultimate browser application and Nix site package.
+- `featurescripts/`: every maintained FeatureScript, organized by labels,
+  configuration, and divider generation.
 - `src/main.rs`: command dispatch, output behavior, and inspection.
 - `src/cli.rs`: Clap interface. Keep stdout clean for data-producing commands.
 - `src/config.rs`: label TOML schema, path resolution, discovery, and validation.
@@ -45,10 +46,14 @@ is in `../std-library/`.
 - `src/plate.rs`: dimension-constrained row-major plate layout.
 - `src/terminal_preview.rs`: native rasteroid previews.
 - `src/watch.rs`: dependency watching and rebuild presentation.
-- `featurescript/gfty_label_instances.fs`: current version-2 Onshape importer.
-- `featurescript/gfty_label_importer.fs`: legacy version-1 importer only.
-- `featurescript/variable_configured_derived.fs`: wrapper around native Derived
-  which forwards current Part Studio variables into source configuration IDs.
+- `featurescripts/labels/gfty_label_instances.fs`: current version-2 Onshape
+  importer.
+- `featurescripts/labels/gfty_label_importer.fs`: legacy version-1 importer only.
+- `featurescripts/configuration/variable_configured_derived.fs`: wrapper around
+  native Derived which forwards current variables into source configuration IDs.
+- `featurescripts/configuration/extract_json_config.fs`: Gridfinity JSON-to-variable
+  bridge.
+- `featurescripts/dividers/walls_grid.fs`: divider and easy-grab wall generator.
 - `nix/mk-label.nix`, `nix/mk-plate.nix`: passthru builders.
 - `flake-module.nix`: typed flake-parts label/plate definitions and nested output
   packages.
@@ -167,10 +172,9 @@ Current JSON is version 2:
 ## Nix interfaces
 
 - `packages.default` exposes `mkBin`, `mkLabel`, and `mkPlate` passthru builders.
-- The package and main program are `gfty`; `gfty-label` is a deprecated command
-  compatibility wrapper.
-- `overlays.default` is generated with flake-parts `easyOverlay` and exposes both
-  `pkgs.gfty` and the compatibility name `pkgs.gfty-label`.
+- The package and main program are `gfty`.
+- `overlays.default` is generated with flake-parts `easyOverlay` and exposes
+  `pkgs.gfty`.
 - The flake module uses typed options under `perSystem.gfty`.
 - Outputs are accessed as `packages.bins.<name>`, `packages.labels.<name>`, and
   `packages.plates.<name>`. `packages.labels.all` is a link farm containing one

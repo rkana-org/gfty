@@ -25,7 +25,7 @@ jobs:
       # designer-v42 must match the immutable model version linked by the app.
       - name: Check tag matches pinned Onshape model version
         run: |
-          ver="$(sed -n 's/^const ONSHAPE_VERSION = "\(.*\)";.*/\1/p' gridfinity-ultimate/designer/JsonPanel.jsx)"
+          ver="$(sed -n 's/^const ONSHAPE_VERSION = "\(.*\)";.*/\1/p' designer/JsonPanel.jsx)"
           tag="${GITHUB_REF_NAME#designer-}"
           if [[ "${tag,,}" != "${ver,,}" ]]; then
             echo "::error::Tag '$GITHUB_REF_NAME' does not match ONSHAPE_VERSION '$ver'"

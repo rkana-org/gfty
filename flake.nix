@@ -59,7 +59,7 @@
               {
                 name = "designer-dev";
                 help = "serve the Gridfinity Ultimate designer with live reload";
-                command = ''exec live-server --port 8080 "$PRJ_ROOT/gridfinity-ultimate/designer"'';
+                command = ''exec live-server --port 8080 "$PRJ_ROOT/designer"'';
               }
               {
                 name = "designer-preview";
@@ -106,19 +106,16 @@
               }
               ''
                 node ${./tests/bin-designer-conformance.js} \
-                  ${./gridfinity-ultimate/designer/logic.js} \
+                  ${./designer/logic.js} \
                   ${./tests/fixtures/bin/default.json}
                 touch "$out"
               '';
 
           packages = {
             default = pkgs.callPackage ./package.nix { };
-            designer = pkgs.callPackage ./gridfinity-ultimate/nix/designer.nix { };
+            designer = pkgs.callPackage ./designer/package.nix { };
           };
-          overlayAttrs = {
-            gfty = config.packages.default;
-            gfty-label = config.packages.default;
-          };
+          overlayAttrs.gfty = config.packages.default;
         };
     };
 }

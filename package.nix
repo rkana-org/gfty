@@ -5,7 +5,6 @@
   callPackage,
   writeShellScript,
   writeText,
-  runtimeShell,
   dejavu_fonts,
   liberation_ttf,
   jetbrains-mono,
@@ -26,35 +25,6 @@ rustPlatform.buildRustPackage (finalAttrs: {
   postFixup = ''
     wrapProgram $out/bin/gfty \
       --prefix GFTY_FONT_DIRS : ${lib.escapeShellArg (lib.concatStringsSep ":" (map toString fonts))}
-    rm -f $out/bin/gfty-label
-    cat > $out/bin/gfty-label <<EOF
-    #!${runtimeShell}
-    command="\''${1-}"
-    if [[ -n "\$command" ]]; then
-      shift
-    fi
-    case "\$command" in
-      "")
-        exec "$out/bin/gfty" "\$@"
-        ;;
-      validate|render|inspect|watch)
-        exec "$out/bin/gfty" label "\$command" "\$@"
-        ;;
-      quick)
-        exec "$out/bin/gfty" label create "\$@"
-        ;;
-      plate)
-        exec "$out/bin/gfty" label plate create "\$@"
-        ;;
-      export)
-        exec "$out/bin/gfty" export "\$@"
-        ;;
-      *)
-        exec "$out/bin/gfty" "\$command" "\$@"
-        ;;
-    esac
-    EOF
-    chmod +x $out/bin/gfty-label
   '';
 
   passthru = {

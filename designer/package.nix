@@ -20,9 +20,7 @@ let
   # The site is versioned after the pinned Onshape model version.
   onshapeVersion =
     let
-      m = builtins.match ".*const ONSHAPE_VERSION = \"([^\"]+)\".*" (
-        builtins.readFile ../designer/JsonPanel.jsx
-      );
+      m = builtins.match ".*const ONSHAPE_VERSION = \"([^\"]+)\".*" (builtins.readFile ./JsonPanel.jsx);
     in
     lib.throwIf (m == null) "Could not parse ONSHAPE_VERSION from designer/JsonPanel.jsx" (
       builtins.head m
@@ -32,7 +30,7 @@ stdenvNoCC.mkDerivation {
   pname = "gridfinity-ultimate-designer";
   version = onshapeVersion;
 
-  src = ../designer;
+  src = ./.;
 
   nativeBuildInputs = [ esbuild ];
 
@@ -79,7 +77,7 @@ stdenvNoCC.mkDerivation {
 
   meta = {
     description = "Static client-side configurator for the Gridfinity Ultimate Onshape model";
-    homepage = "https://github.com/rkana-org/gridfinity-ultimate";
+    homepage = "https://github.com/rkana-org/gfty";
     license = lib.licenses.mit;
   };
 }

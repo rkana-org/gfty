@@ -1,45 +1,57 @@
-# gfty flake-parts example
+# gfty examples
 
-This directory is a standalone flake using
-`inputs.gfty.flakeModules.default`. Named bin, label, and plate definitions
-live in `labels.nix`; no project marker or checked-in generated files are
-required.
+This directory demonstrates both direct TOML authoring and the typed flake-parts
+module.
 
-Build one bin, label, or plate through the nested package outputs:
+## Direct files
+
+- `bins/with-magnetic-base.toml`: complete 1×1 bin with an explicit magnetic
+  base and connector settings.
+- `bins/bin-only.toml`: the same bin with base generation disabled.
+- `labels/hello.toml`: label referencing the complete bin TOML.
+- `bases/magnetic.nix` and `bases/plain.nix`: reusable Nix base-section presets.
+
+```sh
+gfty bin validate examples/bins/with-magnetic-base.toml
+gfty bin inspect examples/bins/bin-only.toml
+gfty label validate examples/labels/hello.toml
+gfty label render examples/labels/hello.toml --output /tmp/hello.svg
+```
+
+Bases are currently sections of bin definitions rather than a standalone file
+kind. See `bases/README.md` for the model limitation behind that choice.
+
+## Flake-parts module
+
+The standalone `examples/flake.nix` imports the root module and `module.nix`.
+Build individual definitions through nested outputs:
 
 ```sh
 nix build ./examples#bins.module-example
+nix build ./examples#bins.bin-only
 nix build ./examples#labels.module-example
 nix build ./examples#plates.module-example
 ```
 
-Build the combined bin or label outputs:
+Build combined collections with:
 
 ```sh
 nix build ./examples#bins.all
 nix build ./examples#labels.all
 ```
 
-The combined derivation contains one symlink per label, named after its
-`gfty.labels` attribute:
+A bin contains `bin.toml`, a label contains `label.svg` and `label.toml`, and a
+plate contains `plate.svg`. Geometry JSON remains internal to runtime export.
 
-```text
-result/
-└── module-example -> /nix/store/…-module-example
-```
-
-Each bin contains `bin.toml`, each label contains `label.svg` and `label.toml`,
-and each plate contains `plate.svg`. Geometry JSON is generated in memory only by runtime export apps.
-
-Every individual definition also exposes an explicit runtime export app:
+Every definition that supports remote export has an explicit runtime app:
 
 ```sh
 nix run ./examples#export-bin-module-example
+nix run ./examples#export-bin-bin-only
 nix run ./examples#export-label-module-example
 nix run ./examples#export-plate-module-example
 ```
 
-These commands obtain credentials through `gfty` at runtime, send the generated
-geometry and the typed named-bin configuration in API POST bodies, and download
-the STEP to the current directory. Credentials never enter Nix evaluation or the
-store.
+These commands obtain credentials through `gfty` at runtime and send typed named
+bin configurations in API POST bodies. Credentials and downloaded STEP files
+never enter Nix evaluation or the store.

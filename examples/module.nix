@@ -7,6 +7,19 @@
           1
           6
         ];
+        base = import ./bases/magnetic.nix;
+        divider = {
+          columns = [ "auto" ];
+          rows = [ "auto" ];
+        };
+      };
+      bins.bin-only = {
+        size = [
+          1
+          1
+          6
+        ];
+        base.enabled = false;
         divider = {
           columns = [ "auto" ];
           rows = [ "auto" ];

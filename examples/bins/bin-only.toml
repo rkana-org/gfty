@@ -2,6 +2,9 @@ kind = "bin"
 version = 1
 size = [1, 1, 6]
 
+[base]
+enabled = false
+
 [divider]
 columns = ["auto"]
 rows = ["auto"]
