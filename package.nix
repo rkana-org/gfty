@@ -4,7 +4,6 @@
   makeWrapper,
   callPackage,
   writeShellScript,
-  writeText,
   dejavu_fonts,
   liberation_ttf,
   jetbrains-mono,
@@ -47,7 +46,6 @@ rustPlatform.buildRustPackage (finalAttrs: {
     mkBinSet = args: callPackage ./nix/mk-bin-set.nix { inherit args; };
     mkOutputSet = args: callPackage ./nix/mk-output-set.nix args;
     writeExportScript = name: text: writeShellScript name text;
-    writeExportText = name: text: writeText name text;
   };
 
   meta = {

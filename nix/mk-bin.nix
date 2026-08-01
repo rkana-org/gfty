@@ -5,142 +5,30 @@
   args,
 }:
 let
+  allowedArguments = [
+    "name"
+    "size"
+    "tub"
+    "maxPrintOverhang"
+    "rimInterface"
+    "labelInterface"
+    "divider"
+    "easyGrab"
+  ];
+  unknownArguments = builtins.attrNames (builtins.removeAttrs args allowedArguments);
   name = args.name or "bin";
-  rename =
-    mappings: attrs:
-    builtins.listToAttrs (
-      lib.filter (entry: entry != null) (
-        map (
-          mapping:
-          let
-            source = builtins.elemAt mapping 0;
-            destination = builtins.elemAt mapping 1;
-          in
-          if builtins.hasAttr source attrs then
-            {
-              name = destination;
-              value = attrs.${source};
-            }
-          else
-            null
-        ) mappings
-      )
-    );
-  base = rename [
-    [
-      "enabled"
-      "enabled"
-    ]
-    [
-      "roundedCorners"
-      "rounded-corners"
-    ]
-    [
-      "magnets"
-      "magnets"
-    ]
-    [
-      "connectorCutouts"
-      "connector-cutouts"
-    ]
-    [
-      "connectorPin"
-      "connector-pin"
-    ]
-  ] (args.base or { });
-  bin = rename [
-    [
-      "enabled"
-      "enabled"
-    ]
-    [
-      "nesting"
-      "nesting"
-    ]
-    [
-      "swappableRim"
-      "swappable-rim"
-    ]
-    [
-      "springCompensation"
-      "spring-compensation"
-    ]
-    [
-      "additionalRimExpansion"
-      "additional-rim-expansion"
-    ]
-    [
-      "tub"
-      "tub"
-    ]
-  ] (args.bin or { });
-  label = rename [
-    [
-      "enabled"
-      "enabled"
-    ]
-    [
-      "depth"
-      "depth"
-    ]
-    [
-      "swappable"
-      "swappable"
-    ]
-    [
-      "supports"
-      "supports"
-    ]
-    [
-      "embossingClearance"
-      "embossing-clearance"
-    ]
-    [
-      "embossingInset"
-      "embossing-inset"
-    ]
-    [
-      "fullWidth"
-      "full-width"
-    ]
-    [
-      "widthUnits"
-      "width-units"
-    ]
-  ] (args.label or { });
   dividerSource = args.divider or { };
   divider =
-    rename [
-      [
-        "columns"
-        "columns"
-      ]
-      [
-        "rows"
-        "rows"
-      ]
-    ] dividerSource
+    lib.optionalAttrs (dividerSource ? columns) { inherit (dividerSource) columns; }
+    // lib.optionalAttrs (dividerSource ? rows) { inherit (dividerSource) rows; }
     // lib.optionalAttrs (dividerSource ? merges) {
-      merges = map (merge: {
-        inherit (merge) columns rows;
-      }) dividerSource.merges;
+      merges = map (merge: { inherit (merge) columns rows; }) dividerSource.merges;
     };
   easyGrabSource = args.easyGrab or { };
   easyGrab =
-    rename [
-      [
-        "mode"
-        "mode"
-      ]
-      [
-        "side"
-        "side"
-      ]
-      [
-        "radius"
-        "radius"
-      ]
-    ] easyGrabSource
+    lib.optionalAttrs (easyGrabSource ? mode) { inherit (easyGrabSource) mode; }
+    // lib.optionalAttrs (easyGrabSource ? side) { inherit (easyGrabSource) side; }
+    // lib.optionalAttrs (easyGrabSource ? radius) { inherit (easyGrabSource) radius; }
     // lib.optionalAttrs (easyGrabSource ? faces) {
       faces = map (
         face:
@@ -150,26 +38,12 @@ let
         // lib.optionalAttrs (face ? radius && face.radius != null) { inherit (face) radius; }
       ) easyGrabSource.faces;
     };
-  print = rename [
-    [
-      "maxOverhang"
-      "max-overhang"
-    ]
-  ] (args.print or { });
-  version = args.version or 1;
-  legacyDefinition = {
-    inherit (args) size;
-  }
-  // lib.optionalAttrs (base != { }) { inherit base; }
-  // lib.optionalAttrs (bin != { }) { inherit bin; }
-  // lib.optionalAttrs (label != { }) { inherit label; }
-  // lib.optionalAttrs (divider != { }) { inherit divider; }
-  // lib.optionalAttrs (easyGrab != { }) { easy-grab = easyGrab; }
-  // lib.optionalAttrs (print != { }) { inherit print; };
-  constituentDefinition = {
+  definition = {
+    kind = "bin";
+    version = 2;
     inherit (args) size;
     tub = args.tub or true;
-    max-print-overhang = (args.print or { }).maxOverhang or 60;
+    max-print-overhang = args.maxPrintOverhang or 60;
     rim-interface.mode = (args.rimInterface or { }).mode or "swappable";
     label-interface = {
       mode = (args.labelInterface or { }).mode or "swappable";
@@ -179,14 +53,11 @@ let
   }
   // lib.optionalAttrs (divider != { }) { inherit divider; }
   // lib.optionalAttrs (easyGrab != { }) { easy-grab = easyGrab; };
-  config = (formats.toml { }).generate "${name}-bin.toml" (
-    {
-      kind = "bin";
-      inherit version;
-    }
-    // (if version == 1 then legacyDefinition else constituentDefinition)
-  );
+  config = (formats.toml { }).generate "${name}-bin.toml" definition;
 in
+assert lib.assertMsg (unknownArguments == [ ]) (
+  "gfty.mkBin received unsupported arguments: " + lib.concatStringsSep ", " unknownArguments
+);
 runCommand name
   {
     passthru.binConfig = config;

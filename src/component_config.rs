@@ -10,9 +10,9 @@ use sha2::{Digest, Sha256};
 
 use crate::{
     bin_config::{
-        BIN_CONFIG_VERSION, BaseConfig as ModelBaseConfig, BinBodyConfig, BinComponent, BinConfig,
-        BinLabelConfig, DividerConfig, EasyGrabConfig, EasyGrabMode, EffectiveLabelInterface,
-        LoadedBin, PrintConfig,
+        BaseConfig as ModelBaseConfig, BinBodyConfig, BinLabelConfig, DividerConfig,
+        EasyGrabConfig, EasyGrabMode, EffectiveLabelInterface, GridfinityConfig, LoadedBin,
+        PrintConfig,
     },
     config::{ConfigKind, parse_length_mm},
 };
@@ -22,7 +22,7 @@ pub const COMPONENT_CONFIG_VERSION: u32 = 1;
 #[derive(Debug, Clone)]
 pub struct ResolvedGridfinityExport {
     pub source_path: PathBuf,
-    pub carrier: BinConfig,
+    pub carrier: GridfinityConfig,
     pub part_names: Vec<String>,
     pub request_key: String,
     pub description: String,
@@ -30,7 +30,7 @@ pub struct ResolvedGridfinityExport {
 
 impl ResolvedGridfinityExport {
     pub fn gridfinity_json(&self) -> Result<String> {
-        self.carrier.canonical_json(BinComponent::All)
+        self.carrier.canonical_json()
     }
 }
 
@@ -124,20 +124,15 @@ fn default_expansion() -> String {
     "0mm".to_owned()
 }
 
-pub fn load_bin(path: &Path, component: BinComponent) -> Result<ResolvedGridfinityExport> {
+pub fn load_bin(path: &Path) -> Result<ResolvedGridfinityExport> {
     let bin = LoadedBin::load(path)?;
-    let part_names = bin.config.expected_parts(component)?;
-    let gridfinity =
-        serde_json::from_str::<serde_json::Value>(&bin.config.canonical_json(BinComponent::All)?)?;
+    let part_names = vec!["Bin".to_owned()];
+    let gridfinity = serde_json::from_str::<serde_json::Value>(&bin.config.canonical_json()?)?;
     resolved(
         bin.path,
         bin.config,
         part_names.clone(),
-        if component == BinComponent::All {
-            "bin configuration"
-        } else {
-            component.part_name().expect("non-all component has a name")
-        },
+        "bin",
         json!({
             "contract": "gfty-bin-export/v1",
             "gridfinity": gridfinity,
@@ -318,7 +313,7 @@ pub fn load_bin_set(path: &Path) -> Result<ResolvedGridfinityExport> {
     carrier.validate()?;
     let key_value = json!({
         "contract": "gfty-bin-set/v1",
-        "gridfinity": serde_json::from_str::<serde_json::Value>(&carrier.canonical_json(BinComponent::All)?)?,
+        "gridfinity": serde_json::from_str::<serde_json::Value>(&carrier.canonical_json()?)?,
         "parts": part_names,
     });
     resolved(path, carrier, part_names, "bin set", key_value)
@@ -340,7 +335,7 @@ pub fn connector_pin() -> Result<ResolvedGridfinityExport> {
     )
 }
 
-fn carrier(size: [u32; 3]) -> BinConfig {
+fn carrier(size: [u32; 3]) -> GridfinityConfig {
     let base = ModelBaseConfig {
         enabled: false,
         connector_pin: false,
@@ -354,9 +349,7 @@ fn carrier(size: [u32; 3]) -> BinConfig {
         mode: EasyGrabMode::None,
         ..EasyGrabConfig::default()
     };
-    BinConfig {
-        kind: ConfigKind::Bin,
-        version: BIN_CONFIG_VERSION,
+    GridfinityConfig {
         size,
         base,
         bin: BinBodyConfig::default(),
@@ -371,7 +364,7 @@ fn carrier(size: [u32; 3]) -> BinConfig {
     }
 }
 
-fn apply_base(carrier: &mut BinConfig, base: &BaseFileConfig, connector_pin: bool) {
+fn apply_base(carrier: &mut GridfinityConfig, base: &BaseFileConfig, connector_pin: bool) {
     carrier.base.enabled = true;
     carrier.base.rounded_corners = base.rounded_corners;
     carrier.base.magnets = base.magnets.enabled;
@@ -382,7 +375,7 @@ fn apply_base(carrier: &mut BinConfig, base: &BaseFileConfig, connector_pin: boo
 fn label_carrier(
     interface: &EffectiveLabelInterface,
     embossing: &EmbossingConfig,
-) -> Result<BinConfig> {
+) -> Result<GridfinityConfig> {
     let mut carrier = carrier([interface.size_x, 1, 6]);
     carrier.bin.nesting = false;
     carrier.bin.tub = true;
@@ -413,7 +406,7 @@ fn label_key_value(
 
 fn resolved(
     source_path: PathBuf,
-    carrier: BinConfig,
+    carrier: GridfinityConfig,
     part_names: Vec<String>,
     description: &str,
     key_value: serde_json::Value,
@@ -525,7 +518,7 @@ mod tests {
             &first,
             r#"
 kind = "bin"
-version = 1
+version = 2
 size = [2, 2, 6]
 [divider]
 columns = ["auto", "auto", "auto", "auto"]
@@ -542,7 +535,7 @@ rows = [0, 0]
             &second,
             r#"
 kind = "bin"
-version = 1
+version = 2
 size = [2, 8, 3]
 [divider]
 columns = ["1fr", "1fr"]

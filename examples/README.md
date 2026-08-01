@@ -5,20 +5,18 @@ module.
 
 ## Direct files
 
-- `bins/with-magnetic-base.toml`: legacy version-1 complete 1×1 configuration.
-- `bins/bin-only.toml`: legacy version-1 configuration with no base.
-- `bins/constituent-2x2.toml`: version-2 bin body with swappable interfaces.
+- `bins/constituent-2x2.toml`: bin body with swappable interfaces.
+- `bins/compatible-label-2x1.toml`: differently expressed compatible label layout.
 - `bases/2x2-magnetic.toml` and `rims/2x2-standard.toml`: independent parts.
 - `swappable-labels/2x-compatible.toml` and `2x-from-set-bin.toml`: labels
   derived from different but compatible first-row layouts; both normalize to
   one runtime request/cache entry.
 - `sets/constituent-2x2.toml`: validated composition of all constituents.
 - `labels/hello.toml`: artwork label referencing a bin TOML.
-- `bases/magnetic.nix` and `bases/plain.nix`: legacy reusable base-section presets.
 
 ```sh
-gfty bin validate examples/bins/with-magnetic-base.toml
-gfty bin inspect examples/bins/bin-only.toml
+gfty bin validate examples/bins/constituent-2x2.toml
+gfty bin inspect examples/bins/constituent-2x2.toml
 gfty label validate examples/labels/hello.toml
 gfty label render examples/labels/hello.toml --output /tmp/hello.svg
 ```

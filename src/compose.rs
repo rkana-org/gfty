@@ -436,10 +436,10 @@ mod tests {
             path: PathBuf::from("label.toml"),
             base_dir: PathBuf::from("."),
             config: LabelConfig {
-                kind: None,
-                version: None,
+                kind: crate::config::ConfigKind::Label,
+                version: crate::config::LABEL_CONFIG_VERSION,
                 template: "template.svg".to_owned(),
-                bin: None,
+                bin: "bin.toml".to_owned(),
                 filament: 0,
                 text: BTreeMap::from([(
                     "main".to_owned(),
@@ -487,12 +487,17 @@ mod tests {
             r#"<svg xmlns="http://www.w3.org/2000/svg" width="10mm" height="10mm" viewBox="0 0 10 10"><g transform="translate(1 1) scale(.8)"><path d="M0 0H10V10H0Z"/></g></svg>"#,
         )
         .unwrap();
+        fs::write(
+            root.join("bin.toml"),
+            "kind = \"bin\"\nversion = 2\nsize = [1, 1, 6]\n",
+        )
+        .unwrap();
         let label = LoadedLabel::from_config(
             LabelConfig {
-                kind: None,
-                version: None,
+                kind: crate::config::ConfigKind::Label,
+                version: crate::config::LABEL_CONFIG_VERSION,
                 template: "templates/label.svg".to_owned(),
-                bin: None,
+                bin: "bin.toml".to_owned(),
                 filament: 0,
                 text: BTreeMap::new(),
                 icon: BTreeMap::new(),

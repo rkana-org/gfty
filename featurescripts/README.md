@@ -6,10 +6,9 @@ in Onshape.
 
 ## Labels
 
-- `labels/gfty_label_instances.fs`: current version-2 label/plate importer. It
-  instances the prototype, builds filament artwork, names multipart output, and
-  adds multi-label connector plates.
-- `labels/gfty_label_importer.fs`: legacy version-1 importer only.
+- `labels/gfty_label_instances.fs`: version-2 label/plate importer. It instances
+  the prototype, builds filament artwork, names multipart output, and adds
+  multi-label connector plates.
 
 ## Configuration
 

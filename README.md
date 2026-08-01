@@ -32,7 +32,7 @@ gfty export FILE [EXPORT OPTIONS]
 
 gfty bin validate BIN
 gfty bin inspect BIN
-gfty bin export BIN [--component all|bin|base|swappable-rim|swappable-label|connector-pin] [EXPORT OPTIONS]
+gfty bin export BIN [EXPORT OPTIONS]
 gfty connector-pin export [EXPORT OPTIONS]
 
 gfty label validate [LABEL]
@@ -43,7 +43,7 @@ gfty label watch LABEL [--svg PREVIEW.svg]
 gfty label export LABEL [EXPORT OPTIONS]
 
 gfty label plate create --dimensions WIDTH HEIGHT [OPTIONS] LABEL...
-gfty label plate export --dimensions WIDTH HEIGHT [EXPORT OPTIONS] LABEL...
+gfty label plate export --bin BIN --dimensions WIDTH HEIGHT [EXPORT OPTIONS] LABEL...
 ```
 
 `gfty` is the package and executable.
@@ -59,6 +59,7 @@ absolute template and icon paths:
 ```sh
 gfty label create \
   --template templates/label-1x1.svg \
+  --bin bins/1x1.toml \
   --filament 0 \
   --text main 'M{3}x[10]' \
   --icon fasteners icons/screws/pointy.svg \
@@ -88,9 +89,8 @@ filament part:
 gfty export labels/m3.toml --output m3.step
 ```
 
-A label normally declares `bin = "../bins/1x1.toml"`. The transitional
-`--gridfinity-config legacy.json` option remains available for existing raw
-Gridfinity Ultimate JSON.
+Every label declares `bin = "../bins/1x1.toml"`; raw Gridfinity JSON and
+implicit prototype configurations are not accepted.
 
 The output defaults to the label file stem in the current directory. Existing
 files are rejected unless `--force` is given. The downloaded STEP is checked for
@@ -131,8 +131,9 @@ gfty label plate create \
   labels/m3.toml labels/m3.toml labels/m4.toml
 ```
 
-Without `--svg`, it previews interactively. `label plate export` accepts the
-same layout arguments plus the normal remote export options and downloads STEP.
+Without `--svg`, it previews interactively. `label plate export` additionally
+requires `--bin PATH` for the shared Gridfinity prototype, accepts the normal
+remote export options, and downloads STEP.
 Labels are placed in argument order, row-major from the top left, without
 rotation. The tool fits as many columns as possible within the maximum width,
 then verifies that all required rows fit the maximum height. The final incomplete
@@ -159,25 +160,18 @@ Gridfinity Ultimate `Config` JSON in memory:
 
 ```toml
 kind = "bin"
-version = 1
+version = 2
 size = [2, 2, 6]
+tub = true
+max-print-overhang = 60
 
-[base]
-enabled = true
-magnets = true
-rounded-corners = false
+[rim-interface]
+mode = "swappable"
 
-[bin]
-enabled = true
-nesting = true
-swappable-rim = true
-
-[label]
-enabled = true
+[label-interface]
+mode = "swappable"
 depth = "10mm"
-swappable = true
 supports = "auto"
-embossing-clearance = "0.4mm"
 
 [divider]
 columns = ["auto", "auto", "auto"]
@@ -200,21 +194,18 @@ gfty bin validate bins/small-parts.toml
 gfty bin inspect bins/small-parts.toml
 gfty export bins/small-parts.toml
 gfty export bins/small-parts.toml --image small-parts.png
-gfty bin export bins/small-parts.toml --component bin
+gfty bin export bins/small-parts.toml
 ```
 
-A complete bin STEP is checked against the expected named `Bin`, rim, label,
-base, and connector products. Optional `--image PATH` downloads a 512×512
+A bin TOML always exports exactly the named `Bin` body. Complete grouped sets
+come only from `kind = "bin-set"`. Optional `--image PATH` downloads a 512×512
 isometric PNG from Onshape's configured Part Studio shaded-view endpoint. It is
 opt-in because it consumes an additional API request. The camera is front-facing
-with Z up, matching Onshape's documented isometric view. Shaded views are
-currently bin-only: Onshape exposes them through a GET query, and artwork-label
-geometry can exceed reliable URL limits even though STEP translation uses POST
-bodies.
-
-`--component bin|base|swappable-rim|swappable-label|connector-pin` now resolves
-the configured Onshape part ID and exports exactly that named body. It fails
-before translation when the selected optional part does not exist.
+with Z up, matching Onshape's documented isometric view. Shaded views are available for Gridfinity constituents and sets: Onshape
+exposes them through a GET query, while artwork-label geometry can exceed
+reliable URL limits even though STEP translation uses POST bodies. Each
+constituent resolves its configured Onshape part ID and exports exactly its
+named body.
 
 Independent constituent TOML is also supported:
 
@@ -249,7 +240,7 @@ clearance = "0.4mm"
 inset = "0mm"
 ```
 
-Version-2 bin TOML contains only bin-body and mating-interface settings. A
+Bin TOML contains only bin-body and mating-interface settings. A
 `kind = "bin-set"` file composes a bin, base, rim, swappable label, and optional
 standard connector pin while checking dimensions and normalized label
 compatibility. See [`docs/component-configs.md`](docs/component-configs.md) and
@@ -304,8 +295,8 @@ icon = "../icons/screws/pointy.svg"
 spacer = "1mm"
 ```
 
-New files use `kind = "label"` and `version = 1`; existing labels without those
-fields remain compatible. The blank prototype uses the label's `filament`, which
+Labels require `kind = "label"`, `version = 1`, and a `bin` reference. The blank
+prototype uses the label's `filament`, which
 defaults to 0. Plain text
 starts at filament 1. `{}`, `[]`, and `<>` select filaments 2, 3, and 4;
 `!N{}` selects any non-negative filament ID. Scopes nest and restore their
@@ -361,7 +352,6 @@ package available as `pkgs.gfty`:
 let
   smallParts = pkgs.gfty.mkBin {
     name = "small-parts";
-    version = 2;
     size = [ 2 2 6 ];
     divider.columns = [ "auto" "auto" "auto" ];
     divider.rows = [ "auto" "auto" ];
@@ -403,7 +393,6 @@ imports = [ inputs.gfty.flakeModules.default ];
 perSystem = { ... }: {
   gfty = {
     bins.small-parts = {
-      version = 2;
       size = [ 2 2 6 ];
       divider.columns = [ "auto" "auto" "auto" ];
       divider.rows = [ "auto" "auto" ];
@@ -441,10 +430,8 @@ perSystem = { ... }: {
 ```
 
 The module validates bins, labels, dividers, merges, easy-grab faces, and plates
-with typed options during evaluation. Labels and plates reference a named bin;
-the module verifies that every plate label has the same X/Y bin size. The legacy
-`gfty-ultimate` attribute remains accepted instead of `bin` during migration,
-but the two sources cannot be specified together.
+with typed options during evaluation. Labels and plates require a named bin; the
+module verifies that every plate label has the same X/Y bin size.
 
 Outputs are grouped under `packages.bins`, `bases`, `rims`,
 `swappable-labels`, `bin-sets`, `labels`, and `plates`. The module also generates
@@ -566,9 +553,6 @@ are appearance colors only, not physical material assignments, and can be
 disabled with **Assign filament appearances**. The default palette, repeated for
 higher IDs, is `#EAEAEA`, `#43484D`, `#A7D293`, `#8AAED6`, `#E1927A`,
 `#F5D578`, `#A795D2`, `#89DAD3`, `#EAB97D`, and `#999487`.
-
-`featurescripts/labels/gfty_label_importer.fs` is retained only for legacy version 1
-JSON and is not part of the current workflow.
 
 For workflows which derive the blank prototype from another configured Part
 Studio, `featurescripts/configuration/variable_configured_derived.fs` wraps

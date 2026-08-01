@@ -31,8 +31,8 @@ is in `../std-library/`.
 - `src/main.rs`: command dispatch, output behavior, and inspection.
 - `src/cli.rs`: Clap interface. Keep stdout clean for data-producing commands.
 - `src/config.rs`: label TOML schema, path resolution, discovery, and validation.
-- `src/bin_config.rs`: legacy/version-2 bin TOML, divider normalization,
-  canonical JSON conversion, and component manifests.
+- `src/bin_config.rs`: current bin TOML, divider normalization, canonical model
+  JSON conversion, and generated-part discovery.
 - `src/component_config.rs`: independent base/rim/swappable-label/set schemas,
   compatibility checks, carrier configurations, and semantic request keys.
 - `src/artifact_cache.rs`: verified runtime STEP/PNG cache outside the Nix store.
@@ -51,9 +51,7 @@ is in `../std-library/`.
 - `src/plate.rs`: dimension-constrained row-major plate layout.
 - `src/terminal_preview.rs`: native rasteroid previews.
 - `src/watch.rs`: dependency watching and rebuild presentation.
-- `featurescripts/labels/gfty_label_instances.fs`: current version-2 Onshape
-  importer.
-- `featurescripts/labels/gfty_label_importer.fs`: legacy version-1 importer only.
+- `featurescripts/labels/gfty_label_instances.fs`: version-2 Onshape importer.
 - `featurescripts/configuration/variable_configured_derived.fs`: wrapper around
   native Derived which forwards current variables into source configuration IDs.
 - `featurescripts/configuration/extract_json_config.fs`: Gridfinity JSON-to-variable
@@ -63,8 +61,8 @@ is in `../std-library/`.
 - `flake-module.nix`: typed flake-parts label/plate definitions and nested output
   packages.
 - `examples/`: standalone flake-parts integration test and documentation.
-- `tests/bin-designer-conformance.js`: verifies the browser and Rust default bin
-  configuration against the same frozen JSON fixture.
+- `tests/bin-designer-conformance.js`: verifies the browser default
+  configuration against a frozen JSON fixture.
 - `.github/workflows/designer-pages.yml`: deploys `packages.designer` from
   `designer-v*` tags.
 
@@ -72,9 +70,9 @@ is in `../std-library/`.
 
 ### Paths and discovery
 
-- Bin TOML requires `kind = "bin"` and `version = 1`.
-- New label TOML uses `kind = "label"` and `version = 1`; legacy files without
-  those fields remain compatible.
+- Bin TOML requires `kind = "bin"` and `version = 2`.
+- Label TOML requires `kind = "label"`, `version = 1`, and a bin reference.
+- Do not add compatibility parsing for retired schemas or implicit kinds.
 - There is no required project marker or directory layout.
 - Absolute paths work everywhere.
 - Paths in saved label TOML resolve relative to that TOML.
@@ -134,8 +132,7 @@ Current JSON is version 2:
 - Paths use compact absolute `M`, `L`, `C`, and `Z` only.
 - Top-level filaments are sorted and include base plus artwork filaments.
 - Geometry remains local to each label; `center` places it in the overall size.
-- Keep old version-2 JSON without a per-label `filament` compatible in
-  FeatureScript when practical.
+- Every label must provide its base `filament`; reject incomplete older JSON.
 
 ### Plates
 
@@ -176,30 +173,29 @@ Current JSON is version 2:
 
 ## Nix interfaces
 
-- `packages.default` exposes `mkBin`, `mkLabel`, and `mkPlate` passthru builders.
+- `packages.default` exposes builders for bins, bases, rims, swappable labels,
+  bin sets, artwork labels, and plates.
 - The package and main program are `gfty`.
 - `overlays.default` is generated with flake-parts `easyOverlay` and exposes
   `pkgs.gfty`.
 - The flake module uses typed options under `perSystem.gfty`.
-- Outputs are accessed as `packages.bins.<name>`, `packages.labels.<name>`, and
-  `packages.plates.<name>`. `packages.labels.all` is a link farm containing one
-  symlink per label name.
+- Outputs are grouped under `packages.bins`, `bases`, `rims`,
+  `swappable-labels`, `bin-sets`, `labels`, and `plates`.
 - Label bundles contain `label.svg` and `label.toml`; plate bundles contain
   `plate.svg`. Runtime exporters generate geometry JSON in memory.
-- Module labels and plates normally reference a named bin. Legacy
-  JSON-serializable `gfty-ultimate` remains accepted as an exclusive alternative.
-  Plates own the reference, and all child labels must use the same X/Y bin size.
+- Module labels and plates require a named bin. Plates own the reference, and
+  all child labels must use the same X/Y bin size.
 - Browser `onshapeUrl` passthru values were removed because they fail around
   5-6 KB. The module generates `export-label-<name>` and
   `export-plate-<name>` apps instead. These perform runtime API exports outside
   the Nix sandbox; credentials must never be captured by Nix.
 - `perSystem.gfty.labelModelUrl` and `binModelUrl` pin immutable model
   versions used by generated apps.
-- `--component bin|base|swappable-rim|swappable-label|connector-pin` is exact
-  named-part selection. Resolve configured IDs at runtime; IDs change with
+- Each constituent TOML exports its one exact named part; `bin-set` exports its
+  declared group. Resolve configured IDs at runtime because IDs change with
   configuration and must never be hard-coded.
-- Constituent `base`, `rim`, `swappable-label`, version-2 `bin`, and `bin-set`
-  TOML are supported. Swappable labels reference bins, then normalize only X,
+- Constituent `base`, `rim`, `swappable-label`, `bin`, and `bin-set` TOML are
+  supported. Swappable labels reference bins, then normalize only X,
   depth, and effective row-zero divider boundaries. Source paths, Y/Z, later
   rows, and unrelated settings must not affect their runtime request key.
 - The runtime cache lives outside the store, is keyed by normalized request plus

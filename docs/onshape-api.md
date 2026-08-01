@@ -133,7 +133,8 @@ The generic interface dispatches by the TOML `kind` field:
 ```text
 gfty export labels/screws.toml --output screws.step
 gfty export bins/small-parts.toml --output small-parts.step
-gfty export bins/small-parts.toml --component bin
+gfty export bases/magnetic.toml --output magnetic-base.step
+gfty export sets/small-parts.toml --output complete-set.step
 ```
 
 The equivalent entity-oriented commands are `gfty label export` and
@@ -164,9 +165,9 @@ request URL and produced a 512×512 RGBA PNG isometric view.
 `gfty export BIN --image preview.png` uses this endpoint after STEP validation.
 The image is optional because it costs another API request. It uses Onshape's
 documented isometric matrix with Z up and the front of the bin facing the
-viewer. `--component bin|base|swappable-rim|swappable-label|connector-pin`
-resolves the configured part ID and uses the per-part endpoint, so its PNG and
-STEP contain exactly the selected named body.
+viewer. Every constituent config resolves its one configured part ID and uses
+the per-part endpoint, so its PNG and STEP contain exactly its named body. A
+bin-set intentionally selects all of its declared constituent IDs.
 
 ### Named Gridfinity components
 

@@ -1,7 +1,7 @@
 kind = "label"
 version = 1
 template = "../templates/1x1.svg"
-bin = "../bins/with-magnetic-base.toml"
+bin = "../bins/constituent-2x2.toml"
 filament = 0
 
 [text.top]

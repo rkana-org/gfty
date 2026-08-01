@@ -5,6 +5,15 @@
   args,
 }:
 let
+  allowedArguments = [
+    "name"
+    "labels"
+    "dimensions"
+    "columnGap"
+    "rowGap"
+    "fonts"
+  ];
+  unknownArguments = builtins.attrNames (builtins.removeAttrs args allowedArguments);
   name = args.name or "plate";
   labels = args.labels or [ ];
   dimensions = args.dimensions or (throw "gfty.mkPlate requires dimensions = [ WIDTH HEIGHT ]");
@@ -25,6 +34,9 @@ let
   ) fonts;
   labelArgs = lib.concatMapStringsSep " " (label: lib.escapeShellArg (toString label)) configs;
 in
+assert lib.assertMsg (unknownArguments == [ ]) (
+  "gfty.mkPlate received unsupported arguments: " + lib.concatStringsSep ", " unknownArguments
+);
 assert lib.assertMsg (
   builtins.length dimensions == 2
 ) "gfty.mkPlate dimensions must contain WIDTH and HEIGHT";

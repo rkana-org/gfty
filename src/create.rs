@@ -12,6 +12,7 @@ use crate::config::{
 
 pub fn build_label(
     template: &Path,
+    bin: &Path,
     filament: u32,
     text: &[String],
     icons: &[String],
@@ -19,6 +20,8 @@ pub fn build_label(
     let current_dir = env::current_dir().context("failed to determine current directory")?;
     let template = absolute_existing_path(template, &current_dir, "template")
         .with_context(|| format!("failed to resolve template {}", template.display()))?;
+    let bin = absolute_existing_path(bin, &current_dir, "bin")
+        .with_context(|| format!("failed to resolve bin {}", bin.display()))?;
 
     let mut text_fields = BTreeMap::new();
     for pair in pairs(text, "--text")? {
@@ -51,10 +54,10 @@ pub fn build_label(
 
     Ok(LoadedLabel::from_config(
         LabelConfig {
-            kind: Some(ConfigKind::Label),
-            version: Some(LABEL_CONFIG_VERSION),
+            kind: ConfigKind::Label,
+            version: LABEL_CONFIG_VERSION,
             template: path_to_toml_string(&template),
-            bin: None,
+            bin: path_to_toml_string(&bin),
             filament,
             text: text_fields,
             icon: BTreeMap::new(),
@@ -116,10 +119,10 @@ mod tests {
         let temp = tempfile::tempdir().unwrap();
         let label = LoadedLabel::from_config(
             LabelConfig {
-                kind: Some(ConfigKind::Label),
-                version: Some(LABEL_CONFIG_VERSION),
+                kind: ConfigKind::Label,
+                version: LABEL_CONFIG_VERSION,
                 template: "basic.svg".to_owned(),
-                bin: None,
+                bin: "bin.toml".to_owned(),
                 filament: 0,
                 text: BTreeMap::from([(
                     "main".to_owned(),
@@ -135,8 +138,8 @@ mod tests {
         let path = temp.path().join("saved.toml");
         save_label(&label, &path).unwrap();
         let saved: LabelConfig = toml::from_str(&fs::read_to_string(path).unwrap()).unwrap();
-        assert_eq!(saved.kind, Some(ConfigKind::Label));
-        assert_eq!(saved.version, Some(LABEL_CONFIG_VERSION));
+        assert_eq!(saved.kind, ConfigKind::Label);
+        assert_eq!(saved.version, LABEL_CONFIG_VERSION);
         assert_eq!(saved.template, "basic.svg");
         assert_eq!(saved.text["main"].content, "M{3}");
     }

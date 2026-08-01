@@ -10,29 +10,18 @@ use serde_json::{Map, Value, json};
 
 use crate::config::{ConfigKind, parse_length_mm};
 
-pub const BIN_CONFIG_VERSION: u32 = 1;
-pub const BIN_BODY_CONFIG_VERSION: u32 = 2;
+pub const BIN_CONFIG_VERSION: u32 = 2;
 pub const DEFAULT_BIN_MODEL_URL: &str = "https://cad.onshape.com/documents/044aa38d921c6673acd89aef/v/793cbd4a9bdd57cb44baa08a/e/47f09ccd9b344504691f98d4";
 const GRIDFINITY_MM: f64 = 42.0;
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
-#[serde(deny_unknown_fields, rename_all = "kebab-case")]
-pub struct BinConfig {
-    pub kind: ConfigKind,
-    pub version: u32,
+#[derive(Debug, Clone)]
+pub struct GridfinityConfig {
     pub size: [u32; 3],
-
-    #[serde(default)]
     pub base: BaseConfig,
-    #[serde(default)]
     pub bin: BinBodyConfig,
-    #[serde(default)]
     pub label: BinLabelConfig,
-    #[serde(default)]
     pub divider: DividerConfig,
-    #[serde(default)]
     pub easy_grab: EasyGrabConfig,
-    #[serde(default)]
     pub print: PrintConfig,
 }
 
@@ -61,7 +50,6 @@ impl Default for BaseConfig {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(default, deny_unknown_fields, rename_all = "kebab-case")]
 pub struct BinBodyConfig {
-    pub enabled: bool,
     pub nesting: bool,
     pub swappable_rim: bool,
     pub spring_compensation: bool,
@@ -72,7 +60,6 @@ pub struct BinBodyConfig {
 impl Default for BinBodyConfig {
     fn default() -> Self {
         Self {
-            enabled: true,
             nesting: true,
             swappable_rim: true,
             spring_compensation: true,
@@ -213,29 +200,6 @@ impl Default for PrintConfig {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
-pub enum BinComponent {
-    All,
-    Bin,
-    Base,
-    SwappableRim,
-    SwappableLabel,
-    ConnectorPin,
-}
-
-impl BinComponent {
-    pub fn part_name(self) -> Option<&'static str> {
-        match self {
-            Self::All => None,
-            Self::Bin => Some("Bin"),
-            Self::Base => Some("Base"),
-            Self::SwappableRim => Some("SwappableRim"),
-            Self::SwappableLabel => Some("SwappableLabel"),
-            Self::ConnectorPin => Some("ConnectorPin"),
-        }
-    }
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum InterfaceMode {
@@ -278,7 +242,7 @@ impl Default for LabelInterfaceConfig {
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields, rename_all = "kebab-case")]
-pub struct BinBodyFileConfig {
+pub struct BinConfig {
     pub kind: ConfigKind,
     pub version: u32,
     pub size: [u32; 3],
@@ -304,20 +268,18 @@ fn default_max_overhang() -> f64 {
     60.0
 }
 
-impl BinBodyFileConfig {
-    fn into_carrier(self) -> Result<BinConfig> {
+impl BinConfig {
+    fn into_carrier(self) -> Result<GridfinityConfig> {
         if self.kind != ConfigKind::Bin {
             bail!("bin TOML kind must be \"bin\"");
         }
-        if self.version != BIN_BODY_CONFIG_VERSION {
+        if self.version != BIN_CONFIG_VERSION {
             bail!(
-                "unsupported constituent bin TOML version {}; expected {BIN_BODY_CONFIG_VERSION}",
+                "unsupported bin TOML version {}; expected {BIN_CONFIG_VERSION}",
                 self.version
             );
         }
-        let mut carrier = BinConfig {
-            kind: ConfigKind::Bin,
-            version: BIN_CONFIG_VERSION,
+        let mut carrier = GridfinityConfig {
             size: self.size,
             base: BaseConfig::default(),
             bin: BinBodyConfig::default(),
@@ -353,8 +315,7 @@ pub struct EffectiveLabelInterface {
 #[derive(Debug)]
 pub struct LoadedBin {
     pub path: PathBuf,
-    pub source_version: u32,
-    pub config: BinConfig,
+    pub config: GridfinityConfig,
 }
 
 #[derive(Debug, Clone)]
@@ -384,59 +345,22 @@ impl LoadedBin {
             .with_context(|| format!("failed to resolve bin {}", path.display()))?;
         let source = fs::read_to_string(&path)
             .with_context(|| format!("failed to read bin {}", path.display()))?;
-        let value: toml::Value = toml::from_str(&source)
+        let config: BinConfig = toml::from_str(&source)
             .with_context(|| format!("failed to parse bin {}", path.display()))?;
-        let version = value
-            .get("version")
-            .and_then(toml::Value::as_integer)
-            .with_context(|| format!("bin {} needs an integer version", path.display()))?;
-        let config = match version {
-            value if value == i64::from(BIN_CONFIG_VERSION) => {
-                let config: BinConfig = toml::from_str(&source)
-                    .with_context(|| format!("failed to parse bin {}", path.display()))?;
-                config
-            }
-            value if value == i64::from(BIN_BODY_CONFIG_VERSION) => {
-                let config: BinBodyFileConfig = toml::from_str(&source).with_context(|| {
-                    format!("failed to parse constituent bin {}", path.display())
-                })?;
-                config.into_carrier()?
-            }
-            version => bail!(
-                "unsupported bin TOML version {version}; expected {BIN_CONFIG_VERSION} or {BIN_BODY_CONFIG_VERSION}"
-            ),
-        };
+        let config = config.into_carrier()?;
         config
             .validate()
             .with_context(|| format!("invalid bin {}", path.display()))?;
-        Ok(Self {
-            path,
-            source_version: version as u32,
-            config,
-        })
+        Ok(Self { path, config })
     }
 }
 
-impl BinConfig {
+impl GridfinityConfig {
     pub fn validate(&self) -> Result<()> {
-        if self.kind != ConfigKind::Bin {
-            bail!("bin TOML kind must be \"bin\"");
-        }
-        if self.version != BIN_CONFIG_VERSION {
-            bail!(
-                "unsupported bin TOML version {}; expected {BIN_CONFIG_VERSION}",
-                self.version
-            );
-        }
         for (axis, value) in ["X", "Y", "Z"].into_iter().zip(self.size) {
             if value == 0 {
                 bail!("bin size {axis} must be at least one Gridfinity unit");
             }
-        }
-        if !self.bin.enabled {
-            bail!(
-                "bin TOML currently requires bin.enabled = true; the pinned model emits an unnamed helper body for base-only exports"
-            );
         }
         let _ = length(
             &self.bin.additional_rim_expansion,
@@ -474,43 +398,10 @@ impl BinConfig {
         Ok(())
     }
 
-    pub fn canonical_json(&self, _component: BinComponent) -> Result<String> {
+    pub fn canonical_json(&self) -> Result<String> {
         self.validate()?;
         serde_json::to_string(&self.canonical_value()?)
             .context("failed to serialize Gridfinity Ultimate configuration")
-    }
-
-    pub fn expected_parts(&self, component: BinComponent) -> Result<Vec<String>> {
-        let mut parts = Vec::new();
-        if self.bin.enabled {
-            parts.push("Bin".to_owned());
-            if self.bin.nesting && self.bin.swappable_rim {
-                parts.push("SwappableRim".to_owned());
-            }
-            if self.bin.tub && self.label.enabled && self.label.swappable {
-                parts.push("SwappableLabel".to_owned());
-            }
-        }
-        if self.base.enabled {
-            parts.push("Base".to_owned());
-            if self.base.magnets && self.base.connector_pin {
-                parts.push("ConnectorPin".to_owned());
-            }
-        }
-        let Some(part_name) = component.part_name() else {
-            return Ok(parts);
-        };
-        if !parts.iter().any(|part| part == part_name) {
-            bail!(
-                "configured component {part_name} does not exist; available parts: {}",
-                if parts.is_empty() {
-                    "(none)".to_owned()
-                } else {
-                    parts.join(", ")
-                }
-            );
-        }
-        Ok(vec![part_name.to_owned()])
     }
 
     pub fn supports_enabled(&self) -> Result<bool> {
@@ -666,7 +557,7 @@ impl BinConfig {
             "base_rounded_corners_enable".to_owned(),
             json!(self.base.rounded_corners),
         );
-        value.insert("bin_enable".to_owned(), json!(self.bin.enabled));
+        value.insert("bin_enable".to_owned(), json!(true));
         value.insert("bin_nesting_enable".to_owned(), json!(self.bin.nesting));
         value.insert(
             "bin_nesting_swappable_rim_enable".to_owned(),
@@ -1037,26 +928,21 @@ fn compact(value: f64) -> String {
 mod tests {
     use super::*;
 
-    fn default_bin() -> BinConfig {
-        toml::from_str(include_str!("../tests/fixtures/bin/default.toml")).unwrap()
+    fn default_bin() -> GridfinityConfig {
+        let config: BinConfig =
+            toml::from_str(include_str!("../tests/fixtures/bin/default.toml")).unwrap();
+        config.into_carrier().unwrap()
     }
 
     #[test]
-    fn default_configuration_matches_designer_semantics() {
+    fn latest_bin_defaults_map_to_the_model() {
         let config = default_bin();
         config.validate().unwrap();
-        let value: Value =
-            serde_json::from_str(&config.canonical_json(BinComponent::All).unwrap()).unwrap();
-        let expected: Value =
-            serde_json::from_str(include_str!("../tests/fixtures/bin/default.json")).unwrap();
-        assert_eq!(value, expected);
+        let value: Value = serde_json::from_str(&config.canonical_json().unwrap()).unwrap();
         assert_eq!(value["size_x_units"], 2);
         assert_eq!(value["size_y_units"], 2);
+        assert_eq!(value["base_enable"], false);
         assert_eq!(value["bin_tub_label_depth"], "0.01 meter");
-        assert_eq!(
-            value["bin_tub_label_swappable_embossing_clearance"],
-            "0.0004 meter"
-        );
         assert_eq!(value["bin_tub_label_swappable_supports_enable"], false);
         assert_eq!(
             value["bin_tub_divider_config"]["easygrab"]
@@ -1065,16 +951,8 @@ mod tests {
                 .len(),
             6
         );
-        assert_eq!(
-            config.expected_parts(BinComponent::All).unwrap(),
-            [
-                "Bin",
-                "SwappableRim",
-                "SwappableLabel",
-                "Base",
-                "ConnectorPin"
-            ]
-        );
+        assert!(config.bin.swappable_rim);
+        assert!(config.label.swappable);
     }
 
     #[test]
@@ -1082,7 +960,7 @@ mod tests {
         let config: BinConfig = toml::from_str(
             r#"
 kind = "bin"
-version = 1
+version = 2
 size = [1, 1, 6]
 
 [divider]
@@ -1091,8 +969,9 @@ rows = ["auto"]
 "#,
         )
         .unwrap();
-        assert!(config.supports_enabled().unwrap());
-        assert_eq!(config.easy_grab_count().unwrap(), 1);
+        let carrier = config.into_carrier().unwrap();
+        assert!(carrier.supports_enabled().unwrap());
+        assert_eq!(carrier.easy_grab_count().unwrap(), 1);
     }
 
     #[test]
@@ -1100,7 +979,7 @@ rows = ["auto"]
         let config: BinConfig = toml::from_str(
             r#"
 kind = "bin"
-version = 1
+version = 2
 size = [2, 1, 4]
 
 [divider]
@@ -1123,8 +1002,8 @@ radius = "12mm"
 "#,
         )
         .unwrap();
-        config.validate().unwrap();
-        assert_eq!(config.easy_grab_count().unwrap(), 1);
+        let carrier = config.into_carrier().unwrap();
+        assert_eq!(carrier.easy_grab_count().unwrap(), 1);
     }
 
     #[test]
@@ -1139,28 +1018,6 @@ radius = "12mm"
         });
         let error = config.validate().unwrap_err().to_string();
         assert!(error.contains("complete, capped"));
-    }
-
-    #[test]
-    fn rejects_base_only_bin_files_before_export() {
-        let mut config = default_bin();
-        config.bin.enabled = false;
-        let error = config.validate().unwrap_err().to_string();
-        assert!(error.contains("base-only"));
-        assert!(error.contains("helper body"));
-    }
-
-    #[test]
-    fn component_selection_uses_exact_named_manifests_without_mutating_geometry() {
-        let config = default_bin();
-        let bin: Value =
-            serde_json::from_str(&config.canonical_json(BinComponent::Bin).unwrap()).unwrap();
-        assert_eq!(bin["base_enable"], true);
-        assert_eq!(config.expected_parts(BinComponent::Bin).unwrap(), ["Bin"]);
-        assert_eq!(
-            config.expected_parts(BinComponent::SwappableRim).unwrap(),
-            ["SwappableRim"]
-        );
     }
 
     #[test]
@@ -1188,8 +1045,17 @@ radius = "12mm"
     }
 
     #[test]
-    fn loads_constituent_bin_version_two() {
-        let config: BinBodyFileConfig = toml::from_str(
+    fn rejects_retired_bin_schema() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("old.toml");
+        fs::write(&path, "kind = \"bin\"\nversion = 1\nsize = [1, 1, 6]\n").unwrap();
+        let error = LoadedBin::load(&path).unwrap_err().to_string();
+        assert!(error.contains("expected 2"));
+    }
+
+    #[test]
+    fn loads_latest_bin_schema() {
+        let config: BinConfig = toml::from_str(
             r#"
 kind = "bin"
 version = 2
@@ -1214,9 +1080,5 @@ rows = ["auto"]
         assert!(carrier.bin.swappable_rim);
         assert!(carrier.label.swappable);
         assert_eq!(carrier.label.depth, "12mm");
-        assert_eq!(
-            carrier.expected_parts(BinComponent::All).unwrap(),
-            ["Bin", "SwappableRim", "SwappableLabel"]
-        );
     }
 }

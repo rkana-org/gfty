@@ -205,8 +205,6 @@ function parseInstancesJson(jsonText is string, faultyParameter is string) retur
     {
         if (!(data.labels[labelIndex] is map))
             throw regenError("Every label must be an object.", [faultyParameter]);
-        if (data.labels[labelIndex].filament == undefined)
-            data.labels[labelIndex].filament = containsNumber(data.filaments, 0) ? 0 : data.filaments[0];
         const label = data.labels[labelIndex];
         if (!isValidFilament(label.filament) ||
             !containsNumber(data.filaments, label.filament))
@@ -237,9 +235,7 @@ function parseInstancesJson(jsonText is string, faultyParameter is string) retur
                 throw regenError("Every label part needs at least one shape.", [faultyParameter]);
             for (var shape in part.shapes)
             {
-                if (!(shape is map) ||
-                    !((shape.path is string && shape.path != "") ||
-                      (shape.contours is array && size(shape.contours) > 0)))
+                if (!(shape is map) || !(shape.path is string) || shape.path == "")
                     throw regenError("Every shape needs a non-empty path string.", [faultyParameter]);
             }
         }
@@ -421,12 +417,8 @@ function buildArtwork(context is Context, id is Id, sketchPlane is Plane, normal
         const shape = part.shapes[shapeIndex];
         const sketchId = id + ("shapeSketch" ~ shapeIndex);
         var sketch = newSketchOnPlane(context, sketchId, { "sketchPlane" : sketchPlane });
-        if (shape.path is string)
-            addPathToSketch(sketch, "s" ~ shapeIndex ~ "_", shape.path,
-                            definition.unitScale, faultyParameter);
-        else
-            addContoursToSketch(sketch, "s" ~ shapeIndex ~ "_", shape.contours,
-                                definition.unitScale, faultyParameter);
+        addPathToSketch(sketch, "s" ~ shapeIndex ~ "_", shape.path,
+                        definition.unitScale, faultyParameter);
         skSolve(sketch);
         const regions = qSketchRegion(sketchId, true);
         if (isQueryEmpty(context, regions))
@@ -567,56 +559,6 @@ function pathPoint(tokens is array, index is number, unitScale is ValueWithUnits
         throw regenError("Path has an invalid number for " ~ label ~ ".", [faultyParameter]);
     }
     return { "point" : vector(x, y) * unitScale, "next" : index + 2 };
-}
-
-// Kept for compatibility with early structured-contour shapes nested inside a
-// version 2 document.
-function addContoursToSketch(sketch is Sketch, prefix is string, contours is array,
-                             unitScale is ValueWithUnits, faultyParameter is string)
-{
-    for (var contourIndex = 0; contourIndex < size(contours); contourIndex += 1)
-    {
-        const contour = contours[contourIndex];
-        if (!(contour is map) || !(contour.segments is array))
-            throw regenError("Every contour needs a segments array.", [faultyParameter]);
-        const startPoint = pointFromLabelJson(contour.start, unitScale, "contour start", faultyParameter);
-        var current = startPoint;
-        for (var segmentIndex = 0; segmentIndex < size(contour.segments); segmentIndex += 1)
-        {
-            const segment = contour.segments[segmentIndex];
-            if (!(segment is map) || !(segment["type"] is string))
-                throw regenError("Every segment needs a string type.", [faultyParameter]);
-            const segmentId = prefix ~ "c" ~ contourIndex ~ "_" ~ segmentIndex;
-            if (segment["type"] == "L")
-            {
-                const endPoint = pointFromLabelJson(segment.to, unitScale, "line end", faultyParameter);
-                if (!tolerantEquals(current, endPoint))
-                    skLineSegment(sketch, segmentId, { "start" : current, "end" : endPoint });
-                current = endPoint;
-            }
-            else if (segment["type"] == "C")
-            {
-                const c1 = pointFromLabelJson(segment.c1, unitScale, "Bezier control 1", faultyParameter);
-                const c2 = pointFromLabelJson(segment.c2, unitScale, "Bezier control 2", faultyParameter);
-                const endPoint = pointFromLabelJson(segment.to, unitScale, "Bezier end", faultyParameter);
-                skBezier(sketch, segmentId, { "points" : [current, c1, c2, endPoint] });
-                current = endPoint;
-            }
-            else
-                throw regenError("Unsupported segment type \"" ~ segment["type"] ~ "\".",
-                                 [faultyParameter]);
-        }
-        if (!tolerantEquals(current, startPoint))
-            skLineSegment(sketch, prefix ~ "close" ~ contourIndex,
-                          { "start" : current, "end" : startPoint });
-    }
-}
-
-function pointFromLabelJson(value, unitScale is ValueWithUnits, label is string,
-                            faultyParameter is string) returns Vector
-{
-    validatePoint(value, label, faultyParameter);
-    return vector(value[0], value[1]) * unitScale;
 }
 
 function filamentNameWidth(filaments is array) returns number

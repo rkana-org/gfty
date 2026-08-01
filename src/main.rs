@@ -129,14 +129,14 @@ fn create_label(
     if args.svg.is_none() && args.save.is_none() && args.export.is_none() {
         anyhow::bail!("label create needs at least one of --svg, --save, or --export");
     }
-    let mut loaded = create::build_label(&args.template, args.filament, &args.text, &args.icon)
-        .context("failed to create label configuration")?;
-    if let Some(bin) = &args.bin {
-        let bin = bin
-            .canonicalize()
-            .with_context(|| format!("failed to resolve bin {}", bin.display()))?;
-        loaded.config.bin = Some(bin.to_string_lossy().replace('\\', "/"));
-    }
+    let loaded = create::build_label(
+        &args.template,
+        &args.bin,
+        args.filament,
+        &args.text,
+        &args.icon,
+    )
+    .context("failed to create label configuration")?;
     let rendered =
         compose::render_label(&loaded, font_options).context("failed to render label")?;
     try_preview(&rendered.svg, "created label", preview_options, false);
@@ -152,14 +152,12 @@ fn create_label(
         let document = export::export_rendered(&rendered)
             .context("failed to generate geometry for created label")?;
         let remote = RemoteExportArgs {
-            gridfinity_config: args.gridfinity_config,
-            bin: args.bin,
             output: Some(output.clone()),
             onshape_credentials: args.onshape_credentials,
             onshape_model: args.onshape_model,
             force: args.force,
         };
-        let gridfinity_json = resolve_gridfinity_config(&remote, loaded.bin_path().as_deref())?;
+        let gridfinity_json = resolve_bin_config(&loaded.bin_path())?;
         download_document_step(&document, remote, output, "created label", &gridfinity_json)?;
     }
     Ok(())
@@ -206,9 +204,6 @@ fn show_required_preview(
 fn export_config(args: GenericExportArgs, font_options: &svg::FontOptions) -> Result<()> {
     match config::detect_config_kind(&args.file)? {
         config::ConfigKind::Label => {
-            if args.component.is_some() {
-                anyhow::bail!("--component is only supported for standalone bin exports");
-            }
             if args.image.is_some() {
                 anyhow::bail!(
                     "--image is currently supported only for bin exports; configured label geometry is too large for Onshape's GET-only shaded-view endpoint"
@@ -218,8 +213,6 @@ fn export_config(args: GenericExportArgs, font_options: &svg::FontOptions) -> Re
                 ExportArgs {
                     label: args.file,
                     remote: RemoteExportArgs {
-                        gridfinity_config: args.gridfinity_config,
-                        bin: args.bin,
                         output: args.output,
                         onshape_credentials: args.onshape_credentials,
                         onshape_model: args
@@ -231,37 +224,21 @@ fn export_config(args: GenericExportArgs, font_options: &svg::FontOptions) -> Re
                 font_options,
             )
         }
-        config::ConfigKind::Bin => {
-            if args.gridfinity_config.is_some() || args.bin.is_some() {
-                anyhow::bail!("standalone bin export does not accept --gridfinity-config or --bin");
-            }
-            export_bin_step(BinExportArgs {
-                bin: args.file,
-                component: args.component,
-                output: args.output,
-                image: args.image,
-                onshape_credentials: args.onshape_credentials,
-                onshape_model: args
-                    .onshape_model
-                    .unwrap_or_else(|| bin_config::DEFAULT_BIN_MODEL_URL.to_owned()),
-                no_cache: args.no_cache,
-                force: args.force,
-            })
-        }
+        config::ConfigKind::Bin => export_bin_step(BinExportArgs {
+            bin: args.file,
+            output: args.output,
+            image: args.image,
+            onshape_credentials: args.onshape_credentials,
+            onshape_model: args
+                .onshape_model
+                .unwrap_or_else(|| bin_config::DEFAULT_BIN_MODEL_URL.to_owned()),
+            no_cache: args.no_cache,
+            force: args.force,
+        }),
         config::ConfigKind::Base
         | config::ConfigKind::Rim
         | config::ConfigKind::SwappableLabel
         | config::ConfigKind::BinSet => {
-            if args.gridfinity_config.is_some() || args.bin.is_some() {
-                anyhow::bail!(
-                    "Gridfinity constituent exports do not accept --gridfinity-config or --bin"
-                );
-            }
-            if args.component.is_some() {
-                anyhow::bail!(
-                    "constituent and set TOML files already define their exact exported parts; omit --component"
-                );
-            }
             let resolved = match config::detect_config_kind(&args.file)? {
                 config::ConfigKind::Base => component_config::load_base(&args.file)?,
                 config::ConfigKind::Rim => component_config::load_rim(&args.file)?,
@@ -283,11 +260,6 @@ fn export_config(args: GenericExportArgs, font_options: &svg::FontOptions) -> Re
                 args.force,
             )
         }
-        config::ConfigKind::LabelPlate => {
-            anyhow::bail!(
-                "saved label-plate TOML is not implemented yet; use `gfty label plate export`"
-            )
-        }
     }
 }
 
@@ -305,7 +277,7 @@ fn export_label_step(args: ExportArgs, font_options: &svg::FontOptions) -> Resul
         .with_context(|| format!("failed to render label {}", loaded.path.display()))?;
     let document = export::export_rendered(&rendered)
         .with_context(|| format!("failed to generate geometry for {}", loaded.path.display()))?;
-    let gridfinity_json = resolve_gridfinity_config(&args.remote, loaded.bin_path().as_deref())?;
+    let gridfinity_json = resolve_bin_config(&loaded.bin_path())?;
     download_document_step(
         &document,
         args.remote,
@@ -316,6 +288,7 @@ fn export_label_step(args: ExportArgs, font_options: &svg::FontOptions) -> Resul
 }
 
 fn export_plate_step(args: ExportPlateArgs, font_options: &svg::FontOptions) -> Result<()> {
+    validate_plate_bin_references(&args.labels, &args.bin)?;
     let output = args
         .remote
         .output
@@ -330,7 +303,7 @@ fn export_plate_step(args: ExportPlateArgs, font_options: &svg::FontOptions) -> 
         font_options,
     )
     .context("failed to generate label plate geometry")?;
-    let gridfinity_json = resolve_gridfinity_config(&args.remote, None)?;
+    let gridfinity_json = resolve_bin_config(&args.bin)?;
     download_document_step(
         &plate.document,
         args.remote,
@@ -338,6 +311,37 @@ fn export_plate_step(args: ExportPlateArgs, font_options: &svg::FontOptions) -> 
         "label plate",
         &gridfinity_json,
     )
+}
+
+fn validate_plate_bin_references(
+    label_paths: &[std::path::PathBuf],
+    plate_bin: &std::path::Path,
+) -> Result<()> {
+    let plate_bin = bin_config::LoadedBin::load(plate_bin)
+        .with_context(|| format!("failed to load plate bin {}", plate_bin.display()))?;
+    let expected = [plate_bin.config.size[0], plate_bin.config.size[1]];
+    for label_path in label_paths {
+        let label = config::LoadedLabel::load(label_path)
+            .with_context(|| format!("failed to load plate label {}", label_path.display()))?;
+        let label_bin_path = label.bin_path();
+        let label_bin = bin_config::LoadedBin::load(&label_bin_path).with_context(|| {
+            format!(
+                "failed to load bin referenced by plate label {}",
+                label_path.display()
+            )
+        })?;
+        let actual = [label_bin.config.size[0], label_bin.config.size[1]];
+        if actual != expected {
+            anyhow::bail!(
+                "plate label {} uses bin size {:?}, but plate bin {} has size {:?}",
+                label_path.display(),
+                actual,
+                plate_bin.path.display(),
+                expected
+            );
+        }
+    }
+    Ok(())
 }
 
 fn download_document_step(
@@ -403,22 +407,7 @@ fn inspect_bin(path: &std::path::Path) -> Result<()> {
             config.size[2] * 7
         ),
     );
-    print_inspect_field(
-        "base",
-        if config.base.enabled {
-            "enabled"
-        } else {
-            "disabled"
-        },
-    );
-    print_inspect_field(
-        "bin",
-        if config.bin.enabled {
-            "enabled"
-        } else {
-            "disabled"
-        },
-    );
+    print_inspect_field("exported part", "Bin");
     print_inspect_field(
         "divider",
         &format!(
@@ -437,24 +426,11 @@ fn inspect_bin(path: &std::path::Path) -> Result<()> {
             "disabled"
         },
     );
-    print_inspect_field(
-        "parts",
-        &config
-            .expected_parts(bin_config::BinComponent::All)?
-            .join(", "),
-    );
     Ok(())
 }
 
 fn export_bin_step(args: BinExportArgs) -> Result<()> {
-    let loaded = bin_config::LoadedBin::load(&args.bin)?;
-    let default_component = if loaded.source_version == bin_config::BIN_BODY_CONFIG_VERSION {
-        bin_config::BinComponent::Bin
-    } else {
-        bin_config::BinComponent::All
-    };
-    let component = args.component.unwrap_or(default_component);
-    let resolved = component_config::load_bin(&args.bin, component)?;
+    let resolved = component_config::load_bin(&args.bin)?;
     export_resolved_gridfinity(
         &resolved,
         args.output.unwrap_or_else(|| default_step_path(&args.bin)),
@@ -587,49 +563,13 @@ fn default_step_path(input: &std::path::Path) -> std::path::PathBuf {
     std::path::PathBuf::from(format!("{stem}.step"))
 }
 
-fn resolve_gridfinity_config(
-    remote: &RemoteExportArgs,
-    fallback_bin: Option<&std::path::Path>,
-) -> Result<String> {
-    if let Some(path) = &remote.gridfinity_config {
-        return read_gridfinity_config(path);
-    }
-    let bin = remote.bin.as_deref().or(fallback_bin).context(
-        "label export requires --bin PATH, a label `bin` field, or legacy --gridfinity-config PATH",
-    )?;
+fn resolve_bin_config(bin: &std::path::Path) -> Result<String> {
     let loaded = bin_config::LoadedBin::load(bin)
         .with_context(|| format!("failed to load label prototype bin {}", bin.display()))?;
     loaded
         .config
-        .canonical_json(bin_config::BinComponent::All)
+        .canonical_json()
         .with_context(|| format!("failed to serialize label prototype bin {}", bin.display()))
-}
-
-fn read_gridfinity_config(path: &std::path::Path) -> Result<String> {
-    let source = std::fs::read_to_string(path).with_context(|| {
-        format!(
-            "failed to read Gridfinity Ultimate configuration {}",
-            path.display()
-        )
-    })?;
-    let value: serde_json::Value = serde_json::from_str(&source).with_context(|| {
-        format!(
-            "failed to parse Gridfinity Ultimate configuration {} as JSON",
-            path.display()
-        )
-    })?;
-    if !value.is_object() {
-        anyhow::bail!(
-            "Gridfinity Ultimate configuration {} must be a JSON object",
-            path.display()
-        );
-    }
-    serde_json::to_string(&value).with_context(|| {
-        format!(
-            "failed to serialize Gridfinity Ultimate configuration {}",
-            path.display()
-        )
-    })
 }
 
 fn validate_labels(
@@ -726,9 +666,7 @@ fn inspect_label(
         ),
     );
     print_inspect_field("base filament", &label.config.filament.to_string());
-    if let Some(bin) = label.bin_path() {
-        print_inspect_field("bin", &bin.display().to_string());
-    }
+    print_inspect_field("bin", &label.bin_path().display().to_string());
     print_inspect_field(
         "filaments",
         &filaments

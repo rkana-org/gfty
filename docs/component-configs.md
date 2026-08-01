@@ -1,11 +1,11 @@
-# Proposed constituent Gridfinity configuration
+# Constituent Gridfinity configuration
 
-This document specifies the version-2 Gridfinity configuration model. The Rust
+This document specifies the current Gridfinity configuration model. The Rust
 schemas, exact named-part STEP/PNG exports, compatible sets, normalized
 swappable-label carriers, Nix constituent packages/apps, and runtime cache are
-implemented. Version-1 `kind = "bin"` files remain readable during migration.
-Automatic aliasing of independently named equivalent Nix request derivations is
-still pending the pure-Nix normalization described below.
+implemented. Retired complete-bin schemas are rejected. Automatic aliasing of
+independently named equivalent Nix request derivations is still pending the
+pure-Nix normalization described below.
 
 ## Goals
 

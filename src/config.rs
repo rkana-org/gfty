@@ -13,7 +13,6 @@ pub const LABEL_CONFIG_VERSION: u32 = 1;
 #[serde(rename_all = "kebab-case")]
 pub enum ConfigKind {
     Label,
-    LabelPlate,
     Bin,
     Base,
     Rim,
@@ -24,17 +23,12 @@ pub enum ConfigKind {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct LabelConfig {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub kind: Option<ConfigKind>,
-
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub version: Option<u32>,
-
+    pub kind: ConfigKind,
+    pub version: u32,
     pub template: String,
 
-    /// Optional bin TOML used as the Gridfinity prototype configuration.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub bin: Option<String>,
+    /// Bin TOML used as the Gridfinity prototype configuration.
+    pub bin: String,
 
     /// Filament used for the blank prototype body.
     #[serde(default)]
@@ -127,11 +121,8 @@ impl LoadedLabel {
         self.resolve_path(&self.config.template)
     }
 
-    pub fn bin_path(&self) -> Option<PathBuf> {
-        self.config
-            .bin
-            .as_deref()
-            .map(|path| self.resolve_path(path))
+    pub fn bin_path(&self) -> PathBuf {
+        self.resolve_path(&self.config.bin)
     }
 
     pub fn icon_path(&self, icon: &IconDefinition) -> PathBuf {
@@ -168,24 +159,22 @@ impl LoadedLabel {
     }
 
     pub fn validate(&self) -> Result<()> {
-        if let Some(kind) = self.config.kind
-            && kind != ConfigKind::Label
-        {
+        if self.config.kind != ConfigKind::Label {
             bail!("label TOML kind must be \"label\"");
         }
-        if let Some(version) = self.config.version
-            && version != LABEL_CONFIG_VERSION
-        {
-            bail!("unsupported label TOML version {version}; expected {LABEL_CONFIG_VERSION}");
+        if self.config.version != LABEL_CONFIG_VERSION {
+            bail!(
+                "unsupported label TOML version {}; expected {LABEL_CONFIG_VERSION}",
+                self.config.version
+            );
         }
-        if let Some(bin) = self.bin_path() {
-            crate::bin_config::LoadedBin::load(&bin).with_context(|| {
-                format!(
-                    "failed to load bin referenced by label {}",
-                    self.path.display()
-                )
-            })?;
-        }
+        let bin = self.bin_path();
+        crate::bin_config::LoadedBin::load(&bin).with_context(|| {
+            format!(
+                "failed to load bin referenced by label {}",
+                self.path.display()
+            )
+        })?;
         ensure_file(&self.template_path(), "template")?;
         let template = crate::template::TemplateInfo::load(&self.template_path())?;
         crate::color::ColorMapping::load(&self.template_path()).with_context(|| {
@@ -296,9 +285,9 @@ pub fn detect_config_kind(path: &Path) -> Result<ConfigKind> {
         .with_context(|| format!("failed to read configuration {}", path.display()))?;
     let value: toml::Value = toml::from_str(&source)
         .with_context(|| format!("failed to parse configuration {}", path.display()))?;
-    let Some(kind) = value.get("kind") else {
-        return Ok(ConfigKind::Label);
-    };
+    let kind = value
+        .get("kind")
+        .with_context(|| format!("configuration {} needs a kind", path.display()))?;
     let kind = kind.as_str().with_context(|| {
         format!(
             "configuration {} field `kind` must be a string",
@@ -307,14 +296,13 @@ pub fn detect_config_kind(path: &Path) -> Result<ConfigKind> {
     })?;
     match kind {
         "label" => Ok(ConfigKind::Label),
-        "label-plate" => Ok(ConfigKind::LabelPlate),
         "bin" => Ok(ConfigKind::Bin),
         "base" => Ok(ConfigKind::Base),
         "rim" => Ok(ConfigKind::Rim),
         "swappable-label" => Ok(ConfigKind::SwappableLabel),
         "bin-set" => Ok(ConfigKind::BinSet),
         other => bail!(
-            "unsupported configuration kind {other:?} in {}; expected label, label-plate, bin, base, rim, swappable-label, or bin-set",
+            "unsupported configuration kind {other:?} in {}; expected label, bin, base, rim, swappable-label, or bin-set",
             path.display()
         ),
     }
@@ -411,10 +399,10 @@ mod tests {
     fn resolves_svg_paths_directly_and_other_names_as_aliases() {
         let label = LoadedLabel::from_config(
             LabelConfig {
-                kind: None,
-                version: None,
+                kind: ConfigKind::Label,
+                version: LABEL_CONFIG_VERSION,
                 template: "template.svg".to_owned(),
-                bin: None,
+                bin: "bin.toml".to_owned(),
                 filament: 0,
                 text: BTreeMap::new(),
                 icon: BTreeMap::from([(
@@ -441,14 +429,17 @@ mod tests {
     }
 
     #[test]
-    fn detects_versioned_kinds_and_legacy_labels() {
+    fn detects_only_explicit_config_kinds() {
         let temp = tempfile::tempdir().unwrap();
         let bin = temp.path().join("bin.toml");
         let label = temp.path().join("label.toml");
-        fs::write(&bin, "kind = \"bin\"\nversion = 1\nsize = [1, 1, 1]\n").unwrap();
-        fs::write(&label, "template = \"label.svg\"\n").unwrap();
+        fs::write(&bin, "kind = \"bin\"\nversion = 2\nsize = [1, 1, 1]\n").unwrap();
+        fs::write(&label, "kind = \"label\"\nversion = 1\n").unwrap();
         assert_eq!(detect_config_kind(&bin).unwrap(), ConfigKind::Bin);
         assert_eq!(detect_config_kind(&label).unwrap(), ConfigKind::Label);
+        let missing = temp.path().join("missing.toml");
+        fs::write(&missing, "template = \"label.svg\"\n").unwrap();
+        assert!(detect_config_kind(&missing).is_err());
         for (kind, expected) in [
             ("base", ConfigKind::Base),
             ("rim", ConfigKind::Rim),
@@ -482,10 +473,10 @@ mod tests {
     fn rejects_unknown_label_schema_versions_before_resolving_assets() {
         let label = LoadedLabel::from_config(
             LabelConfig {
-                kind: Some(ConfigKind::Label),
-                version: Some(LABEL_CONFIG_VERSION + 1),
+                kind: ConfigKind::Label,
+                version: LABEL_CONFIG_VERSION + 1,
                 template: "missing.svg".to_owned(),
-                bin: None,
+                bin: "missing-bin.toml".to_owned(),
                 filament: 0,
                 text: BTreeMap::new(),
                 icon: BTreeMap::new(),

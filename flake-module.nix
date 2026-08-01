@@ -7,11 +7,7 @@ let
   defaultLabelModelUrl = "https://cad.onshape.com/documents/089ad0a2edf08cd2cfdc9875/v/02d1ce92af09ce405aff8f7d/e/5bba513a46b691f2bf439aaa";
   defaultBinModelUrl = "https://cad.onshape.com/documents/044aa38d921c6673acd89aef/v/793cbd4a9bdd57cb44baa08a/e/47f09ccd9b344504691f98d4";
 
-  jsonAttrsType = types.addCheck types.attrs (
-    value: (builtins.tryEval (builtins.toJSON value)).success
-  );
   positiveUnsigned = types.addCheck types.ints.unsigned (value: value > 0);
-  positiveNumber = types.addCheck types.number (value: value > 0);
   rangeType = types.addCheck (types.listOf types.ints.unsigned) (
     values: builtins.length values == 2 && builtins.elemAt values 0 <= builtins.elemAt values 1
   );
@@ -46,101 +42,6 @@ let
         type = types.nullOr types.str;
         default = null;
         description = "Optional per-face radius with a physical unit.";
-      };
-    };
-  };
-
-  binBaseType = types.submodule {
-    options = {
-      enabled = mkOption {
-        type = types.bool;
-        default = true;
-      };
-      roundedCorners = mkOption {
-        type = types.bool;
-        default = false;
-      };
-      magnets = mkOption {
-        type = types.bool;
-        default = true;
-      };
-      connectorCutouts = mkOption {
-        type = types.bool;
-        default = true;
-      };
-      connectorPin = mkOption {
-        type = types.bool;
-        default = true;
-      };
-    };
-  };
-
-  binBodyType = types.submodule {
-    options = {
-      enabled = mkOption {
-        type = types.bool;
-        default = true;
-      };
-      nesting = mkOption {
-        type = types.bool;
-        default = true;
-      };
-      swappableRim = mkOption {
-        type = types.bool;
-        default = true;
-      };
-      springCompensation = mkOption {
-        type = types.bool;
-        default = true;
-      };
-      additionalRimExpansion = mkOption {
-        type = types.str;
-        default = "0mm";
-      };
-      tub = mkOption {
-        type = types.bool;
-        default = true;
-      };
-    };
-  };
-
-  binLabelType = types.submodule {
-    options = {
-      enabled = mkOption {
-        type = types.bool;
-        default = true;
-      };
-      depth = mkOption {
-        type = types.str;
-        default = "10mm";
-      };
-      swappable = mkOption {
-        type = types.bool;
-        default = true;
-      };
-      supports = mkOption {
-        type = types.enum [
-          "always"
-          "auto"
-          "off"
-        ];
-        default = "auto";
-      };
-      embossingClearance = mkOption {
-        type = types.str;
-        default = "0.4mm";
-      };
-      embossingInset = mkOption {
-        type = types.str;
-        default = "0mm";
-      };
-      fullWidth = mkOption {
-        type = types.bool;
-        default = true;
-      };
-      widthUnits = mkOption {
-        type = positiveNumber;
-        default = 1;
       };
     };
   };
@@ -200,14 +101,6 @@ let
     };
   };
 
-  printType = types.submodule {
-    options.maxOverhang = mkOption {
-      type = types.addCheck types.number (value: value >= 0 && value <= 90);
-      default = 60;
-      description = "Maximum printable overhang angle in degrees.";
-    };
-  };
-
   rimInterfaceType = types.submodule {
     options.mode = mkOption {
       type = types.enum [
@@ -251,14 +144,6 @@ let
         default = null;
         description = "Derivation pname; defaults to the bin attribute name.";
       };
-      version = mkOption {
-        type = types.enum [
-          1
-          2
-        ];
-        default = 1;
-        description = "Bin schema version; use 2 for a constituent bin body.";
-      };
       size = mkOption {
         type = types.addCheck (types.listOf positiveUnsigned) (values: builtins.length values == 3);
         description = "Gridfinity X, Y, and Z units.";
@@ -266,7 +151,7 @@ let
       tub = mkOption {
         type = types.bool;
         default = true;
-        description = "Generate a tub cavity in a version-2 constituent bin.";
+        description = "Generate a tub cavity in the bin body.";
       };
       rimInterface = mkOption {
         type = rimInterfaceType;
@@ -274,18 +159,6 @@ let
       };
       labelInterface = mkOption {
         type = labelInterfaceType;
-        default = { };
-      };
-      base = mkOption {
-        type = binBaseType;
-        default = { };
-      };
-      bin = mkOption {
-        type = binBodyType;
-        default = { };
-      };
-      label = mkOption {
-        type = binLabelType;
         default = { };
       };
       divider = mkOption {
@@ -296,9 +169,10 @@ let
         type = easyGrabType;
         default = { };
       };
-      print = mkOption {
-        type = printType;
-        default = { };
+      maxPrintOverhang = mkOption {
+        type = types.addCheck types.number (value: value >= 0 && value <= 90);
+        default = 60;
+        description = "Maximum printable overhang angle in degrees.";
       };
     };
   };
@@ -440,14 +314,8 @@ let
         description = "Ordered icon paths for each icon box, keyed without the icons- prefix.";
       };
       bin = mkOption {
-        type = types.nullOr types.str;
-        default = null;
+        type = types.str;
         description = "Named bin from gfty.bins used as the label prototype.";
-      };
-      gfty-ultimate = mkOption {
-        type = types.nullOr jsonAttrsType;
-        default = null;
-        description = "Legacy inline Gridfinity Ultimate JSON configuration.";
       };
     };
   };
@@ -481,14 +349,8 @@ let
         default = "5mm";
       };
       bin = mkOption {
-        type = types.nullOr types.str;
-        default = null;
+        type = types.str;
         description = "Named bin used by the plate's shared base model.";
-      };
-      gfty-ultimate = mkOption {
-        type = types.nullOr jsonAttrsType;
-        default = null;
-        description = "Legacy inline Gridfinity Ultimate JSON for the shared base model.";
       };
     };
   };
@@ -515,22 +377,12 @@ in
           arguments,
           fonts ? [ ],
           modelUrl,
-          gftyUltimateConfig ? null,
         }:
         let
-          gridfinityConfig =
-            if gftyUltimateConfig == null then
-              null
-            else
-              package.writeExportText "${name}-gridfinity.json" (builtins.toJSON gftyUltimateConfig);
           command = lib.escapeShellArgs (
             [ "${package}/bin/gfty" ]
             ++ fontArguments fonts
             ++ arguments
-            ++ lib.optionals (gridfinityConfig != null) [
-              "--gridfinity-config"
-              (toString gridfinityConfig)
-            ]
             ++ [
               "--onshape-model"
               modelUrl
@@ -562,17 +414,13 @@ in
         package.mkBin {
           name = if definition.name == null then binName else definition.name;
           inherit (definition)
-            version
             size
             tub
             rimInterface
             labelInterface
-            base
-            bin
-            label
             divider
             easyGrab
-            print
+            maxPrintOverhang
             ;
         }
       ) config.gfty.bins;
@@ -659,32 +507,14 @@ in
       };
       prototypeFor =
         owner: definition:
-        if definition.bin != null && definition.gfty-ultimate != null then
-          throw "${owner} must define either bin or gfty-ultimate, not both"
-        else if definition.bin != null then
-          let
-            namedDefinition =
-              config.gfty.bins.${definition.bin} or (throw "${owner} refers to unknown bin ${definition.bin}");
-          in
-          {
-            size = lib.take 2 namedDefinition.size;
-            binPackage = binPackages.${definition.bin};
-            legacy = null;
-          }
-        else if definition.gfty-ultimate != null then
-          {
-            size =
-              map
-                (field: definition.gfty-ultimate.${field} or (throw "${owner}.gfty-ultimate must define ${field}"))
-                [
-                  "size_x_units"
-                  "size_y_units"
-                ];
-            binPackage = null;
-            legacy = definition.gfty-ultimate;
-          }
-        else
-          throw "${owner} must define bin or legacy gfty-ultimate";
+        let
+          namedDefinition =
+            config.gfty.bins.${definition.bin} or (throw "${owner} refers to unknown bin ${definition.bin}");
+        in
+        {
+          size = lib.take 2 namedDefinition.size;
+          binPackage = binPackages.${definition.bin};
+        };
       labelPackages = lib.mapAttrs (
         labelName: definition:
         let
@@ -751,10 +581,6 @@ in
       };
       labelExportApps = lib.mapAttrs' (
         labelName: output:
-        let
-          definition = config.gfty.labels.${labelName};
-          prototype = prototypeFor "gfty.labels.${labelName}" definition;
-        in
         lib.nameValuePair "export-label-${labelName}" (makeExportApp {
           name = labelName;
           arguments = [
@@ -763,7 +589,6 @@ in
           ];
           fonts = output.labelFonts;
           modelUrl = config.gfty.labelModelUrl;
-          gftyUltimateConfig = prototype.legacy;
         })
       ) labelPackages;
       plateExportApps = lib.mapAttrs' (
@@ -786,14 +611,13 @@ in
             "--row-gap"
             definition.rowGap
           ]
-          ++ lib.optionals (prototype.binPackage != null) [
+          ++ [
             "--bin"
             (toString prototype.binPackage.binConfig)
           ]
           ++ map (label: toString label.labelConfig) output.plateLabels;
           fonts = output.labelFonts;
           modelUrl = config.gfty.labelModelUrl;
-          gftyUltimateConfig = prototype.legacy;
         })
       ) platePackages;
       binExportApps = lib.mapAttrs' (

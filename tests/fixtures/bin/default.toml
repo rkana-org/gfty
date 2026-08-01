@@ -1,3 +1,15 @@
 kind = "bin"
-version = 1
+version = 2
 size = [2, 2, 6]
+
+[rim-interface]
+mode = "swappable"
+
+[label-interface]
+mode = "swappable"
+depth = "10mm"
+supports = "auto"
+
+[divider]
+columns = ["auto", "auto", "auto"]
+rows = ["auto", "auto"]

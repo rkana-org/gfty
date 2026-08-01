@@ -2,7 +2,6 @@
   perSystem = {
     gfty = {
       bins.module-example = {
-        version = 2;
         size = [
           1
           1
@@ -14,7 +13,6 @@
         };
       };
       bins.bin-only = {
-        version = 2;
         size = [
           1
           1
