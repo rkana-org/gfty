@@ -9,7 +9,10 @@ The complete TOML equivalent is shown in
 `../bins/with-magnetic-base.toml`. A bin without any base is shown in
 `../bins/bin-only.toml`.
 
-A standalone base export is not advertised yet. The pinned model currently
-leaves an unnamed helper body when the bin is disabled, and `gfty` rejects that
-manifest rather than shipping an ambiguous `Part N`. Complete bin exports still
-contain the correctly named `Base` and optional `ConnectorPin` products.
+A standalone base export is not advertised yet. The pinned model leaves an
+unnamed helper body when the bin is disabled, and the current whole-Part-Studio
+export correctly rejects that manifest. Live API testing has since shown that
+configured part discovery plus translation `partIds` can export only the named
+`Base` or `ConnectorPin` and omit the helper. Complete bin exports continue to
+contain the correctly named products while that selection path is added to the
+CLI.

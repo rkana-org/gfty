@@ -88,11 +88,11 @@ representative 1x1 configuration generated from typed bin TOML downloaded an
 mutation. Suppressing the base cleanly produced a 717,723-byte bin-only STEP with
 the first three names.
 
-A base-only configuration is not clean in the current model: suppressing the bin
-still leaves a generic `Part 2` or `Part 3` alongside `Base` and the optional
-`ConnectorPin`. The downloader correctly rejects this manifest. Base component
-selection therefore remains disabled until the model gains an explicit export
-component contract or a separate base model is pinned.
+A base-only model configuration is not clean: suppressing the bin leaves a
+generic `Part 2` or `Part 3` alongside `Base` and the optional `ConnectorPin`.
+That prevents whole-Part-Studio base export, but it does not require an upstream
+model change. The configured parts endpoint and translation `partIds` filter can
+select the named `Base` while excluding the helper body.
 
 The authenticated live OpenAPI document is available from `/api/openapi`. It
 shows an important endpoint distinction:
@@ -162,11 +162,47 @@ anti-aliasing, and `showAllParts`, then returns base64-encoded image data in
 request URL and produced a 512×512 RGBA PNG isometric view.
 
 `gfty export BIN --image preview.png` uses this endpoint after STEP validation.
-The image is optional because it costs another API request. It uses the same
-component-adjusted bin configuration, so `--component bin` previews no base.
+The image is optional because it costs another API request. It uses Onshape's
+documented isometric matrix with Z up and the front of the bin facing the
+viewer. The current `--component bin` implementation previews the bin-side set
+(`Bin` and any configured swappable parts), not yet the single named `Bin` body.
 
-This does not solve three-dimensional label previews. Shaded views are GET-only
-and place configuration in the URL; typical label geometry already exceeds the
+### Named Gridfinity components
+
+The immutable configured Part Studio can expose and export its named parts
+separately without changing the model:
+
+1. `GET /parts/d/{did}/v/{vid}/e/{eid}?configuration=...` resolves configured
+   part names to configuration-dependent `partId` values.
+2. `POST /partstudios/.../translations` accepts a `partIds` field alongside the
+   POST-body configuration encoding, producing a STEP containing only selected
+   parts.
+3. `GET /parts/.../partid/{partid}/shadedviews?configuration=...` renders only
+   that configured part.
+
+This was live-tested with a configured 2×2 model. Five separate translations
+contained exactly one `PRODUCT` and one `MANIFOLD_SOLID_BREP` each:
+
+| part | STEP bytes | preview |
+| --- | ---: | --- |
+| `Base` | 432,922 | 512×512 RGBA PNG |
+| `Bin` | 562,788 | 512×512 RGBA PNG |
+| `SwappableRim` | 416,787 | 512×512 RGBA PNG |
+| `SwappableLabel` | 100,858 | 512×512 RGBA PNG |
+| `ConnectorPin` | 18,744 | 512×512 RGBA PNG |
+
+With the base, nesting rim, and label disabled, configured-parts discovery
+returned only `Bin`. A base-only configuration returned `Base`, `ConnectorPin`,
+and generic `Part 3`; selecting the first two by name cleanly avoids the helper.
+Part IDs must not be hard-coded: the configured `Bin` ID changed when optional
+features were disabled.
+
+This gives the existing model a sound implementation path for exact component
+STEP files and previews. The remaining work is CLI/schema design and configured
+part discovery in the Rust client, not FeatureScript or model changes.
+
+This does not solve three-dimensional artwork-label previews. Shaded views are
+GET-only and place configuration in the URL; typical label geometry already exceeds the
 roughly 5–6 KB reliable URL range, while the STEP translator accepts it in a POST
 body. Configured element thumbnails do not help: the arbitrary-configuration
 thumbnail endpoint targets workspaces, while ordinary immutable-version

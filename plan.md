@@ -140,15 +140,17 @@ gfty export bins/small-parts.toml --component base
 ```
 
 The supported component values are defined per TOML kind and validated before
-making an API request. A future separate base/baseplate kind can still be added
-if it has its own useful authoring model.
+making an API request. A separate base/baseplate kind is now justified: base
+geometry depends on X/Y size and base options, not on tub, divider, rim, label,
+or Z-height configuration.
 
-Configured Onshape part IDs are configuration-dependent, and obtaining them
-through a large configuration query would recreate the URL-size problem.
-Therefore `partIds` should not be the primary design. If the Gridfinity Ultimate
-model cannot suppress unwanted standalone-bin components through existing enable
-flags, add a small configuration parameter such as `ExportComponent`. That
-parameter can be sent beside `Config` in the same API request.
+Configured Onshape part IDs are configuration-dependent and must not be
+hard-coded. For Gridfinity bins the `Config` query is small enough to call
+`getPartsWMVE`, resolve `Base`, `Bin`, `SwappableRim`, `SwappableLabel`, and
+`ConnectorPin`, then use `partIds` in the POST translation and the per-part
+shaded-view endpoint. This exact path has been live-tested for separate STEP and
+PNG results. It remains unsuitable for large artwork-label geometry because
+configured part discovery and shaded views are GET-only.
 
 ## JSON policy
 
@@ -521,14 +523,18 @@ target names above.
 5. **Done:** labels may reference bin TOML and Nix labels/plates may reference a
    named bin. The legacy inline `gfty-ultimate` set remains an exclusive
    transition alternative.
-6. **Partly done:** `--component bin` works through existing enable flags and was
-   live-tested. Base-only export still produces an unexpected generic `Part N`
-   even after dependent flags are disabled; do not expose it until the model has
-   an `ExportComponent` contract or a separate base model.
-7. **Done for bins:** optional `--image PATH` uses the configured Part Studio
-   shaded-view endpoint to download a 512×512 PNG. Label shaded views remain
-   unavailable because the endpoint is GET-only and label configurations exceed
-   reliable URL sizes.
+6. **Assessed:** current `--component bin` suppresses only the base, so its STEP
+   still contains optional `SwappableRim` and `SwappableLabel`; it is a bin-side
+   set rather than the exact `Bin` body. Configured part discovery plus
+   translation `partIds` was live-tested and can export `Base`, `Bin`,
+   `SwappableRim`, `SwappableLabel`, and `ConnectorPin` individually, even though
+   a whole-Part-Studio base-only configuration contains a generic helper.
+7. **Done for aggregate bins:** optional `--image PATH` uses the configured Part
+   Studio shaded-view endpoint to download a 512×512 PNG. The camera now uses
+   Onshape's documented front-facing isometric matrix. Per-part shaded views for
+   all five configured Gridfinity components were live-tested; wiring them into
+   the CLI remains. Artwork-label shaded views remain unavailable because their
+   configurations exceed reliable GET URL sizes.
 
 ### 7. Complete migration
 

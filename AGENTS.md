@@ -190,11 +190,17 @@ Current JSON is version 2:
   the Nix sandbox; credentials must never be captured by Nix.
 - `perSystem.gfty.labelModelUrl` and `binModelUrl` pin immutable model
   versions used by generated apps.
-- Standalone `--component bin` and optional bin `--image` shaded previews are
-  validated and live-tested. Shaded views are GET-only, so do not offer them for
-  large label configurations. Do not expose base selection with the current
-  model: disabling the bin leaves a generic `Part N`
-  body, so base export needs a new model contract or separate model.
+- Current `--component bin` means the bin-side set: `Bin` plus any configured
+  `SwappableRim` and `SwappableLabel`, with the base suppressed. Do not describe
+  it as exact single-body selection.
+- Exact `Base`, `Bin`, `SwappableRim`, `SwappableLabel`, and `ConnectorPin` STEP
+  and PNG exports were live-tested by resolving configured part IDs, filtering
+  translations with `partIds`, and using per-part shaded views. IDs change with
+  configuration and must never be hard-coded. A generic helper in base-only
+  whole-studio output is safely excluded by named part selection.
+- Shaded views and configured-parts discovery are GET-only, so this approach is
+  suitable for compact Gridfinity bin configuration but not large artwork-label
+  geometry.
 
 ## Onshape REST API direction
 

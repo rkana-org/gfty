@@ -205,13 +205,18 @@ gfty bin export bins/small-parts.toml --component bin
 A complete bin STEP is checked against the expected named `Bin`, rim, label,
 base, and connector products. Optional `--image PATH` downloads a 512×512
 isometric PNG from Onshape's configured Part Studio shaded-view endpoint. It is
-opt-in because it consumes an additional API request. Shaded views are currently bin-only: Onshape exposes them through a GET query,
-and label geometry can exceed reliable URL limits even though STEP translation
-uses POST bodies. `--component bin` uses the model's existing enable
-flags and has been live-tested. A clean standalone base export is intentionally
-not exposed yet: disabling the bin in the current model leaves a generic helper
-body, so base export needs an upstream `ExportComponent` contract or a separate
-base model rather than silently accepting `Part N`.
+opt-in because it consumes an additional API request. The camera is front-facing
+with Z up, matching Onshape's documented isometric view. Shaded views are
+currently bin-only: Onshape exposes them through a GET query, and artwork-label
+geometry can exceed reliable URL limits even though STEP translation uses POST
+bodies.
+
+The current `--component bin` suppresses the base but retains configured
+`SwappableRim` and `SwappableLabel` bodies; it is a bin-side set, not yet an
+exact single-body export. Exact per-part STEP and PNG export for `Base`, `Bin`,
+`SwappableRim`, `SwappableLabel`, and `ConnectorPin` has been proven through
+configured part discovery and Onshape's `partIds` filter, but is not wired into
+the CLI yet.
 
 ## Template contract
 
