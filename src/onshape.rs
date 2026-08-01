@@ -24,8 +24,9 @@ const BINARY_ACCEPT: &str = "application/octet-stream";
 const MAX_REDIRECTS: usize = 5;
 const MAX_SHADED_VIEW_URL_LENGTH: usize = 6_000;
 const TRANSLATION_TIMEOUT: Duration = Duration::from_secs(5 * 60);
-const ISOMETRIC_VIEW_MATRIX: &str =
-    "0.612372,-0.707107,0.353553,0,0.612372,0.707107,0.353553,0,-0.5,0,0.866025,0";
+// Onshape's documented isometric view: Z remains up and the front of the bin
+// faces the viewer. Keep this matrix aligned with the browser designer view.
+const ISOMETRIC_VIEW_MATRIX: &str = "0.612,0.612,0,0,-0.354,0.354,0.707,0,0.707,-0.707,0.707,0";
 const PNG_SIGNATURE: &[u8] = b"\x89PNG\r\n\x1a\n";
 static NONCE_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
