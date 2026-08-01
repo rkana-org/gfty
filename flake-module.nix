@@ -208,6 +208,42 @@ let
     };
   };
 
+  rimInterfaceType = types.submodule {
+    options.mode = mkOption {
+      type = types.enum [
+        "off"
+        "integrated"
+        "swappable"
+      ];
+      default = "swappable";
+    };
+  };
+
+  labelInterfaceType = types.submodule {
+    options = {
+      mode = mkOption {
+        type = types.enum [
+          "off"
+          "integrated"
+          "swappable"
+        ];
+        default = "swappable";
+      };
+      depth = mkOption {
+        type = types.str;
+        default = "10mm";
+      };
+      supports = mkOption {
+        type = types.enum [
+          "always"
+          "auto"
+          "off"
+        ];
+        default = "auto";
+      };
+    };
+  };
+
   binType = types.submodule {
     options = {
       name = mkOption {
@@ -215,9 +251,30 @@ let
         default = null;
         description = "Derivation pname; defaults to the bin attribute name.";
       };
+      version = mkOption {
+        type = types.enum [
+          1
+          2
+        ];
+        default = 1;
+        description = "Bin schema version; use 2 for a constituent bin body.";
+      };
       size = mkOption {
         type = types.addCheck (types.listOf positiveUnsigned) (values: builtins.length values == 3);
         description = "Gridfinity X, Y, and Z units.";
+      };
+      tub = mkOption {
+        type = types.bool;
+        default = true;
+        description = "Generate a tub cavity in a version-2 constituent bin.";
+      };
+      rimInterface = mkOption {
+        type = rimInterfaceType;
+        default = { };
+      };
+      labelInterface = mkOption {
+        type = labelInterfaceType;
+        default = { };
       };
       base = mkOption {
         type = binBaseType;
@@ -242,6 +299,111 @@ let
       print = mkOption {
         type = printType;
         default = { };
+      };
+    };
+  };
+
+  baseType = types.submodule {
+    options = {
+      name = mkOption {
+        type = types.nullOr types.str;
+        default = null;
+      };
+      size = mkOption {
+        type = types.addCheck (types.listOf positiveUnsigned) (values: builtins.length values == 2);
+      };
+      roundedCorners = mkOption {
+        type = types.bool;
+        default = false;
+      };
+      magnets = mkOption {
+        type = types.submodule {
+          options = {
+            enabled = mkOption {
+              type = types.bool;
+              default = true;
+            };
+            connectorCutouts = mkOption {
+              type = types.bool;
+              default = true;
+            };
+          };
+        };
+        default = { };
+      };
+    };
+  };
+
+  rimType = types.submodule {
+    options = {
+      name = mkOption {
+        type = types.nullOr types.str;
+        default = null;
+      };
+      size = mkOption {
+        type = types.addCheck (types.listOf positiveUnsigned) (values: builtins.length values == 2);
+      };
+      springCompensation = mkOption {
+        type = types.bool;
+        default = true;
+      };
+      additionalExpansion = mkOption {
+        type = types.str;
+        default = "0mm";
+      };
+    };
+  };
+
+  swappableLabelType = types.submodule {
+    options = {
+      name = mkOption {
+        type = types.nullOr types.str;
+        default = null;
+      };
+      bin = mkOption {
+        type = types.str;
+        description = "Named bin used to derive the normalized label interface.";
+      };
+      embossing = mkOption {
+        type = types.submodule {
+          options = {
+            clearance = mkOption {
+              type = types.str;
+              default = "0.4mm";
+            };
+            inset = mkOption {
+              type = types.str;
+              default = "0mm";
+            };
+          };
+        };
+        default = { };
+      };
+    };
+  };
+
+  binSetType = types.submodule {
+    options = {
+      name = mkOption {
+        type = types.nullOr types.str;
+        default = null;
+      };
+      bin = mkOption { type = types.str; };
+      base = mkOption {
+        type = types.nullOr types.str;
+        default = null;
+      };
+      rim = mkOption {
+        type = types.nullOr types.str;
+        default = null;
+      };
+      swappableLabel = mkOption {
+        type = types.nullOr types.str;
+        default = null;
+      };
+      connectorPin = mkOption {
+        type = types.bool;
+        default = false;
       };
     };
   };
@@ -400,7 +562,11 @@ in
         package.mkBin {
           name = if definition.name == null then binName else definition.name;
           inherit (definition)
+            version
             size
+            tub
+            rimInterface
+            labelInterface
             base
             bin
             label
@@ -423,6 +589,74 @@ in
             entries = binPackages;
             extra.all = allBins;
           };
+      basePackages = lib.mapAttrs (
+        baseName: definition:
+        package.mkBase {
+          name = if definition.name == null then baseName else definition.name;
+          inherit (definition) size roundedCorners magnets;
+        }
+      ) config.gfty.bases;
+      basesOutput = package.mkOutputSet {
+        name = "bases";
+        entries = basePackages;
+      };
+      rimPackages = lib.mapAttrs (
+        rimName: definition:
+        package.mkRim {
+          name = if definition.name == null then rimName else definition.name;
+          inherit (definition) size springCompensation additionalExpansion;
+        }
+      ) config.gfty.rims;
+      rimsOutput = package.mkOutputSet {
+        name = "rims";
+        entries = rimPackages;
+      };
+      swappableLabelPackages = lib.mapAttrs (
+        labelName: definition:
+        package.mkSwappableLabel {
+          name = if definition.name == null then labelName else definition.name;
+          bin =
+            binPackages.${definition.bin}
+              or (throw "gfty.swappableLabels.${labelName} refers to unknown bin ${definition.bin}");
+          inherit (definition) embossing;
+        }
+      ) config.gfty.swappableLabels;
+      swappableLabelsOutput = package.mkOutputSet {
+        name = "swappable-labels";
+        entries = swappableLabelPackages;
+      };
+      binSetPackages = lib.mapAttrs (
+        setName: definition:
+        package.mkBinSet {
+          name = if definition.name == null then setName else definition.name;
+          bin =
+            binPackages.${definition.bin}
+              or (throw "gfty.binSets.${setName} refers to unknown bin ${definition.bin}");
+          base =
+            if definition.base == null then
+              null
+            else
+              basePackages.${definition.base}
+                or (throw "gfty.binSets.${setName} refers to unknown base ${definition.base}");
+          rim =
+            if definition.rim == null then
+              null
+            else
+              rimPackages.${definition.rim}
+                or (throw "gfty.binSets.${setName} refers to unknown rim ${definition.rim}");
+          swappableLabel =
+            if definition.swappableLabel == null then
+              null
+            else
+              swappableLabelPackages.${definition.swappableLabel}
+                or (throw "gfty.binSets.${setName} refers to unknown swappable label ${definition.swappableLabel}");
+          inherit (definition) connectorPin;
+        }
+      ) config.gfty.binSets;
+      binSetsOutput = package.mkOutputSet {
+        name = "bin-sets";
+        entries = binSetPackages;
+      };
       prototypeFor =
         owner: definition:
         if definition.bin != null && definition.gfty-ultimate != null then
@@ -573,6 +807,60 @@ in
           modelUrl = config.gfty.binModelUrl;
         })
       ) binPackages;
+      baseExportApps = lib.mapAttrs' (
+        baseName: output:
+        lib.nameValuePair "export-base-${baseName}" (makeExportApp {
+          name = baseName;
+          arguments = [
+            "export"
+            (toString output.baseConfig)
+          ];
+          modelUrl = config.gfty.binModelUrl;
+        })
+      ) basePackages;
+      rimExportApps = lib.mapAttrs' (
+        rimName: output:
+        lib.nameValuePair "export-rim-${rimName}" (makeExportApp {
+          name = rimName;
+          arguments = [
+            "export"
+            (toString output.rimConfig)
+          ];
+          modelUrl = config.gfty.binModelUrl;
+        })
+      ) rimPackages;
+      swappableLabelExportApps = lib.mapAttrs' (
+        labelName: output:
+        lib.nameValuePair "export-swappable-label-${labelName}" (makeExportApp {
+          name = labelName;
+          arguments = [
+            "export"
+            (toString output.swappableLabelConfig)
+          ];
+          modelUrl = config.gfty.binModelUrl;
+        })
+      ) swappableLabelPackages;
+      binSetExportApps = lib.mapAttrs' (
+        setName: output:
+        lib.nameValuePair "export-bin-set-${setName}" (makeExportApp {
+          name = setName;
+          arguments = [
+            "export"
+            (toString output.binSetConfig)
+          ];
+          modelUrl = config.gfty.binModelUrl;
+        })
+      ) binSetPackages;
+      connectorPinExportApp = {
+        export-connector-pin = makeExportApp {
+          name = "connector-pin";
+          arguments = [
+            "connector-pin"
+            "export"
+          ];
+          modelUrl = config.gfty.binModelUrl;
+        };
+      };
     in
     {
       options.gfty = {
@@ -591,6 +879,26 @@ in
           default = { };
           description = "Declarative Gridfinity bin definitions.";
         };
+        bases = mkOption {
+          type = types.attrsOf baseType;
+          default = { };
+          description = "Independent Gridfinity base definitions.";
+        };
+        rims = mkOption {
+          type = types.attrsOf rimType;
+          default = { };
+          description = "Independent swappable-rim definitions.";
+        };
+        swappableLabels = mkOption {
+          type = types.attrsOf swappableLabelType;
+          default = { };
+          description = "Swappable label blanks derived from named bins.";
+        };
+        binSets = mkOption {
+          type = types.attrsOf binSetType;
+          default = { };
+          description = "Compatible sets of constituent Gridfinity parts.";
+        };
         labels = mkOption {
           type = types.attrsOf labelType;
           default = { };
@@ -604,9 +912,21 @@ in
       };
 
       config = {
-        apps = labelExportApps // plateExportApps // binExportApps;
+        apps =
+          labelExportApps
+          // plateExportApps
+          // binExportApps
+          // baseExportApps
+          // rimExportApps
+          // swappableLabelExportApps
+          // binSetExportApps
+          // connectorPinExportApp;
         packages = {
           bins = binsOutput;
+          bases = basesOutput;
+          rims = rimsOutput;
+          swappable-labels = swappableLabelsOutput;
+          bin-sets = binSetsOutput;
           labels = labelsOutput;
           plates = platesOutput;
         };

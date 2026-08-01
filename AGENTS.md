@@ -31,8 +31,11 @@ is in `../std-library/`.
 - `src/main.rs`: command dispatch, output behavior, and inspection.
 - `src/cli.rs`: Clap interface. Keep stdout clean for data-producing commands.
 - `src/config.rs`: label TOML schema, path resolution, discovery, and validation.
-- `src/bin_config.rs`: typed bin TOML, designer-compatible defaults/dividers,
+- `src/bin_config.rs`: legacy/version-2 bin TOML, divider normalization,
   canonical JSON conversion, and component manifests.
+- `src/component_config.rs`: independent base/rim/swappable-label/set schemas,
+  compatibility checks, carrier configurations, and semantic request keys.
+- `src/artifact_cache.rs`: verified runtime STEP/PNG cache outside the Nix store.
 - `src/create.rs`: unsaved label creation and reusable TOML saving.
 - `src/credentials.rs`: protected Onshape credential-file discovery.
 - `src/onshape.rs`: signed encode/translate/poll/download API operations.
@@ -192,17 +195,20 @@ Current JSON is version 2:
   the Nix sandbox; credentials must never be captured by Nix.
 - `perSystem.gfty.labelModelUrl` and `binModelUrl` pin immutable model
   versions used by generated apps.
-- Current `--component bin` means the bin-side set: `Bin` plus any configured
-  `SwappableRim` and `SwappableLabel`, with the base suppressed. Do not describe
-  it as exact single-body selection.
-- Exact `Base`, `Bin`, `SwappableRim`, `SwappableLabel`, and `ConnectorPin` STEP
-  and PNG exports were live-tested by resolving configured part IDs, filtering
-  translations with `partIds`, and using per-part shaded views. IDs change with
-  configuration and must never be hard-coded. A generic helper in base-only
-  whole-studio output is safely excluded by named part selection.
-- Shaded views and configured-parts discovery are GET-only, so this approach is
-  suitable for compact Gridfinity bin configuration but not large artwork-label
-  geometry.
+- `--component bin|base|swappable-rim|swappable-label|connector-pin` is exact
+  named-part selection. Resolve configured IDs at runtime; IDs change with
+  configuration and must never be hard-coded.
+- Constituent `base`, `rim`, `swappable-label`, version-2 `bin`, and `bin-set`
+  TOML are supported. Swappable labels reference bins, then normalize only X,
+  depth, and effective row-zero divider boundaries. Source paths, Y/Z, later
+  rows, and unrelated settings must not affect their runtime request key.
+- The runtime cache lives outside the store, is keyed by normalized request plus
+  immutable model/export options, and validates both content hashes and exact
+  STEP manifests. `--no-cache` bypasses it. Never cache credentials.
+- A generic helper in whole-studio base-only output is safely excluded by named
+  part selection. Shaded views and configured-parts discovery remain GET-only,
+  so this approach suits compact Gridfinity configuration but not large
+  artwork-label geometry.
 
 ## Onshape REST API direction
 

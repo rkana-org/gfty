@@ -1,6 +1,8 @@
+mod artifact_cache;
 mod bin_config;
 mod cli;
 mod color;
+mod component_config;
 mod compose;
 mod config;
 mod create;
@@ -21,8 +23,9 @@ use clap::Parser;
 use colored::Colorize;
 
 use crate::cli::{
-    BinCommand, BinExportArgs, Cli, Command, CreateArgs, ExportArgs, ExportPlateArgs,
-    GenericExportArgs, LabelCommand, PlateCommand, PlateCreateArgs, RemoteExportArgs,
+    BinCommand, BinExportArgs, Cli, Command, ConnectorPinCommand, CreateArgs, ExportArgs,
+    ExportPlateArgs, GenericExportArgs, LabelCommand, PlateCommand, PlateCreateArgs,
+    RemoteExportArgs,
 };
 
 fn main() {
@@ -55,6 +58,21 @@ fn run() -> Result<()> {
             BinCommand::Validate { bin } => validate_bin(&bin),
             BinCommand::Inspect { bin } => inspect_bin(&bin),
             BinCommand::Export(args) => export_bin_step(args),
+        },
+        Command::ConnectorPin(pin) => match pin.command {
+            ConnectorPinCommand::Export(args) => {
+                let resolved = component_config::connector_pin()?;
+                export_resolved_gridfinity(
+                    &resolved,
+                    args.output
+                        .unwrap_or_else(|| std::path::PathBuf::from("connector-pin.step")),
+                    args.image,
+                    args.onshape_credentials,
+                    args.onshape_model,
+                    args.no_cache,
+                    args.force,
+                )
+            }
         },
     }
 }
@@ -219,15 +237,51 @@ fn export_config(args: GenericExportArgs, font_options: &svg::FontOptions) -> Re
             }
             export_bin_step(BinExportArgs {
                 bin: args.file,
-                component: args.component.unwrap_or(bin_config::BinComponent::All),
+                component: args.component,
                 output: args.output,
                 image: args.image,
                 onshape_credentials: args.onshape_credentials,
                 onshape_model: args
                     .onshape_model
                     .unwrap_or_else(|| bin_config::DEFAULT_BIN_MODEL_URL.to_owned()),
+                no_cache: args.no_cache,
                 force: args.force,
             })
+        }
+        config::ConfigKind::Base
+        | config::ConfigKind::Rim
+        | config::ConfigKind::SwappableLabel
+        | config::ConfigKind::BinSet => {
+            if args.gridfinity_config.is_some() || args.bin.is_some() {
+                anyhow::bail!(
+                    "Gridfinity constituent exports do not accept --gridfinity-config or --bin"
+                );
+            }
+            if args.component.is_some() {
+                anyhow::bail!(
+                    "constituent and set TOML files already define their exact exported parts; omit --component"
+                );
+            }
+            let resolved = match config::detect_config_kind(&args.file)? {
+                config::ConfigKind::Base => component_config::load_base(&args.file)?,
+                config::ConfigKind::Rim => component_config::load_rim(&args.file)?,
+                config::ConfigKind::SwappableLabel => {
+                    component_config::load_swappable_label(&args.file)?
+                }
+                config::ConfigKind::BinSet => component_config::load_bin_set(&args.file)?,
+                _ => unreachable!("outer match restricted constituent kinds"),
+            };
+            let output = args.output.unwrap_or_else(|| default_step_path(&args.file));
+            export_resolved_gridfinity(
+                &resolved,
+                output,
+                args.image,
+                args.onshape_credentials,
+                args.onshape_model
+                    .unwrap_or_else(|| bin_config::DEFAULT_BIN_MODEL_URL.to_owned()),
+                args.no_cache,
+                args.force,
+            )
         }
         config::ConfigKind::LabelPlate => {
             anyhow::bail!(
@@ -393,53 +447,132 @@ fn inspect_bin(path: &std::path::Path) -> Result<()> {
 }
 
 fn export_bin_step(args: BinExportArgs) -> Result<()> {
-    let output = args
-        .output
-        .clone()
-        .unwrap_or_else(|| default_step_path(&args.bin));
-    step::ensure_output_available(&output, args.force)?;
-    if let Some(image) = &args.image {
+    let loaded = bin_config::LoadedBin::load(&args.bin)?;
+    let default_component = if loaded.source_version == bin_config::BIN_BODY_CONFIG_VERSION {
+        bin_config::BinComponent::Bin
+    } else {
+        bin_config::BinComponent::All
+    };
+    let component = args.component.unwrap_or(default_component);
+    let resolved = component_config::load_bin(&args.bin, component)?;
+    export_resolved_gridfinity(
+        &resolved,
+        args.output.unwrap_or_else(|| default_step_path(&args.bin)),
+        args.image,
+        args.onshape_credentials,
+        args.onshape_model,
+        args.no_cache,
+        args.force,
+    )
+}
+
+fn export_resolved_gridfinity(
+    resolved: &component_config::ResolvedGridfinityExport,
+    output: std::path::PathBuf,
+    image: Option<std::path::PathBuf>,
+    credentials_path: Option<std::path::PathBuf>,
+    onshape_model: String,
+    no_cache: bool,
+    force: bool,
+) -> Result<()> {
+    step::ensure_output_available(&output, force)?;
+    if let Some(image) = &image {
         if image == &output {
             anyhow::bail!("STEP and PNG outputs must use different paths");
         }
-        step::ensure_output_available(image, args.force)?;
+        step::ensure_output_available(image, force)?;
     }
-    let loaded = bin_config::LoadedBin::load(&args.bin)?;
-    let gridfinity_json = loaded.config.canonical_json(args.component)?;
-    let expected_parts = loaded.config.expected_parts(args.component)?;
-    let credentials = credentials::Credentials::load(args.onshape_credentials)?;
-    let target = onshape::ModelTarget::parse(&args.onshape_model)?;
-    let client = onshape::OnshapeClient::new(credentials)?;
-    let destination_name = output
-        .file_stem()
-        .and_then(|name| name.to_str())
-        .context("STEP output must have a UTF-8 file name")?;
-    let contents = client
-        .export_bin_step(&target, &gridfinity_json, destination_name)
-        .with_context(|| format!("failed to export bin {}", loaded.path.display()))?;
-    step::validate_bin_step(&contents, &expected_parts)
-        .context("downloaded Onshape STEP failed bin part validation")?;
-    let preview = args
-        .image
-        .as_ref()
-        .map(|_| client.render_bin_preview(&target, &gridfinity_json))
-        .transpose()
-        .with_context(|| format!("failed to render bin preview for {}", loaded.path.display()))?;
 
-    step::write_atomic(&output, &contents, args.force)?;
+    let cache = if no_cache {
+        None
+    } else {
+        artifact_cache::ArtifactCache::discover()
+    };
+    let cache_key = artifact_cache::ArtifactCache::key(
+        &resolved.request_key,
+        &onshape_model,
+        &resolved.part_names,
+    )?;
+    let mut contents = cache
+        .as_ref()
+        .map(|cache| cache.load_step(&cache_key, &resolved.part_names))
+        .transpose()?
+        .flatten();
+    let mut preview = if image.is_some() {
+        cache
+            .as_ref()
+            .map(|cache| cache.load_preview(&cache_key))
+            .transpose()?
+            .flatten()
+    } else {
+        None
+    };
+    let step_was_cached = contents.is_some();
+    let preview_was_cached = image.is_some() && preview.is_some();
+
+    if contents.is_none() || (image.is_some() && preview.is_none()) {
+        let gridfinity_json = resolved.gridfinity_json()?;
+        let credentials = credentials::Credentials::load(credentials_path)?;
+        let target = onshape::ModelTarget::parse(&onshape_model)?;
+        let client = onshape::OnshapeClient::new(credentials)?;
+        let part_ids = client
+            .resolve_configured_part_ids(&target, &gridfinity_json, &resolved.part_names)
+            .with_context(|| {
+                format!(
+                    "failed to resolve {} parts for {}",
+                    resolved.description,
+                    resolved.source_path.display()
+                )
+            })?;
+        if contents.is_none() {
+            let destination_name = output
+                .file_stem()
+                .and_then(|name| name.to_str())
+                .context("STEP output must have a UTF-8 file name")?;
+            let downloaded = client
+                .export_bin_step(&target, &gridfinity_json, destination_name, Some(&part_ids))
+                .with_context(|| format!("failed to export {}", resolved.description))?;
+            step::validate_bin_step(&downloaded, &resolved.part_names).with_context(|| {
+                format!(
+                    "downloaded {} STEP failed part validation",
+                    resolved.description
+                )
+            })?;
+            if let Some(cache) = &cache {
+                cache.store_step(&cache_key, &downloaded)?;
+            }
+            contents = Some(downloaded);
+        }
+        if image.is_some() && preview.is_none() {
+            let single_part = (resolved.part_names.len() == 1).then_some(part_ids.as_str());
+            let downloaded = client
+                .render_bin_preview(&target, &gridfinity_json, single_part)
+                .with_context(|| format!("failed to render {} preview", resolved.description))?;
+            if let Some(cache) = &cache {
+                cache.store_preview(&cache_key, &downloaded)?;
+            }
+            preview = Some(downloaded);
+        }
+    }
+
+    let contents = contents.expect("STEP is downloaded or loaded from cache");
+    step::write_atomic(&output, &contents, force)?;
     eprintln!(
-        "{} {} ({} bytes)",
+        "{} {} ({} bytes, request {}{})",
         "Finished".green().bold(),
         output.display(),
-        contents.len()
+        contents.len(),
+        &cache_key[..12],
+        if step_was_cached { ", cached" } else { "" }
     );
-    if let (Some(path), Some(preview)) = (args.image, preview) {
-        step::write_atomic(&path, &preview, args.force)?;
+    if let (Some(path), Some(preview)) = (image, preview) {
+        step::write_atomic(&path, &preview, force)?;
         eprintln!(
-            "{} {} ({} bytes)",
+            "{} {} ({} bytes{})",
             "Finished".green().bold(),
             path.display(),
-            preview.len()
+            preview.len(),
+            if preview_was_cached { ", cached" } else { "" }
         );
     }
     Ok(())

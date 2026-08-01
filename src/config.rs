@@ -15,6 +15,10 @@ pub enum ConfigKind {
     Label,
     LabelPlate,
     Bin,
+    Base,
+    Rim,
+    SwappableLabel,
+    BinSet,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -305,8 +309,12 @@ pub fn detect_config_kind(path: &Path) -> Result<ConfigKind> {
         "label" => Ok(ConfigKind::Label),
         "label-plate" => Ok(ConfigKind::LabelPlate),
         "bin" => Ok(ConfigKind::Bin),
+        "base" => Ok(ConfigKind::Base),
+        "rim" => Ok(ConfigKind::Rim),
+        "swappable-label" => Ok(ConfigKind::SwappableLabel),
+        "bin-set" => Ok(ConfigKind::BinSet),
         other => bail!(
-            "unsupported configuration kind {other:?} in {}; expected label, label-plate, or bin",
+            "unsupported configuration kind {other:?} in {}; expected label, label-plate, bin, base, rim, swappable-label, or bin-set",
             path.display()
         ),
     }
@@ -441,6 +449,16 @@ mod tests {
         fs::write(&label, "template = \"label.svg\"\n").unwrap();
         assert_eq!(detect_config_kind(&bin).unwrap(), ConfigKind::Bin);
         assert_eq!(detect_config_kind(&label).unwrap(), ConfigKind::Label);
+        for (kind, expected) in [
+            ("base", ConfigKind::Base),
+            ("rim", ConfigKind::Rim),
+            ("swappable-label", ConfigKind::SwappableLabel),
+            ("bin-set", ConfigKind::BinSet),
+        ] {
+            let path = temp.path().join(format!("{kind}.toml"));
+            fs::write(&path, format!("kind = {kind:?}\nversion = 1\n")).unwrap();
+            assert_eq!(detect_config_kind(&path).unwrap(), expected);
+        }
     }
 
     #[test]

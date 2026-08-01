@@ -133,6 +133,7 @@ impl OnshapeClient {
                 },
             ],
             destination_name,
+            None,
         )
     }
 
@@ -141,6 +142,7 @@ impl OnshapeClient {
         target: &ModelTarget,
         gridfinity_json: &str,
         destination_name: &str,
+        part_ids: Option<&str>,
     ) -> Result<Vec<u8>> {
         self.export_configured_step(
             target,
@@ -149,18 +151,74 @@ impl OnshapeClient {
                 parameter_value: gridfinity_json,
             }],
             destination_name,
+            part_ids,
         )
+    }
+
+    pub fn resolve_configured_part_ids(
+        &self,
+        target: &ModelTarget,
+        gridfinity_json: &str,
+        expected_names: &[String],
+    ) -> Result<String> {
+        let mut url = target.url(&format!(
+            "/api/{API_VERSION}/parts/d/{}/v/{}/e/{}",
+            target.document_id, target.version_id, target.element_id
+        ))?;
+        let configuration = format!("Config={}", form_encode(gridfinity_json));
+        url.query_pairs_mut()
+            .append_pair("configuration", &configuration)
+            .append_pair("withThumbnails", "false");
+        ensure_shaded_url_length(&url, "configured-parts")?;
+        let response = self
+            .request(Method::GET, url, None, JSON_ACCEPT)
+            .context("failed to discover configured Onshape parts")?;
+        let parts: Vec<ConfiguredPart> = serde_json::from_slice(&response)
+            .context("Onshape returned an invalid configured-parts response")?;
+        let mut ids = Vec::with_capacity(expected_names.len());
+        for expected in expected_names {
+            let matches = parts
+                .iter()
+                .filter(|part| part.name == *expected)
+                .collect::<Vec<_>>();
+            if matches.len() != 1 {
+                let available = parts
+                    .iter()
+                    .map(|part| part.name.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                bail!(
+                    "configured Onshape part {expected:?} matched {} bodies; available parts: {}",
+                    matches.len(),
+                    if available.is_empty() {
+                        "(none)"
+                    } else {
+                        &available
+                    }
+                );
+            }
+            ids.push(matches[0].part_id.as_str());
+        }
+        Ok(ids.join(","))
     }
 
     pub fn render_bin_preview(
         &self,
         target: &ModelTarget,
         gridfinity_json: &str,
+        part_id: Option<&str>,
     ) -> Result<Vec<u8>> {
-        let mut url = target.url(&format!(
-            "/api/{API_VERSION}/partstudios/d/{}/v/{}/e/{}/shadedviews",
-            target.document_id, target.version_id, target.element_id
-        ))?;
+        let path = match part_id {
+            Some(part_id) => format!(
+                "/api/{API_VERSION}/parts/d/{}/v/{}/e/{}/partid/{part_id}/shadedviews",
+                target.document_id, target.version_id, target.element_id
+            ),
+            None => format!(
+                "/api/{API_VERSION}/partstudios/d/{}/v/{}/e/{}/shadedviews",
+                target.document_id, target.version_id, target.element_id
+            ),
+        };
+        let mut url = target.url(&path)?;
         let configuration = format!("Config={}", form_encode(gridfinity_json));
         url.query_pairs_mut()
             .append_pair("configuration", &configuration)
@@ -169,14 +227,11 @@ impl OnshapeClient {
             .append_pair("outputHeight", "512")
             .append_pair("pixelSize", "0")
             .append_pair("edges", "show")
-            .append_pair("showAllParts", "true")
             .append_pair("useAntiAliasing", "true");
-        if url.as_str().len() > MAX_SHADED_VIEW_URL_LENGTH {
-            bail!(
-                "configured shaded-view URL is {} characters; Onshape exposes previews only through GET and URLs above about {MAX_SHADED_VIEW_URL_LENGTH} characters are unreliable",
-                url.as_str().len()
-            );
+        if part_id.is_none() {
+            url.query_pairs_mut().append_pair("showAllParts", "true");
         }
+        ensure_shaded_url_length(&url, "shaded-view")?;
 
         eprintln!("Rendering configured PNG preview");
         let response = self
@@ -209,12 +264,14 @@ impl OnshapeClient {
         target: &ModelTarget,
         parameters: &[ConfigurationValue<'_>],
         destination_name: &str,
+        part_ids: Option<&str>,
     ) -> Result<Vec<u8>> {
         eprintln!("Encoding Onshape configuration");
         let encoded = self.encode_configuration(target, parameters)?;
 
         eprintln!("Starting configured STEP export");
-        let mut translation = self.start_translation(target, &encoded, destination_name)?;
+        let mut translation =
+            self.start_translation(target, &encoded, destination_name, part_ids)?;
         let deadline = Instant::now() + TRANSLATION_TIMEOUT;
         let mut delay = Duration::from_secs(2);
         while translation.request_state == TranslationState::Active {
@@ -294,6 +351,7 @@ impl OnshapeClient {
         target: &ModelTarget,
         configuration: &str,
         destination_name: &str,
+        part_ids: Option<&str>,
     ) -> Result<TranslationResponse> {
         let url = target.url(&format!(
             "/api/{API_VERSION}/partstudios/d/{}/v/{}/e/{}/translations",
@@ -308,6 +366,7 @@ impl OnshapeClient {
             notify_user: false,
             step_version_string: "AP242",
             unit: "MILLIMETER",
+            part_ids,
         })
         .context("failed to serialize Onshape translation request")?;
         let response = self
@@ -455,6 +514,16 @@ fn read_response(response: Response) -> Result<Vec<u8>> {
     bail!("Onshape API returned HTTP {status}: {detail}{request_context}")
 }
 
+fn ensure_shaded_url_length(url: &Url, operation: &str) -> Result<()> {
+    if url.as_str().len() > MAX_SHADED_VIEW_URL_LENGTH {
+        bail!(
+            "configured {operation} URL is {} characters; Onshape exposes this operation only through GET and URLs above about {MAX_SHADED_VIEW_URL_LENGTH} characters are unreliable",
+            url.as_str().len()
+        );
+    }
+    Ok(())
+}
+
 fn form_encode(value: &str) -> String {
     let mut encoded = String::with_capacity(value.len());
     for byte in value.bytes() {
@@ -481,6 +550,13 @@ fn nonce() -> String {
         .as_nanos();
     let sequence = NONCE_SEQUENCE.fetch_add(1, Ordering::Relaxed);
     format!("{nanos:x}{:x}{sequence:x}", std::process::id())
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ConfiguredPart {
+    name: String,
+    part_id: String,
 }
 
 #[derive(Deserialize)]
@@ -533,6 +609,8 @@ struct TranslationRequest<'a> {
     notify_user: bool,
     step_version_string: &'static str,
     unit: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    part_ids: Option<&'a str>,
 }
 
 #[derive(Debug, Deserialize, PartialEq, Eq)]

@@ -164,8 +164,9 @@ request URL and produced a 512×512 RGBA PNG isometric view.
 `gfty export BIN --image preview.png` uses this endpoint after STEP validation.
 The image is optional because it costs another API request. It uses Onshape's
 documented isometric matrix with Z up and the front of the bin facing the
-viewer. The current `--component bin` implementation previews the bin-side set
-(`Bin` and any configured swappable parts), not yet the single named `Bin` body.
+viewer. `--component bin|base|swappable-rim|swappable-label|connector-pin`
+resolves the configured part ID and uses the per-part endpoint, so its PNG and
+STEP contain exactly the selected named body.
 
 ### Named Gridfinity components
 
@@ -197,9 +198,9 @@ and generic `Part 3`; selecting the first two by name cleanly avoids the helper.
 Part IDs must not be hard-coded: the configured `Bin` ID changed when optional
 features were disabled.
 
-This gives the existing model a sound implementation path for exact component
-STEP files and previews. The remaining work is CLI/schema design and configured
-part discovery in the Rust client, not FeatureScript or model changes.
+The Rust client now uses this path for exact component STEP files and previews,
+independent constituent schemas, and validated composed sets. No FeatureScript
+or upstream model change was required.
 
 This does not solve three-dimensional artwork-label previews. Shaded views are
 GET-only and place configuration in the URL; typical label geometry already exceeds the

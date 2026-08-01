@@ -41,6 +41,10 @@ rustPlatform.buildRustPackage (finalAttrs: {
         inherit args;
       };
     mkBin = args: callPackage ./nix/mk-bin.nix { inherit args; };
+    mkBase = args: callPackage ./nix/mk-base.nix { inherit args; };
+    mkRim = args: callPackage ./nix/mk-rim.nix { inherit args; };
+    mkSwappableLabel = args: callPackage ./nix/mk-swappable-label.nix { inherit args; };
+    mkBinSet = args: callPackage ./nix/mk-bin-set.nix { inherit args; };
     mkOutputSet = args: callPackage ./nix/mk-output-set.nix args;
     writeExportScript = name: text: writeShellScript name text;
     writeExportText = name: text: writeText name text;

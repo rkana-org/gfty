@@ -1,0 +1,28 @@
+kind = "bin"
+version = 2
+size = [2, 2, 6]
+tub = true
+max-print-overhang = 60
+
+[rim-interface]
+mode = "swappable"
+
+[label-interface]
+mode = "swappable"
+depth = "10mm"
+supports = "auto"
+
+[divider]
+columns = ["auto", "auto", "auto", "auto"]
+rows = ["auto", "auto"]
+
+[[divider.merges]]
+columns = [0, 1]
+rows = [0, 0]
+
+[[divider.merges]]
+columns = [2, 3]
+rows = [0, 0]
+
+[easy-grab]
+mode = "none"

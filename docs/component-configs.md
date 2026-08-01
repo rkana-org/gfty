@@ -1,8 +1,11 @@
 # Proposed constituent Gridfinity configuration
 
-This document proposes the version-2 Gridfinity configuration model. It is a
-design, not the currently implemented CLI schema. Version-1 `kind = "bin"`
-files remain readable during migration.
+This document specifies the version-2 Gridfinity configuration model. The Rust
+schemas, exact named-part STEP/PNG exports, compatible sets, normalized
+swappable-label carriers, Nix constituent packages/apps, and runtime cache are
+implemented. Version-1 `kind = "bin"` files remain readable during migration.
+Automatic aliasing of independently named equivalent Nix request derivations is
+still pending the pure-Nix normalization described below.
 
 ## Goals
 
@@ -236,11 +239,12 @@ request.json
 request-key
 ```
 
-The flake module normalizes constituent definitions before hashing. The key is a
-SHA-256 over canonical, integer/rational data and excludes user-facing attribute
-names and source paths. Definitions with the same key are aliases to one shared
-derivation, so two bins that derive the same swappable label can expose the same
-store path.
+The runtime normalizer hashes canonical fixed-precision data and excludes
+user-facing attribute names and source paths. The flake module currently emits
+pure constituent packages that retain their named bin references; equivalent
+requests converge in the runtime cache. A future pure-Nix implementation of the
+same normalization can group definitions by key before constructing packages,
+making independently named equivalent labels aliases to one store path as well.
 
 Suggested module shape:
 
@@ -284,17 +288,16 @@ perSystem.gfty = {
 };
 ```
 
-The flake module resolves `bin` before creating the request package. It hashes
-the normalized effective row-zero interface, not the referenced bin name or its
-complete divider configuration. Two labels derived from compatible bins are
-therefore aliases to one request derivation even when the bins have different Y
-sizes, later rows, bases, rims, easy grabs, or row-zero merge representations.
+Rust resolves `bin` before remote export and hashes the normalized effective
+row-zero interface, not the referenced bin name or complete divider
+configuration. Two labels derived from compatible bins therefore share the same
+runtime request/cache entry even when their bins have different Y sizes, later
+rows, bases, rims, easy grabs, or row-zero merge representations.
 
-Rust remains the authority for validation. Any Nix normalization/key
+Rust remains the authority for validation. The pending Nix normalization/key
 implementation needs conformance tests against Rust to prevent evaluation-time
-and runtime identities from diverging. A collection exporter must also group
-runtime requests by normalized request key, providing a second deduplication
-layer independent of Nix aliases.
+and runtime identities from diverging. Runtime grouping and caching by normalized
+request key remain a second deduplication layer independent of Nix aliases.
 
 ## Why remote exports are not Nix derivations
 

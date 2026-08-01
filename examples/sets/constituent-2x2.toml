@@ -1,0 +1,7 @@
+kind = "bin-set"
+version = 1
+bin = "../bins/constituent-2x2.toml"
+base = "../bases/2x2-magnetic.toml"
+rim = "../rims/2x2-standard.toml"
+swappable-label = "../swappable-labels/2x-compatible.toml"
+connector-pin = true

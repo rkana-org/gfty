@@ -514,30 +514,32 @@ target names above.
 
 ### 6. Add bins
 
-1. **Done:** define required `kind = "bin"`, version 1 hierarchical TOML and
-   typed Rust structures.
+1. **Done:** define required `kind = "bin"`, legacy version 1 complete TOML,
+   version 2 constituent bin-body TOML, and typed Rust structures.
 2. **Done:** port designer defaults, unit handling, track sizing, merge and
    easy-grab face validation, automatic supports, and canonical JSON conversion.
    A frozen designer-default fixture checks the complete resulting JSON value.
 3. **Done:** add `gfty bin validate`, `inspect`, and `export`, plus generic
    `gfty export BIN` dispatch and exact expected STEP manifest validation.
-4. **Done:** add typed Nix `bins`, `packages.bins.<name>`, `packages.bins.all`,
-   `pkgs.gfty.mkBin`, `binModelUrl`, and `export-bin-<name>` runtime apps.
+4. **Done:** add typed Nix bins, bases, rims, swappable labels, and bin sets;
+   nested packages; passthru builders; `binModelUrl`; and explicit runtime export
+   apps for every constituent plus the configuration-free connector pin.
 5. **Done:** labels may reference bin TOML and Nix labels/plates may reference a
    named bin. The legacy inline `gfty-ultimate` set remains an exclusive
    transition alternative.
-6. **Assessed:** current `--component bin` suppresses only the base, so its STEP
-   still contains optional `SwappableRim` and `SwappableLabel`; it is a bin-side
-   set rather than the exact `Bin` body. Configured part discovery plus
-   translation `partIds` was live-tested and can export `Base`, `Bin`,
-   `SwappableRim`, `SwappableLabel`, and `ConnectorPin` individually, even though
-   a whole-Part-Studio base-only configuration contains a generic helper.
-7. **Done for aggregate bins:** optional `--image PATH` uses the configured Part
-   Studio shaded-view endpoint to download a 512×512 PNG. The camera now uses
-   Onshape's documented front-facing isometric matrix. Per-part shaded views for
-   all five configured Gridfinity components were live-tested; wiring them into
-   the CLI remains. Artwork-label shaded views remain unavailable because their
-   configurations exceed reliable GET URL sizes.
+6. **Done:** configured part discovery and translation `partIds` export exact
+   `Base`, `Bin`, `SwappableRim`, `SwappableLabel`, and `ConnectorPin` STEP files.
+   Independent constituent TOML and compatible `bin-set` composition are live
+   tested; named filtering excludes base-only generic helpers.
+7. **Done for Gridfinity constituents:** optional `--image PATH` uses aggregate
+   or per-part shaded views with Onshape's documented front-facing isometric
+   matrix. Normalized runtime request caching verifies hashes and manifests and
+   deduplicates labels derived from compatible first-row divider layouts.
+   Artwork-label shaded views remain unavailable because their configurations
+   exceed reliable GET URL sizes.
+8. **Pending refinement:** implement the Rust-compatible first-row normalizer in
+   pure Nix so independently named equivalent swappable-label definitions alias
+   one store derivation before runtime. Runtime requests already converge.
 
 ### 7. Complete migration
 

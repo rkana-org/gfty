@@ -2,28 +2,55 @@
   perSystem = {
     gfty = {
       bins.module-example = {
+        version = 2;
         size = [
           1
           1
           6
         ];
-        base = import ./bases/magnetic.nix;
         divider = {
           columns = [ "auto" ];
           rows = [ "auto" ];
         };
       };
       bins.bin-only = {
+        version = 2;
         size = [
           1
           1
           6
         ];
-        base.enabled = false;
+        rimInterface.mode = "off";
+        labelInterface.mode = "off";
         divider = {
           columns = [ "auto" ];
           rows = [ "auto" ];
         };
+      };
+      bases.module-example = {
+        size = [
+          1
+          1
+        ];
+        magnets.enabled = true;
+        magnets.connectorCutouts = true;
+      };
+      rims.module-example = {
+        size = [
+          1
+          1
+        ];
+        springCompensation = true;
+      };
+      swappableLabels.module-example = {
+        bin = "module-example";
+      };
+      binSets.module-example = {
+        bin = "module-example";
+        base = "module-example";
+        rim = "module-example";
+        swappableLabel = "module-example";
+        connectorPin = true;
       };
       labels.module-example = {
         bin = "module-example";

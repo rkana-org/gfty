@@ -1,0 +1,19 @@
+kind = "bin"
+version = 2
+size = [2, 1, 4]
+tub = true
+
+[rim-interface]
+mode = "off"
+
+[label-interface]
+mode = "swappable"
+depth = "10mm"
+supports = "off"
+
+[divider]
+columns = ["1fr", "1fr"]
+rows = ["auto"]
+
+[easy-grab]
+mode = "none"

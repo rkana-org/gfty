@@ -5,11 +5,16 @@ module.
 
 ## Direct files
 
-- `bins/with-magnetic-base.toml`: complete 1×1 bin with an explicit magnetic
-  base and connector settings.
-- `bins/bin-only.toml`: the same bin with base generation disabled.
-- `labels/hello.toml`: label referencing the complete bin TOML.
-- `bases/magnetic.nix` and `bases/plain.nix`: reusable Nix base-section presets.
+- `bins/with-magnetic-base.toml`: legacy version-1 complete 1×1 configuration.
+- `bins/bin-only.toml`: legacy version-1 configuration with no base.
+- `bins/constituent-2x2.toml`: version-2 bin body with swappable interfaces.
+- `bases/2x2-magnetic.toml` and `rims/2x2-standard.toml`: independent parts.
+- `swappable-labels/2x-compatible.toml` and `2x-from-set-bin.toml`: labels
+  derived from different but compatible first-row layouts; both normalize to
+  one runtime request/cache entry.
+- `sets/constituent-2x2.toml`: validated composition of all constituents.
+- `labels/hello.toml`: artwork label referencing a bin TOML.
+- `bases/magnetic.nix` and `bases/plain.nix`: legacy reusable base-section presets.
 
 ```sh
 gfty bin validate examples/bins/with-magnetic-base.toml
@@ -18,8 +23,9 @@ gfty label validate examples/labels/hello.toml
 gfty label render examples/labels/hello.toml --output /tmp/hello.svg
 ```
 
-Bases are currently sections of bin definitions rather than a standalone file
-kind. See `bases/README.md` for the model limitation behind that choice.
+Constituent exports use configured part discovery and Onshape's `partIds`
+filter, so each STEP and PNG contains only its requested named part even though
+the upstream model remains unified.
 
 ## Flake-parts module
 
@@ -29,6 +35,10 @@ Build individual definitions through nested outputs:
 ```sh
 nix build ./examples#bins.module-example
 nix build ./examples#bins.bin-only
+nix build ./examples#bases.module-example
+nix build ./examples#rims.module-example
+nix build ./examples#swappable-labels.module-example
+nix build ./examples#bin-sets.module-example
 nix build ./examples#labels.module-example
 nix build ./examples#plates.module-example
 ```
@@ -49,6 +59,11 @@ Every definition that supports remote export has an explicit runtime app:
 nix run ./examples#export-bin-module-example
 nix run ./examples#export-bin-module-example -- --image preview.png
 nix run ./examples#export-bin-bin-only
+nix run ./examples#export-base-module-example
+nix run ./examples#export-rim-module-example
+nix run ./examples#export-swappable-label-module-example
+nix run ./examples#export-bin-set-module-example
+nix run ./examples#export-connector-pin
 nix run ./examples#export-label-module-example
 nix run ./examples#export-plate-module-example
 ```

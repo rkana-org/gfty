@@ -57,6 +57,9 @@ pub enum Command {
 
     /// Validate, inspect, and export Gridfinity bins.
     Bin(BinArgs),
+
+    /// Export the configuration-free standard base connector pin.
+    ConnectorPin(ConnectorPinArgs),
 }
 
 #[derive(Debug, Args)]
@@ -198,7 +201,7 @@ pub struct GenericExportArgs {
     #[arg(long, value_name = "PATH", conflicts_with = "gridfinity_config")]
     pub bin: Option<PathBuf>,
 
-    /// Select a supported standalone-bin component.
+    /// Select an exact named part from a bin configuration.
     #[arg(long, value_enum)]
     pub component: Option<crate::bin_config::BinComponent>,
 
@@ -206,7 +209,7 @@ pub struct GenericExportArgs {
     #[arg(short, long, value_name = "PATH")]
     pub output: Option<PathBuf>,
 
-    /// Download a 512×512 isometric PNG preview (bin exports only).
+    /// Download a 512×512 isometric PNG preview (Gridfinity exports only).
     #[arg(long, value_name = "PATH")]
     pub image: Option<PathBuf>,
 
@@ -217,6 +220,10 @@ pub struct GenericExportArgs {
     /// Override the immutable Onshape model version URL for this file kind.
     #[arg(long, value_name = "URL")]
     pub onshape_model: Option<String>,
+
+    /// Bypass the normalized runtime artifact cache.
+    #[arg(long)]
+    pub no_cache: bool,
 
     /// Replace an existing output file.
     #[arg(long)]
@@ -280,6 +287,45 @@ pub struct RemoteExportArgs {
 }
 
 #[derive(Debug, Args)]
+pub struct ConnectorPinArgs {
+    #[command(subcommand)]
+    pub command: ConnectorPinCommand,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum ConnectorPinCommand {
+    /// Export the standard connector pin as an isolated STEP and optional PNG.
+    Export(StandaloneGridfinityExportArgs),
+}
+
+#[derive(Debug, Args)]
+pub struct StandaloneGridfinityExportArgs {
+    /// Destination STEP path; defaults to connector-pin.step.
+    #[arg(short, long, value_name = "PATH")]
+    pub output: Option<PathBuf>,
+
+    /// Download a 512×512 isometric PNG preview.
+    #[arg(long, value_name = "PATH")]
+    pub image: Option<PathBuf>,
+
+    /// Protected TOML file containing access-key and secret-key.
+    #[arg(long, value_name = "PATH")]
+    pub onshape_credentials: Option<PathBuf>,
+
+    /// Immutable Gridfinity Ultimate model version URL.
+    #[arg(long, default_value = crate::bin_config::DEFAULT_BIN_MODEL_URL, value_name = "URL")]
+    pub onshape_model: String,
+
+    /// Bypass the normalized runtime artifact cache.
+    #[arg(long)]
+    pub no_cache: bool,
+
+    /// Replace existing output files.
+    #[arg(long)]
+    pub force: bool,
+}
+
+#[derive(Debug, Args)]
 pub struct BinArgs {
     #[command(subcommand)]
     pub command: BinCommand,
@@ -302,9 +348,10 @@ pub struct BinExportArgs {
     /// Versioned bin TOML to export.
     pub bin: PathBuf,
 
-    /// Export the complete configuration or only the bin assembly.
-    #[arg(long, value_enum, default_value_t = crate::bin_config::BinComponent::All)]
-    pub component: crate::bin_config::BinComponent,
+    /// Export the complete configuration or one exact named part. Defaults to
+    /// `all` for legacy version-1 bins and `bin` for version-2 bin bodies.
+    #[arg(long, value_enum)]
+    pub component: Option<crate::bin_config::BinComponent>,
 
     /// Destination STEP path; defaults to the input name in the current directory.
     #[arg(short, long, value_name = "PATH")]
@@ -321,6 +368,10 @@ pub struct BinExportArgs {
     /// Immutable Gridfinity Ultimate model version URL.
     #[arg(long, default_value = crate::bin_config::DEFAULT_BIN_MODEL_URL, value_name = "URL")]
     pub onshape_model: String,
+
+    /// Bypass the normalized runtime artifact cache.
+    #[arg(long)]
+    pub no_cache: bool,
 
     /// Replace an existing output file.
     #[arg(long)]

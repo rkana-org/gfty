@@ -156,7 +156,8 @@ let
       "max-overhang"
     ]
   ] (args.print or { });
-  definition = {
+  version = args.version or 1;
+  legacyDefinition = {
     inherit (args) size;
   }
   // lib.optionalAttrs (base != { }) { inherit base; }
@@ -165,12 +166,25 @@ let
   // lib.optionalAttrs (divider != { }) { inherit divider; }
   // lib.optionalAttrs (easyGrab != { }) { easy-grab = easyGrab; }
   // lib.optionalAttrs (print != { }) { inherit print; };
+  constituentDefinition = {
+    inherit (args) size;
+    tub = args.tub or true;
+    max-print-overhang = (args.print or { }).maxOverhang or 60;
+    rim-interface.mode = (args.rimInterface or { }).mode or "swappable";
+    label-interface = {
+      mode = (args.labelInterface or { }).mode or "swappable";
+      depth = (args.labelInterface or { }).depth or "10mm";
+      supports = (args.labelInterface or { }).supports or "auto";
+    };
+  }
+  // lib.optionalAttrs (divider != { }) { inherit divider; }
+  // lib.optionalAttrs (easyGrab != { }) { easy-grab = easyGrab; };
   config = (formats.toml { }).generate "${name}-bin.toml" (
     {
       kind = "bin";
-      version = 1;
+      inherit version;
     }
-    // definition
+    // (if version == 1 then legacyDefinition else constituentDefinition)
   );
 in
 runCommand name

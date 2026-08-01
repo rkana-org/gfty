@@ -1,0 +1,7 @@
+kind = "swappable-label"
+version = 1
+bin = "../bins/constituent-2x2.toml"
+
+[embossing]
+clearance = "0.4mm"
+inset = "0mm"

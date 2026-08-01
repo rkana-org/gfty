@@ -1,0 +1,7 @@
+kind = "swappable-label"
+version = 1
+bin = "../bins/compatible-label-2x1.toml"
+
+[embossing]
+clearance = "0.4mm"
+inset = "0mm"

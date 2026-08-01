@@ -11,6 +11,7 @@ use serde_json::{Map, Value, json};
 use crate::config::{ConfigKind, parse_length_mm};
 
 pub const BIN_CONFIG_VERSION: u32 = 1;
+pub const BIN_BODY_CONFIG_VERSION: u32 = 2;
 pub const DEFAULT_BIN_MODEL_URL: &str = "https://cad.onshape.com/documents/044aa38d921c6673acd89aef/v/793cbd4a9bdd57cb44baa08a/e/47f09ccd9b344504691f98d4";
 const GRIDFINITY_MM: f64 = 42.0;
 
@@ -216,11 +217,143 @@ impl Default for PrintConfig {
 pub enum BinComponent {
     All,
     Bin,
+    Base,
+    SwappableRim,
+    SwappableLabel,
+    ConnectorPin,
+}
+
+impl BinComponent {
+    pub fn part_name(self) -> Option<&'static str> {
+        match self {
+            Self::All => None,
+            Self::Bin => Some("Bin"),
+            Self::Base => Some("Base"),
+            Self::SwappableRim => Some("SwappableRim"),
+            Self::SwappableLabel => Some("SwappableLabel"),
+            Self::ConnectorPin => Some("ConnectorPin"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum InterfaceMode {
+    Off,
+    Integrated,
+    Swappable,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(default, deny_unknown_fields, rename_all = "kebab-case")]
+pub struct RimInterfaceConfig {
+    pub mode: InterfaceMode,
+}
+
+impl Default for RimInterfaceConfig {
+    fn default() -> Self {
+        Self {
+            mode: InterfaceMode::Swappable,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(default, deny_unknown_fields, rename_all = "kebab-case")]
+pub struct LabelInterfaceConfig {
+    pub mode: InterfaceMode,
+    pub depth: String,
+    pub supports: SupportsMode,
+}
+
+impl Default for LabelInterfaceConfig {
+    fn default() -> Self {
+        Self {
+            mode: InterfaceMode::Swappable,
+            depth: "10mm".to_owned(),
+            supports: SupportsMode::Auto,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields, rename_all = "kebab-case")]
+pub struct BinBodyFileConfig {
+    pub kind: ConfigKind,
+    pub version: u32,
+    pub size: [u32; 3],
+    #[serde(default = "default_true")]
+    pub tub: bool,
+    #[serde(default = "default_max_overhang")]
+    pub max_print_overhang: f64,
+    #[serde(default)]
+    pub rim_interface: RimInterfaceConfig,
+    #[serde(default)]
+    pub label_interface: LabelInterfaceConfig,
+    #[serde(default)]
+    pub divider: DividerConfig,
+    #[serde(default)]
+    pub easy_grab: EasyGrabConfig,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+fn default_max_overhang() -> f64 {
+    60.0
+}
+
+impl BinBodyFileConfig {
+    fn into_carrier(self) -> Result<BinConfig> {
+        if self.kind != ConfigKind::Bin {
+            bail!("bin TOML kind must be \"bin\"");
+        }
+        if self.version != BIN_BODY_CONFIG_VERSION {
+            bail!(
+                "unsupported constituent bin TOML version {}; expected {BIN_BODY_CONFIG_VERSION}",
+                self.version
+            );
+        }
+        let mut carrier = BinConfig {
+            kind: ConfigKind::Bin,
+            version: BIN_CONFIG_VERSION,
+            size: self.size,
+            base: BaseConfig::default(),
+            bin: BinBodyConfig::default(),
+            label: BinLabelConfig::default(),
+            divider: self.divider,
+            easy_grab: self.easy_grab,
+            print: PrintConfig {
+                max_overhang: self.max_print_overhang,
+            },
+        };
+        carrier.base.enabled = false;
+        carrier.bin.tub = self.tub;
+        carrier.bin.nesting = self.rim_interface.mode != InterfaceMode::Off;
+        carrier.bin.swappable_rim = self.rim_interface.mode == InterfaceMode::Swappable;
+        carrier.label.enabled = self.label_interface.mode != InterfaceMode::Off;
+        carrier.label.swappable = self.label_interface.mode == InterfaceMode::Swappable;
+        carrier.label.depth = self.label_interface.depth;
+        carrier.label.supports = self.label_interface.supports;
+        carrier.validate()?;
+        Ok(carrier)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub struct EffectiveLabelInterface {
+    pub size_x: u32,
+    pub depth_micrometers: u64,
+    pub boundaries_ppb: Vec<u32>,
+    pub canonical_columns: Vec<String>,
 }
 
 #[derive(Debug)]
 pub struct LoadedBin {
     pub path: PathBuf,
+    pub source_version: u32,
     pub config: BinConfig,
 }
 
@@ -251,12 +384,36 @@ impl LoadedBin {
             .with_context(|| format!("failed to resolve bin {}", path.display()))?;
         let source = fs::read_to_string(&path)
             .with_context(|| format!("failed to read bin {}", path.display()))?;
-        let config: BinConfig = toml::from_str(&source)
+        let value: toml::Value = toml::from_str(&source)
             .with_context(|| format!("failed to parse bin {}", path.display()))?;
+        let version = value
+            .get("version")
+            .and_then(toml::Value::as_integer)
+            .with_context(|| format!("bin {} needs an integer version", path.display()))?;
+        let config = match version {
+            value if value == i64::from(BIN_CONFIG_VERSION) => {
+                let config: BinConfig = toml::from_str(&source)
+                    .with_context(|| format!("failed to parse bin {}", path.display()))?;
+                config
+            }
+            value if value == i64::from(BIN_BODY_CONFIG_VERSION) => {
+                let config: BinBodyFileConfig = toml::from_str(&source).with_context(|| {
+                    format!("failed to parse constituent bin {}", path.display())
+                })?;
+                config.into_carrier()?
+            }
+            version => bail!(
+                "unsupported bin TOML version {version}; expected {BIN_CONFIG_VERSION} or {BIN_BODY_CONFIG_VERSION}"
+            ),
+        };
         config
             .validate()
             .with_context(|| format!("invalid bin {}", path.display()))?;
-        Ok(Self { path, config })
+        Ok(Self {
+            path,
+            source_version: version as u32,
+            config,
+        })
     }
 }
 
@@ -317,32 +474,43 @@ impl BinConfig {
         Ok(())
     }
 
-    pub fn canonical_json(&self, component: BinComponent) -> Result<String> {
-        let effective = self.for_component(component)?;
-        effective.validate()?;
-        serde_json::to_string(&effective.canonical_value()?)
+    pub fn canonical_json(&self, _component: BinComponent) -> Result<String> {
+        self.validate()?;
+        serde_json::to_string(&self.canonical_value()?)
             .context("failed to serialize Gridfinity Ultimate configuration")
     }
 
     pub fn expected_parts(&self, component: BinComponent) -> Result<Vec<String>> {
-        let effective = self.for_component(component)?;
         let mut parts = Vec::new();
-        if effective.bin.enabled {
+        if self.bin.enabled {
             parts.push("Bin".to_owned());
-            if effective.bin.nesting && effective.bin.swappable_rim {
+            if self.bin.nesting && self.bin.swappable_rim {
                 parts.push("SwappableRim".to_owned());
             }
-            if effective.bin.tub && effective.label.enabled && effective.label.swappable {
+            if self.bin.tub && self.label.enabled && self.label.swappable {
                 parts.push("SwappableLabel".to_owned());
             }
         }
-        if effective.base.enabled {
+        if self.base.enabled {
             parts.push("Base".to_owned());
-            if effective.base.magnets && effective.base.connector_pin {
+            if self.base.magnets && self.base.connector_pin {
                 parts.push("ConnectorPin".to_owned());
             }
         }
-        Ok(parts)
+        let Some(part_name) = component.part_name() else {
+            return Ok(parts);
+        };
+        if !parts.iter().any(|part| part == part_name) {
+            bail!(
+                "configured component {part_name} does not exist; available parts: {}",
+                if parts.is_empty() {
+                    "(none)".to_owned()
+                } else {
+                    parts.join(", ")
+                }
+            );
+        }
+        Ok(vec![part_name.to_owned()])
     }
 
     pub fn supports_enabled(&self) -> Result<bool> {
@@ -373,18 +541,58 @@ impl BinConfig {
         Ok(self.resolved_easy_grabs()?.len())
     }
 
-    fn for_component(&self, component: BinComponent) -> Result<Self> {
-        let mut effective = self.clone();
-        match component {
-            BinComponent::All => {}
-            BinComponent::Bin => {
-                if !effective.bin.enabled {
-                    bail!("cannot export component bin because the bin is disabled");
+    pub fn effective_label_interface(&self) -> Result<EffectiveLabelInterface> {
+        if !self.bin.tub || !self.label.enabled || !self.label.swappable {
+            bail!("bin does not define a swappable label interface");
+        }
+        let tracks = parse_tracks(&self.divider.columns, "column")?;
+        let widths =
+            resolve_track_sizes(&tracks, f64::from(self.size[0]) * GRIDFINITY_MM, "column")?;
+        let rows = self.divider.rows.len();
+        let components = Components::new(widths.len(), rows, &self.divider.merges);
+        let total = widths.iter().sum::<f64>();
+        let mut boundaries_ppb = Vec::new();
+        let mut accumulated = 0.0;
+        for (index, width) in widths.iter().enumerate() {
+            accumulated += width;
+            let has_wall = index + 1 < widths.len() && !components.same(index, 0, index + 1, 0);
+            if has_wall {
+                let boundary = (accumulated / total * 1_000_000_000.0).round();
+                if !(1.0..1_000_000_000.0).contains(&boundary) {
+                    bail!("resolved label divider boundary is outside the bin width");
                 }
-                effective.base.enabled = false;
+                let boundary = boundary as u32;
+                if boundaries_ppb
+                    .last()
+                    .is_some_and(|previous| *previous >= boundary)
+                {
+                    bail!("resolved label divider boundaries are too close to normalize safely");
+                }
+                boundaries_ppb.push(boundary);
             }
         }
-        Ok(effective)
+        let mut previous = 0u32;
+        let mut segment_ticks = Vec::with_capacity(boundaries_ppb.len() + 1);
+        for boundary in boundaries_ppb
+            .iter()
+            .copied()
+            .chain(std::iter::once(1_000_000_000))
+        {
+            segment_ticks.push(boundary - previous);
+            previous = boundary;
+        }
+        let divisor = segment_ticks.iter().copied().reduce(gcd).unwrap_or(1);
+        let canonical_columns = segment_ticks
+            .into_iter()
+            .map(|width| format!("{}fr", width / divisor))
+            .collect();
+        let depth_mm = length(&self.label.depth, "label depth")?;
+        Ok(EffectiveLabelInterface {
+            size_x: self.size[0],
+            depth_micrometers: (depth_mm * 1000.0).round() as u64,
+            boundaries_ppb,
+            canonical_columns,
+        })
     }
 
     fn canonical_value(&self) -> Result<Value> {
@@ -806,6 +1014,15 @@ fn format_mm(mm: f64) -> String {
     format!("{} mm", compact(round(mm, 4)))
 }
 
+fn gcd(mut left: u32, mut right: u32) -> u32 {
+    while right != 0 {
+        let remainder = left % right;
+        left = right;
+        right = remainder;
+    }
+    left.max(1)
+}
+
 fn round(value: f64, digits: i32) -> f64 {
     let factor = 10f64.powi(digits);
     (value * factor).round() / factor
@@ -934,10 +1151,72 @@ radius = "12mm"
     }
 
     #[test]
-    fn component_selection_uses_existing_enable_flags() {
+    fn component_selection_uses_exact_named_manifests_without_mutating_geometry() {
         let config = default_bin();
         let bin: Value =
             serde_json::from_str(&config.canonical_json(BinComponent::Bin).unwrap()).unwrap();
-        assert_eq!(bin["base_enable"], false);
+        assert_eq!(bin["base_enable"], true);
+        assert_eq!(config.expected_parts(BinComponent::Bin).unwrap(), ["Bin"]);
+        assert_eq!(
+            config.expected_parts(BinComponent::SwappableRim).unwrap(),
+            ["SwappableRim"]
+        );
+    }
+
+    #[test]
+    fn normalizes_equivalent_first_row_partitions() {
+        let mut merged = default_bin();
+        merged.divider.columns = vec!["auto".to_owned(); 4];
+        merged.divider.merges = vec![
+            DividerMerge {
+                columns: [0, 1],
+                rows: [0, 0],
+            },
+            DividerMerge {
+                columns: [2, 3],
+                rows: [0, 0],
+            },
+        ];
+        let mut two_columns = default_bin();
+        two_columns.divider.columns = vec!["1fr".to_owned(), "1fr".to_owned()];
+
+        let merged = merged.effective_label_interface().unwrap();
+        let two_columns = two_columns.effective_label_interface().unwrap();
+        assert_eq!(merged.boundaries_ppb, vec![500_000_000]);
+        assert_eq!(merged, two_columns);
+        assert_eq!(merged.canonical_columns, ["1fr", "1fr"]);
+    }
+
+    #[test]
+    fn loads_constituent_bin_version_two() {
+        let config: BinBodyFileConfig = toml::from_str(
+            r#"
+kind = "bin"
+version = 2
+size = [2, 1, 6]
+
+[rim-interface]
+mode = "swappable"
+
+[label-interface]
+mode = "swappable"
+depth = "12mm"
+supports = "off"
+
+[divider]
+columns = ["1fr", "1fr"]
+rows = ["auto"]
+"#,
+        )
+        .unwrap();
+        let carrier = config.into_carrier().unwrap();
+        assert!(!carrier.base.enabled);
+        assert!(carrier.bin.swappable_rim);
+        assert!(carrier.label.swappable);
+        assert_eq!(carrier.label.depth, "12mm");
+        assert_eq!(
+            carrier.expected_parts(BinComponent::All).unwrap(),
+            ["Bin", "SwappableRim", "SwappableLabel"]
+        );
     }
 }

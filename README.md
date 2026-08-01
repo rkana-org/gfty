@@ -32,7 +32,8 @@ gfty export FILE [EXPORT OPTIONS]
 
 gfty bin validate BIN
 gfty bin inspect BIN
-gfty bin export BIN [--component all|bin] [EXPORT OPTIONS]
+gfty bin export BIN [--component all|bin|base|swappable-rim|swappable-label|connector-pin] [EXPORT OPTIONS]
+gfty connector-pin export [EXPORT OPTIONS]
 
 gfty label validate [LABEL]
 gfty label render LABEL [--output PREVIEW.svg]
@@ -211,13 +212,55 @@ currently bin-only: Onshape exposes them through a GET query, and artwork-label
 geometry can exceed reliable URL limits even though STEP translation uses POST
 bodies.
 
-The current `--component bin` suppresses the base but retains configured
-`SwappableRim` and `SwappableLabel` bodies; it is a bin-side set, not yet an
-exact single-body export. Exact per-part STEP and PNG export for `Base`, `Bin`,
-`SwappableRim`, `SwappableLabel`, and `ConnectorPin` has been proven through
-configured part discovery and Onshape's `partIds` filter, but is not wired into
-the CLI yet. The proposed independent base, rim, bin-body, swappable-label, and
-set schemas are documented in [`docs/component-configs.md`](docs/component-configs.md).
+`--component bin|base|swappable-rim|swappable-label|connector-pin` now resolves
+the configured Onshape part ID and exports exactly that named body. It fails
+before translation when the selected optional part does not exist.
+
+Independent constituent TOML is also supported:
+
+```toml
+# base.toml
+kind = "base"
+version = 1
+size = [2, 2]
+
+[magnets]
+enabled = true
+connector-cutouts = true
+```
+
+```toml
+# rim.toml
+kind = "rim"
+version = 1
+size = [2, 2]
+spring-compensation = true
+additional-expansion = "0mm"
+```
+
+```toml
+# swappable-label.toml
+kind = "swappable-label"
+version = 1
+bin = "../bins/small-parts.toml"
+
+[embossing]
+clearance = "0.4mm"
+inset = "0mm"
+```
+
+Version-2 bin TOML contains only bin-body and mating-interface settings. A
+`kind = "bin-set"` file composes a bin, base, rim, swappable label, and optional
+standard connector pin while checking dimensions and normalized label
+compatibility. See [`docs/component-configs.md`](docs/component-configs.md) and
+the direct files under `examples/`.
+
+Constituent downloads use a normalized request cache under
+`$XDG_CACHE_HOME/gfty/onshape` (or `$GFTY_CACHE_DIR/onshape`). Source paths and
+irrelevant bin settings are excluded from swappable-label identity, so compatible
+first-row divider layouts share one STEP and preview. Cached bytes and exact STEP
+manifests are verified before atomic installation; pass `--no-cache` to bypass
+the cache.
 
 ## Template contract
 
@@ -308,7 +351,8 @@ families is available.
 
 ## Nix builders
 
-The default package exposes `mkBin`, `mkLabel`, and `mkPlate` passthru functions. Add the
+The default package exposes `mkBin`, `mkBase`, `mkRim`, `mkSwappableLabel`,
+`mkBinSet`, `mkLabel`, and `mkPlate` passthru functions. Add the
 flake's `easyOverlay`-generated `overlays.default` to nixpkgs to make the same
 package available as `pkgs.gfty`:
 
@@ -317,6 +361,7 @@ package available as `pkgs.gfty`:
 let
   smallParts = pkgs.gfty.mkBin {
     name = "small-parts";
+    version = 2;
     size = [ 2 2 6 ];
     divider.columns = [ "auto" "auto" "auto" ];
     divider.rows = [ "auto" "auto" ];
@@ -358,9 +403,28 @@ imports = [ inputs.gfty.flakeModules.default ];
 perSystem = { ... }: {
   gfty = {
     bins.small-parts = {
+      version = 2;
       size = [ 2 2 6 ];
       divider.columns = [ "auto" "auto" "auto" ];
       divider.rows = [ "auto" "auto" ];
+    };
+    bases.small-parts = {
+      size = [ 2 2 ];
+      magnets.enabled = true;
+      magnets.connectorCutouts = true;
+    };
+    rims.small-parts = {
+      size = [ 2 2 ];
+    };
+    swappableLabels.small-parts = {
+      bin = "small-parts";
+    };
+    binSets.small-parts = {
+      bin = "small-parts";
+      base = "small-parts";
+      rim = "small-parts";
+      swappableLabel = "small-parts";
+      connectorPin = true;
     };
     labels.screws = {
       bin = "small-parts";
@@ -382,14 +446,19 @@ the module verifies that every plate label has the same X/Y bin size. The legacy
 `gfty-ultimate` attribute remains accepted instead of `bin` during migration,
 but the two sources cannot be specified together.
 
-Outputs are grouped as `packages.bins.<name>`, `packages.labels.<name>`, and
-`packages.plates.<name>`. The module also generates explicit runtime apps which
+Outputs are grouped under `packages.bins`, `bases`, `rims`,
+`swappable-labels`, `bin-sets`, `labels`, and `plates`. The module also generates
+explicit runtime apps which
 build local inputs through Nix, then download the configured STEP outside the
 Nix sandbox and store:
 
 ```sh
 nix run .#export-bin-small-parts
-nix run .#export-bin-small-parts -- --component bin
+nix run .#export-base-small-parts
+nix run .#export-rim-small-parts
+nix run .#export-swappable-label-small-parts
+nix run .#export-bin-set-small-parts
+nix run .#export-connector-pin
 nix run .#export-label-screws
 nix run .#export-plate-all
 nix run .#export-label-screws -- --output custom.step --force
@@ -398,7 +467,9 @@ nix run .#export-label-screws -- --output custom.step --force
 The default output is `<name>.step` in the caller's current directory. Apps use
 normal runtime credential discovery and never capture credentials in Nix. They
 are intentionally manual `nix run` actions rather than derivations because
-Onshape translator output is not guaranteed byte-reproducible. Override the pinned immutable models with
+Onshape translator output is not guaranteed byte-reproducible. Normalized
+runtime caching still prevents repeat API exports without putting remote files
+or credentials in the store. Override the pinned immutable models with
 `perSystem.gfty.labelModelUrl` or `binModelUrl` when testing a new model
 version.
 
