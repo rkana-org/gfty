@@ -90,34 +90,29 @@ alter the main `Bin` body. Rim compensation and label embossing settings do not.
 
 ### Swappable label blank
 
-A swappable label blank records its normalized physical interface instead of an
-entire bin divider layout.
+A user cannot reasonably author normalized slot positions, and Gridfinity
+Ultimate still needs a divider configuration to construct the body. A
+swappable-label source therefore references the bin whose label interface it
+must fit:
 
 ```toml
 kind = "swappable-label"
 version = 1
-size-x = 2
-depth = "10mm"
-slots = ["1/3", "2/3"]
+bin = "../bins/small-parts.toml"
 
 [embossing]
 clearance = "0.4mm"
 inset = "0mm"
 ```
 
-`slots` are reduced dimensionless positions across the label width. They are
-strictly between zero and one, sorted, and unique. Equal X size, depth, and slot
-positions define interface compatibility. Embossing clearance and inset alter
-the manufactured blank and therefore its geometry key, but not compatibility.
+X size, label depth, and the effective divider walls in row zero are derived
+from that bin. Embossing clearance and inset alter the manufactured blank and
+therefore its geometry key, but not compatibility.
 
-For direct files, a command should derive this normalized file from a bin:
-
-```text
-gfty swappable-label derive bin.toml --output front-label.toml
-```
-
-The flake module can provide the equivalent `fromBin` option without preserving
-the source bin as part of the normalized label identity.
+The referenced bin is provenance, not identity. Two label files may reference
+very different bins and still normalize to the same interface and geometry
+keys. The user never writes slot ratios, and slot ratios are never sent to
+Onshape as a replacement for divider configuration.
 
 ### Complete set
 
@@ -138,8 +133,9 @@ Set validation requires:
 
 - Base and rim X/Y size equal bin X/Y size.
 - A referenced rim requires `rim-interface.mode = "swappable"`.
-- The label X size, depth, and normalized slots equal the interface derived from
-  the bin.
+- The referenced label's normalized X size, depth, and effective row-zero walls
+  equal the interface derived from the set's bin. The label may have been
+  authored against a different compatible bin.
 - A referenced label requires `label-interface.mode = "swappable"`.
 - A connector pin may require an applicable magnetic/cutout base policy, though
   the pin geometry itself has no configuration.
@@ -149,7 +145,7 @@ artifacts must always use their constituent's canonical carrier configuration,
 not the complete set configuration, so the same constituent has the same remote
 request in every set.
 
-## Deriving label slots
+## Normalizing the label interface
 
 Let `W = size_x * 42mm`. Resolve column tracks exactly as the current designer
 and Rust validator do. Let `w[i]` be each resolved column width.
@@ -160,23 +156,41 @@ zero:
 
 ```text
 if compartment(i - 1, 0) != compartment(i, 0):
-    slot = sum(w[0..i]) / W
+    boundary = sum(w[0..i]) / W
 ```
 
-Reduce each position to a rational string, then sort and deduplicate it. Three
-equal columns produce `1/3` and `2/3`; a 20mm first column in a two-unit-wide
-bin produces `5/21`.
+Boundaries are an internal normalization detail, not a public TOML field. Reduce
+them to exact rational or fixed-precision integer values, sort them, and remove
+duplicates. Three equal columns normalize to boundaries at `1/3` and `2/3`; a
+20mm first column in a two-unit-wide bin normalizes to `5/21`.
+
+To create the actual Onshape request, turn the effective row-zero partition back
+into a canonical minimal divider configuration:
+
+1. Coalesce adjacent original columns where row zero has no wall.
+2. Use the resulting segment widths as canonical column tracks.
+3. Use one `auto` row.
+4. Use no merges or easy-grab entries.
+
+For example, four equal columns where the first two are merged in row zero
+become canonical column weights `[2, 1, 1]`. Both the original and canonical
+divider configurations place label slots at the same positions, while the
+canonical form is independent of irrelevant Y size, later rows, easy grabs, and
+merges that do not alter row zero. Gridfinity Ultimate receives this synthesized
+`bin_tub_divider_config`; it never receives boundary ratios as a new model
+parameter.
 
 Use exact decimal rational arithmetic over the values actually serialized to
 Gridfinity Ultimate: fractional tracks are canonicalized to 9 decimal places,
 fixed lengths to 6 decimal places, and physical label lengths to micrometers.
-This avoids floating-point spelling differences changing keys. The algorithm
-must have conformance fixtures shared by browser, Rust, and Nix implementations.
+This avoids floating-point spelling differences changing keys. The canonical
+column serialization needs live equivalence tests against representative source
+dividers before the contract is frozen.
 
-Two keys are useful:
+Two internal keys are useful:
 
 ```text
-label-interface/v1 = { size-x, depth-um, slots }
+label-interface/v1 = { size-x, depth-um, effective-row-zero-boundaries }
 label-geometry/v1  = { interface-key, emboss-clearance-um, emboss-inset-um,
                        any other empirically proven label-body option }
 ```
@@ -255,7 +269,7 @@ perSystem.gfty = {
   };
 
   swappableLabels.small-parts = {
-    fromBin = "small-parts";
+    bin = "small-parts";
     embossing.clearance = "0.4mm";
     embossing.inset = "0mm";
   };
@@ -270,10 +284,17 @@ perSystem.gfty = {
 };
 ```
 
-Rust remains the authority for validation. Any Nix slot/key implementation needs
-conformance tests against Rust to prevent evaluation-time and runtime identities
-from diverging. A collection exporter must also group runtime requests by
-request key, providing a second deduplication layer independent of Nix aliases.
+The flake module resolves `bin` before creating the request package. It hashes
+the normalized effective row-zero interface, not the referenced bin name or its
+complete divider configuration. Two labels derived from compatible bins are
+therefore aliases to one request derivation even when the bins have different Y
+sizes, later rows, bases, rims, easy grabs, or row-zero merge representations.
+
+Rust remains the authority for validation. Any Nix normalization/key
+implementation needs conformance tests against Rust to prevent evaluation-time
+and runtime identities from diverging. A collection exporter must also group
+runtime requests by normalized request key, providing a second deduplication
+layer independent of Nix aliases.
 
 ## Why remote exports are not Nix derivations
 
@@ -298,12 +319,15 @@ $XDG_CACHE_HOME/gfty/onshape/<request-key>/preview-key.png
 $XDG_CACHE_HOME/gfty/onshape/<request-key>/manifest.json
 ```
 
-The request key should include the constituent geometry key, immutable model
-target, component name, carrier-contract version, and STEP options. A preview
-key additionally includes dimensions, camera, edges, and background. It is a
-request identity, not a prediction of downloaded bytes. The manifest records and
-verifies the actual content hash and expected part names before a cached artifact
-is copied or hard-linked atomically to an output path.
+The request key should include the **normalized** constituent geometry key,
+immutable model target, component name, canonical carrier-contract version, and
+STEP options—not the source TOML bytes or referenced bin name. Consequently two
+different bin/divider requests that normalize to the same label produce the
+same canonical carrier and cache key. A preview key additionally includes
+dimensions, camera, edges, and background. It is a request identity, not a
+prediction of downloaded bytes. The manifest records and verifies the actual
+content hash and expected part names before a cached artifact is copied or
+hard-linked atomically to an output path.
 
 This preserves the useful Nix behavior—pure normalized identities and shared
 request packages—while keeping credentials, API calls, and downloaded geometry
