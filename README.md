@@ -216,7 +216,8 @@ The current `--component bin` suppresses the base but retains configured
 exact single-body export. Exact per-part STEP and PNG export for `Base`, `Bin`,
 `SwappableRim`, `SwappableLabel`, and `ConnectorPin` has been proven through
 configured part discovery and Onshape's `partIds` filter, but is not wired into
-the CLI yet.
+the CLI yet. The proposed independent base, rim, bin-body, swappable-label, and
+set schemas are documented in [`docs/component-configs.md`](docs/component-configs.md).
 
 ## Template contract
 

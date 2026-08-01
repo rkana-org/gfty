@@ -37,6 +37,8 @@ is in `../std-library/`.
 - `src/credentials.rs`: protected Onshape credential-file discovery.
 - `src/onshape.rs`: signed encode/translate/poll/download API operations.
 - `src/step.rs`: expected filament manifest validation and atomic downloads.
+- `docs/component-configs.md`: draft constituent schemas, compatibility keys,
+  Nix request identity, and runtime export-cache design.
 - `src/template.rs`: SVG template contract and icon-box metadata.
 - `src/compose.rs`: shared label composition pipeline.
 - `src/color.rs`: SVG fill/stroke discovery, sidecars, overrides, preview colors.

@@ -125,6 +125,9 @@ output indefinitely.
 
 ## Exporting components
 
+The proposed constituent schemas, compatibility keys, Nix deduplication, and
+runtime cache design are specified in `docs/component-configs.md`.
+
 A label is tied to the bin configuration that provides its blank/prototype, so a
 label definition may reference a bin definition. Label and label-plate exports
 always contain every generated filament part; component selection does not apply
