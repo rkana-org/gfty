@@ -40,8 +40,8 @@ is in `../std-library/`.
 - `src/credentials.rs`: protected Onshape credential-file discovery.
 - `src/onshape.rs`: signed encode/translate/poll/download API operations.
 - `src/step.rs`: expected filament manifest validation and atomic downloads.
-- `docs/component-configs.md`: draft constituent schemas, compatibility keys,
-  Nix request identity, and runtime export-cache design.
+- `docs/ARCHITECTURE.md`: current configuration, geometry, Onshape transport,
+  cache, Nix-boundary, FeatureScript, and designer contracts.
 - `src/template.rs`: SVG template contract and icon-box metadata.
 - `src/compose.rs`: shared label composition pipeline.
 - `src/color.rs`: SVG fill/stroke discovery, sidecars, overrides, preview colors.
@@ -239,8 +239,8 @@ body schema has `configuration`; the format-specific
 `createPartStudioExportStep` schema currently does not. Translation responses do
 not expose successful FeatureScript warnings, so enforce invalid output as
 regeneration errors and validate downloaded STEP part names/counts. See
-`docs/onshape-api.md` for request and test details. The authenticated live schema
-can be retrieved from `/api/openapi`.
+`docs/ARCHITECTURE.md` for the stable transport contract. The authenticated live
+schema can be retrieved from `/api/openapi`.
 
 Fallbacks which mutate a workspace are possible but less desirable:
 

@@ -243,8 +243,8 @@ inset = "0mm"
 Bin TOML contains only bin-body and mating-interface settings. A
 `kind = "bin-set"` file composes a bin, base, rim, swappable label, and optional
 standard connector pin while checking dimensions and normalized label
-compatibility. See [`docs/component-configs.md`](docs/component-configs.md) and
-the direct files under `examples/`.
+compatibility. See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) and the direct
+files under `examples/`.
 
 Constituent downloads use a normalized request cache under
 `$XDG_CACHE_HOME/gfty/onshape` (or `$GFTY_CACHE_DIR/onshape`). Source paths and
