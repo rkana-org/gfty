@@ -8,6 +8,14 @@ use crate::{color::PreviewPalette, compose::RenderedLabel};
 
 pub const EXPORT_VERSION: u32 = 2;
 
+// Onshape accepts cubic Beziers but does not form a sketch region when an end
+// control is exactly coincident with its adjacent endpoint. Move only such
+// controls by at most one micron toward the next distinct control. The
+// resulting geometric difference is far below print resolution while
+// preserving closed SVG holes.
+const ONSHAPE_CONTROL_NUDGE_FRACTION: f64 = 0.001;
+const ONSHAPE_CONTROL_NUDGE_MAX_MM: f64 = 0.001;
+
 #[derive(Debug, Serialize)]
 pub struct ExportDocument {
     pub version: u32,
@@ -248,21 +256,23 @@ fn convert_path(
                         to.x + (control.x - to.x) * 2.0 / 3.0,
                         to.y + (control.y - to.y) * 2.0 / 3.0,
                     );
-                    contour.segments.push(Segment::Cubic {
-                        c1: map_point(c1, canvas, size_mm),
-                        c2: map_point(c2, canvas, size_mm),
-                        to: map_point(to, canvas, size_mm),
-                    });
+                    contour.segments.push(onshape_cubic(
+                        map_point(from, canvas, size_mm),
+                        map_point(c1, canvas, size_mm),
+                        map_point(c2, canvas, size_mm),
+                        map_point(to, canvas, size_mm),
+                    ));
                 }
                 current = Some(to);
             }
             PathSegment::CubicTo(c1, c2, to) => {
-                if let Some(contour) = &mut current_contour {
-                    contour.segments.push(Segment::Cubic {
-                        c1: map_point(c1, canvas, size_mm),
-                        c2: map_point(c2, canvas, size_mm),
-                        to: map_point(to, canvas, size_mm),
-                    });
+                if let (Some(from), Some(contour)) = (current, &mut current_contour) {
+                    contour.segments.push(onshape_cubic(
+                        map_point(from, canvas, size_mm),
+                        map_point(c1, canvas, size_mm),
+                        map_point(c2, canvas, size_mm),
+                        map_point(to, canvas, size_mm),
+                    ));
                 }
                 current = Some(to);
             }
@@ -276,6 +286,46 @@ fn convert_path(
     }
     finish(&mut current_contour, &mut contours);
     contours
+}
+
+fn onshape_cubic(from: [f64; 2], mut c1: [f64; 2], mut c2: [f64; 2], to: [f64; 2]) -> Segment {
+    let original_c1 = c1;
+    let original_c2 = c2;
+    if points_close(c1, from) {
+        c1 = interpolate(
+            from,
+            if points_close(original_c2, from) {
+                to
+            } else {
+                original_c2
+            },
+        );
+    }
+    if points_close(c2, to) {
+        c2 = interpolate(
+            to,
+            if points_close(original_c1, to) {
+                from
+            } else {
+                original_c1
+            },
+        );
+    }
+    Segment::Cubic { c1, c2, to }
+}
+
+fn points_close(first: [f64; 2], second: [f64; 2]) -> bool {
+    (first[0] - second[0]).abs() < 1e-9 && (first[1] - second[1]).abs() < 1e-9
+}
+
+fn interpolate(from: [f64; 2], toward: [f64; 2]) -> [f64; 2] {
+    let delta = [toward[0] - from[0], toward[1] - from[1]];
+    let distance = delta[0].hypot(delta[1]);
+    if distance == 0.0 {
+        return from;
+    }
+    let fraction = ONSHAPE_CONTROL_NUDGE_FRACTION.min(ONSHAPE_CONTROL_NUDGE_MAX_MM / distance);
+    [from[0] + delta[0] * fraction, from[1] + delta[1] * fraction]
 }
 
 fn map_point(point: usvg::tiny_skia_path::Point, canvas: [f64; 2], size_mm: [f64; 2]) -> [f64; 2] {
@@ -317,6 +367,27 @@ mod tests {
         let shape = &json["labels"][0]["parts"][0]["shapes"][0];
         assert!(shape.get("contours").is_none());
         assert_eq!(shape["path"], "M -12.7 6.35 L 12.7 6.35 L 12.7 -6.35 Z");
+    }
+
+    #[test]
+    fn nudges_endpoint_coincident_bezier_controls_for_onshape_regions() {
+        let rendered = RenderedLabel {
+            svg: r##"<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><path fill="#8aaed6" d="M0 0 C0 0 10 5 10 5 L10 10 L0 10 Z"/></svg>"##.to_owned(),
+            palette: PreviewPalette::new([3]).unwrap(),
+            size_mm: [10.0, 10.0],
+            base_filament: 3,
+        };
+
+        let output = export_rendered(&rendered).unwrap();
+        let contour = &output.labels[0].parts[0].shapes[0].contours[0];
+        let Segment::Cubic { c1, c2, to } = contour.segments[0] else {
+            panic!("expected cubic");
+        };
+        assert_point_close(to, [5.0, 0.0]);
+        assert_point_close(c1, [-4.999_105_573, 4.999_552_786]);
+        assert_point_close(c2, [4.999_105_573, 0.000_447_214]);
+        assert!(!points_close(c1, contour.start));
+        assert!(!points_close(c2, to));
     }
 
     #[test]
