@@ -185,8 +185,9 @@ Current JSON is version 2:
   `swappable-labels`, `bin-sets`, `labels`, and `plates`.
 - Label bundles contain `label.svg` and `label.toml`; plate bundles contain
   `plate.svg`. Runtime exporters generate geometry JSON in memory.
-- Module labels and plates require a named bin. Plates own the reference, and
-  all child labels must use the same X/Y bin size.
+- Module labels and plates require a named bin. Module label icon lists accept
+  direct SVG paths, `{ icon = PATH; }`, and `{ spacer = "1mm"; }` entries.
+  Plates own the reference, and all child labels must use the same X/Y bin size.
 - Browser `onshapeUrl` passthru values were removed because they fail around
   5-6 KB. The module generates `export-label-<name>` and
   `export-plate-<name>` apps instead. These perform runtime API exports outside

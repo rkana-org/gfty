@@ -256,6 +256,14 @@ let
     };
   };
 
+  iconPlacementType = types.either types.path (
+    types.addCheck types.attrs (
+      value:
+      (builtins.attrNames value == [ "icon" ] && builtins.isPath value.icon)
+      || (builtins.attrNames value == [ "spacer" ] && builtins.isString value.spacer)
+    )
+  );
+
   binSetType = types.submodule {
     options = {
       name = mkOption {
@@ -309,9 +317,9 @@ let
         description = "Text field contents, keyed without the text- prefix.";
       };
       icons = mkOption {
-        type = types.attrsOf (types.listOf types.path);
+        type = types.attrsOf (types.listOf iconPlacementType);
         default = { };
-        description = "Ordered icon paths for each icon box, keyed without the icons- prefix.";
+        description = "Ordered icon paths and explicit spacers for each icon box, keyed without the icons- prefix.";
       };
       bin = mkOption {
         type = types.str;

@@ -421,6 +421,11 @@ perSystem = { ... }: {
       bin = "small-parts";
       template = ./templates/label.svg;
       text.main = "Screws";
+      icons.fasteners = [
+        ./icons/bolt.svg
+        { spacer = "1mm"; }
+        { icon = ./icons/nut.svg; }
+      ];
     };
     plates.all = {
       bin = "small-parts";

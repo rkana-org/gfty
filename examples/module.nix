@@ -55,6 +55,11 @@
         template = ./templates/1x1.svg;
         text.top = "Hi";
         text.bottom = "Hi";
+        icons.main = [
+          ./icons/square.svg
+          { spacer = "1mm"; }
+          { icon = ./icons/square.svg; }
+        ];
       };
       plates.module-example = {
         bin = "module-example";
