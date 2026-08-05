@@ -219,6 +219,7 @@ fn compose_icons(
                 .attributes
                 .entry("fill".to_owned())
                 .or_insert_with(|| format!("#{inherited_fill}"));
+            force_overflow_visible(&mut recolored_root);
             let recolored =
                 serialize_element(&recolored_root).context("failed to serialize recolored icon")?;
             let normalized = crate::svg::normalize_svg_with_parser(
@@ -266,6 +267,9 @@ fn compose_icons(
                 "viewBox".to_owned(),
                 format!("0 0 {normalized_width} {normalized_height}"),
             );
+            nested_svg
+                .attributes
+                .insert("overflow".to_owned(), "visible".to_owned());
             nested_svg.children.push(XMLNode::Element(group));
             box_result.push(nested_svg);
             instance_index += 1;
@@ -331,6 +335,30 @@ fn transform_style(style: &str) -> Option<String> {
         })
         .collect::<Vec<_>>();
     (!declarations.is_empty()).then(|| declarations.join(";"))
+}
+
+fn force_overflow_visible(element: &mut Element) {
+    element
+        .attributes
+        .insert("overflow".to_owned(), "visible".to_owned());
+    let Some(style) = element.attributes.get("style") else {
+        return;
+    };
+    let mut declarations = style
+        .split(';')
+        .filter_map(|declaration| {
+            let declaration = declaration.trim();
+            if declaration.is_empty() {
+                return None;
+            }
+            let (name, _) = declaration.split_once(':')?;
+            (!name.trim().eq_ignore_ascii_case("overflow")).then(|| declaration.to_owned())
+        })
+        .collect::<Vec<_>>();
+    declarations.push("overflow:visible".to_owned());
+    element
+        .attributes
+        .insert("style".to_owned(), declarations.join(";"));
 }
 
 fn apply_text_fields(
@@ -453,6 +481,36 @@ mod tests {
         }
     }
 
+    fn exported_icon_bounds(label: &LoadedLabel) -> [f64; 4] {
+        let rendered = render_label(label, &crate::svg::FontOptions::default()).unwrap();
+        let exported = crate::export::export_rendered(&rendered).unwrap();
+        let contour = &exported.labels[0].parts[0].shapes[0].contours[0];
+        let mut points = vec![contour.start];
+        for segment in &contour.segments {
+            match segment {
+                crate::export::Segment::Line { to } => points.push(*to),
+                crate::export::Segment::Cubic { c1, c2, to } => {
+                    points.extend([*c1, *c2, *to]);
+                }
+            }
+        }
+        points.iter().fold(
+            [
+                f64::INFINITY,
+                f64::INFINITY,
+                f64::NEG_INFINITY,
+                f64::NEG_INFINITY,
+            ],
+            |mut bounds, point| {
+                bounds[0] = bounds[0].min(point[0]);
+                bounds[1] = bounds[1].min(point[1]);
+                bounds[2] = bounds[2].max(point[0]);
+                bounds[3] = bounds[3].max(point[1]);
+                bounds
+            },
+        )
+    }
+
     #[test]
     fn creates_text_nodes_and_removes_icon_boxes() {
         let mut root = Element::parse(
@@ -511,34 +569,54 @@ mod tests {
             root.to_owned(),
         );
 
-        let rendered = render_label(&label, &crate::svg::FontOptions::default()).unwrap();
-        let exported = crate::export::export_rendered(&rendered).unwrap();
-        let contour = &exported.labels[0].parts[0].shapes[0].contours[0];
-        let mut points = vec![contour.start];
-        for segment in &contour.segments {
-            match segment {
-                crate::export::Segment::Line { to } => points.push(*to),
-                crate::export::Segment::Cubic { c1, c2, to } => {
-                    points.extend([*c1, *c2, *to]);
-                }
-            }
-        }
-        let bounds = points.iter().fold(
-            [
-                f64::INFINITY,
-                f64::INFINITY,
-                f64::NEG_INFINITY,
-                f64::NEG_INFINITY,
-            ],
-            |mut bounds, point| {
-                bounds[0] = bounds[0].min(point[0]);
-                bounds[1] = bounds[1].min(point[1]);
-                bounds[2] = bounds[2].max(point[0]);
-                bounds[3] = bounds[3].max(point[1]);
-                bounds
-            },
-        );
+        let bounds = exported_icon_bounds(&label);
         for (actual, expected) in bounds.into_iter().zip([-28.0, 2.0, -12.0, 18.0]) {
+            assert!((actual - expected).abs() < 1e-5, "{bounds:?}");
+        }
+    }
+
+    #[test]
+    fn icon_geometry_outside_canvas_is_not_clipped_to_the_icon_box() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
+        fs::create_dir_all(root.join("templates")).unwrap();
+        fs::create_dir_all(root.join("icons")).unwrap();
+        fs::write(
+            root.join("templates/label.svg"),
+            r#"<svg xmlns="http://www.w3.org/2000/svg" width="100mm" height="100mm" viewBox="0 0 100 100"><rect id="icons-main" x="40" y="40" width="20" height="20" fill="none"/></svg>"#,
+        )
+        .unwrap();
+        fs::write(
+            root.join("icons/dimensioned.svg"),
+            r#"<svg xmlns="http://www.w3.org/2000/svg" width="10mm" height="10mm" viewBox="0 0 10 10"><path d="M-5 0H15V10H-5Z"/></svg>"#,
+        )
+        .unwrap();
+        fs::write(
+            root.join("bin.toml"),
+            "kind = \"bin\"\nversion = 2\nsize = [1, 1, 6]\n",
+        )
+        .unwrap();
+        let label = LoadedLabel::from_config(
+            LabelConfig {
+                kind: crate::config::ConfigKind::Label,
+                version: crate::config::LABEL_CONFIG_VERSION,
+                template: "templates/label.svg".to_owned(),
+                bin: "bin.toml".to_owned(),
+                filament: 0,
+                text: BTreeMap::new(),
+                icon: BTreeMap::new(),
+                icons: BTreeMap::from([(
+                    "main".to_owned(),
+                    vec![IconPlacement::Icon {
+                        icon: "icons/dimensioned.svg".to_owned(),
+                    }],
+                )]),
+            },
+            root.to_owned(),
+        );
+
+        let bounds = exported_icon_bounds(&label);
+        for (actual, expected) in bounds.into_iter().zip([-20.0, -10.0, 20.0, 10.0]) {
             assert!((actual - expected).abs() < 1e-5, "{bounds:?}");
         }
     }

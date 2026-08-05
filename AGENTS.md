@@ -89,6 +89,8 @@ is in `../std-library/`.
   `top|center|bottom` vertically.
 - Icons preserve input order and aspect ratio. There are no implicit gaps;
   spacers are explicit.
+- Icon layout/aspect ratio is based on the icon SVG viewBox, but icon geometry
+  outside the icon SVG canvas/viewBox must remain visible after composition.
 - Keep XML mutable with `xmltree`, then let `usvg` resolve viewport transforms,
   affine transforms, primitives, strokes, and text outlines.
 - Requested fonts must exist. Do not silently substitute missing text fonts.

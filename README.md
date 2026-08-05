@@ -276,7 +276,9 @@ Icon content is centered horizontally by default. Set layout attributes on an
 
 Horizontal alignment accepts `left`, `center`, or `right`; vertical alignment
 accepts `top`, `center`, or `bottom`. Icons retain their order and aspect ratio,
-spacers act along the selected direction, and no implicit gaps are added.
+spacers act along the selected direction, and no implicit gaps are added. Icon
+geometry may extend outside the icon SVG canvas; layout still uses the icon
+`viewBox`, but out-of-canvas paths remain visible in the label.
 
 ```toml
 kind = "label"
