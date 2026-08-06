@@ -58,7 +58,12 @@
         icons.main = [
           ./icons/square.svg
           { spacer = "1mm"; }
-          { icon = ./icons/square.svg; }
+          {
+            icon = ./icons/square.svg;
+            colors = {
+              "1" = 5;
+            };
+          }
         ];
       };
       plates.module-example = {

@@ -148,6 +148,7 @@ content = 'M{3}x[10]'
 
 [[icons.fasteners]]
 icon = "../icons/bolt.svg"
+colors = { 1 = 2 } # Resolved color index (or exact hex) to filament ID.
 
 [[icons.fasteners]]
 spacer = "1mm"

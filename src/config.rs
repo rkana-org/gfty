@@ -65,8 +65,16 @@ pub struct IconDefinition {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(untagged)]
 pub enum IconPlacement {
-    Icon { icon: String },
-    Spacer { spacer: String },
+    Icon {
+        icon: String,
+
+        /// Keys are either resolved filament indices or exact source hex colors.
+        #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+        colors: BTreeMap<String, u32>,
+    },
+    Spacer {
+        spacer: String,
+    },
 }
 
 #[derive(Debug)]
@@ -83,12 +91,16 @@ pub struct ResolvedIcon<'a> {
 }
 
 impl ResolvedIcon<'_> {
-    pub fn color_mapping(&self) -> Result<crate::color::ColorMapping> {
+    pub fn color_mapping(
+        &self,
+        placement_colors: &BTreeMap<String, u32>,
+    ) -> Result<crate::color::ColorMapping> {
         let mapping = crate::color::ColorMapping::load(&self.path)?;
-        match self.definition {
-            Some(definition) => mapping.with_overrides(&definition.colors),
-            None => Ok(mapping),
-        }
+        let mapping = match self.definition {
+            Some(definition) => mapping.with_overrides(&definition.colors)?,
+            None => mapping,
+        };
+        mapping.with_overrides(placement_colors)
     }
 }
 
@@ -194,7 +206,7 @@ impl LoadedLabel {
 
         for (name, icon) in &self.config.icon {
             ensure_file(&self.icon_path(icon), &format!("icon alias {name:?}"))?;
-            validate_color_overrides(name, &icon.colors)?;
+            validate_color_overrides(&format!("icon alias {name:?}"), &icon.colors)?;
             crate::color::ColorMapping::load(&self.icon_path(icon))?
                 .with_overrides(&icon.colors)
                 .with_context(|| {
@@ -215,12 +227,16 @@ impl LoadedLabel {
             let mut row = Vec::new();
             for entry in entries {
                 match entry {
-                    IconPlacement::Icon { icon } => {
+                    IconPlacement::Icon { icon, colors } => {
+                        validate_color_overrides(
+                            &format!("icon {icon:?} in icon box {box_name:?}"),
+                            colors,
+                        )?;
                         let resolved = self.resolve_icon(icon).with_context(|| {
                             format!("invalid icon {icon:?} in icon box {box_name:?}")
                         })?;
                         ensure_file(&resolved.path, &format!("icon {icon:?}"))?;
-                        resolved.color_mapping().with_context(|| {
+                        resolved.color_mapping(colors).with_context(|| {
                             format!(
                                 "invalid colors for icon {icon:?} at {}",
                                 resolved.path.display()
@@ -255,19 +271,19 @@ impl LoadedLabel {
     }
 }
 
-fn validate_color_overrides(name: &str, colors: &BTreeMap<String, u32>) -> Result<()> {
+fn validate_color_overrides(description: &str, colors: &BTreeMap<String, u32>) -> Result<()> {
     let mut normalized = BTreeSet::new();
     for key in colors.keys() {
         let valid_index = key.parse::<u32>().is_ok();
         let valid_hex = normalize_hex_color(key).is_some();
         if !valid_index && !valid_hex {
             bail!(
-                "icon alias {name:?} has invalid color override key {key:?}; expected an index or hex color"
+                "{description} has invalid color override key {key:?}; expected an index or hex color"
             );
         }
         let canonical = normalize_hex_color(key).unwrap_or_else(|| key.clone());
         if !normalized.insert(canonical.clone()) {
-            bail!("icon alias {name:?} repeats color override {canonical:?}");
+            bail!("{description} repeats color override {canonical:?}");
         }
     }
     Ok(())
@@ -393,6 +409,30 @@ mod tests {
         assert_eq!(normalize_hex_color("#F00").as_deref(), Some("ff0000"));
         assert_eq!(normalize_hex_color("00ff7F").as_deref(), Some("00ff7f"));
         assert_eq!(normalize_hex_color("nope"), None);
+    }
+
+    #[test]
+    fn parses_inline_icon_color_overrides() {
+        let config: LabelConfig = toml::from_str(
+            r##"
+kind = "label"
+version = 1
+template = "template.svg"
+bin = "bin.toml"
+
+[[icons.main]]
+icon = "icons/status.svg"
+colors = { 0 = 1, 1 = 5, "#ff0000" = 5 }
+"##,
+        )
+        .unwrap();
+        let [IconPlacement::Icon { icon, colors }] = config.icons["main"].as_slice() else {
+            panic!("expected one icon placement");
+        };
+        assert_eq!(icon, "icons/status.svg");
+        assert_eq!(colors["0"], 1);
+        assert_eq!(colors["1"], 5);
+        assert_eq!(colors["#ff0000"], 5);
     }
 
     #[test]

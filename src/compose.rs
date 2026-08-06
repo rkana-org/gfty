@@ -119,7 +119,7 @@ fn collect_filaments(
     }
     for entries in label.config.icons.values() {
         for entry in entries {
-            let IconPlacement::Icon { icon } = entry else {
+            let IconPlacement::Icon { icon, colors } = entry else {
                 continue;
             };
             let resolved = label
@@ -127,7 +127,7 @@ fn collect_filaments(
                 .with_context(|| format!("failed to resolve icon {icon:?}"))?;
             filaments.extend(
                 resolved
-                    .color_mapping()
+                    .color_mapping(colors)
                     .with_context(|| {
                         format!(
                             "failed to load colors for icon {icon:?} at {}",
@@ -167,7 +167,7 @@ fn compose_icons(
         let mut icon_details = Vec::new();
         for entry in entries {
             match entry {
-                IconPlacement::Icon { icon } => {
+                IconPlacement::Icon { icon, colors } => {
                     let resolved = label
                         .resolve_icon(icon)
                         .with_context(|| format!("failed to resolve icon {icon:?}"))?;
@@ -178,7 +178,7 @@ fn compose_icons(
                         name: icon.clone(),
                         aspect_ratio: info.view_box.width / info.view_box.height,
                     });
-                    icon_details.push(resolved);
+                    icon_details.push((resolved, colors));
                 }
                 IconPlacement::Spacer { spacer } => {
                     let millimeters = parse_length_mm(spacer)
@@ -198,11 +198,11 @@ fn compose_icons(
 
         let placed = crate::layout::layout_icons(icon_box, &row)
             .with_context(|| format!("failed to lay out icon box {box_name:?}"))?;
-        for (placement, resolved) in placed.iter().zip(icon_details) {
+        for (placement, (resolved, placement_colors)) in placed.iter().zip(icon_details) {
             let source = fs::read_to_string(&resolved.path)
                 .with_context(|| format!("failed to read icon {}", resolved.path.display()))?;
             let colors = resolved
-                .color_mapping()
+                .color_mapping(placement_colors)
                 .with_context(|| format!("invalid colors for icon {}", resolved.path.display()))?;
             let recolored = crate::color::recolor_svg(&source, &colors.source_to_filament, palette);
             let inherited_fill = colors
@@ -563,6 +563,7 @@ mod tests {
                     "main".to_owned(),
                     vec![IconPlacement::Icon {
                         icon: "icons/square.svg".to_owned(),
+                        colors: BTreeMap::new(),
                     }],
                 )]),
             },
@@ -609,6 +610,7 @@ mod tests {
                     "main".to_owned(),
                     vec![IconPlacement::Icon {
                         icon: "icons/dimensioned.svg".to_owned(),
+                        colors: BTreeMap::new(),
                     }],
                 )]),
             },

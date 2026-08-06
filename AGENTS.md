@@ -93,6 +93,8 @@ parsing for retired schemas or implicit kinds.
 - `gfty label create` paths resolve relative to the current working directory.
 - Pathless `validate` recursively scans `ROOT/labels`; `--root` overrides ROOT.
 - `.svg` icon values are paths. Other icon values are aliases in `[icon.NAME]`.
+- Icon color overrides may be declared on `[icon.NAME.colors]` aliases or
+  inline on individual `[[icons.BOX]]` placements.
 
 ### Templates and composition
 
@@ -211,8 +213,9 @@ Current JSON is version 2:
 - Nix label builders retain adjacent SVG color sidecars automatically. Additional
   font outputs are passed with `--font-dir` and do not rebuild `gfty`.
 - Module labels and plates require a named bin. Module label icon lists accept
-  direct SVG paths, `{ icon = PATH; }`, and `{ spacer = "1mm"; }` entries.
-  Plates own the reference, and all child labels must use the same X/Y bin size.
+  direct SVG paths, `{ icon = PATH; }`, `{ icon = PATH; colors = { ... }; }`,
+  and `{ spacer = "1mm"; }` entries. Plates own the reference, and all child
+  labels must use the same X/Y bin size.
 - Browser `onshapeUrl` passthru values were removed because they fail around
   5-6 KB. The module generates `export-label-<name>` and
   `export-plate-<name>` apps instead. These perform runtime API exports outside

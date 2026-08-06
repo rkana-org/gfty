@@ -198,7 +198,7 @@ fn watch_inputs(
     }
     for entries in label.config.icons.values() {
         for entry in entries {
-            if let crate::config::IconPlacement::Icon { icon } = entry {
+            if let crate::config::IconPlacement::Icon { icon, .. } = entry {
                 let resolved = label
                     .resolve_icon(icon)
                     .with_context(|| format!("failed to resolve watched icon {icon:?}"))?;

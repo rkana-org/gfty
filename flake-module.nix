@@ -256,11 +256,30 @@ let
     };
   };
 
+  colorOverridesType =
+    colors:
+    builtins.isAttrs colors
+    && lib.all (value: builtins.isInt value && value >= 0) (builtins.attrValues colors);
+
   iconPlacementType = types.either types.path (
     types.addCheck types.attrs (
       value:
-      (builtins.attrNames value == [ "icon" ] && builtins.isPath value.icon)
-      || (builtins.attrNames value == [ "spacer" ] && builtins.isString value.spacer)
+      let
+        names = builtins.attrNames value;
+      in
+      (
+        (
+          names == [ "icon" ]
+          ||
+            names == [
+              "colors"
+              "icon"
+            ]
+        )
+        && builtins.isPath value.icon
+        && (!(value ? colors) || colorOverridesType value.colors)
+      )
+      || (names == [ "spacer" ] && builtins.isString value.spacer)
     )
   );
 
