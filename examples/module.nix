@@ -60,6 +60,9 @@
           { spacer = "1mm"; }
           {
             icon = ./icons/square.svg;
+            scale = 1.1;
+            scaleX = 1.2;
+            scaleY = 0.9;
             colors = {
               "1" = 5;
             };

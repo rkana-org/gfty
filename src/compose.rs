@@ -119,7 +119,7 @@ fn collect_filaments(
     }
     for entries in label.config.icons.values() {
         for entry in entries {
-            let IconPlacement::Icon { icon, colors } = entry else {
+            let IconPlacement::Icon { icon, colors, .. } = entry else {
                 continue;
             };
             let resolved = label
@@ -167,7 +167,13 @@ fn compose_icons(
         let mut icon_details = Vec::new();
         for entry in entries {
             match entry {
-                IconPlacement::Icon { icon, colors } => {
+                IconPlacement::Icon {
+                    icon,
+                    scale,
+                    scale_x,
+                    scale_y,
+                    colors,
+                } => {
                     let resolved = label
                         .resolve_icon(icon)
                         .with_context(|| format!("failed to resolve icon {icon:?}"))?;
@@ -178,7 +184,9 @@ fn compose_icons(
                         name: icon.clone(),
                         aspect_ratio: info.view_box.width / info.view_box.height,
                     });
-                    icon_details.push((resolved, colors));
+                    let icon_scale = crate::config::resolve_icon_scale(*scale, *scale_x, *scale_y)
+                        .with_context(|| format!("invalid scaling for icon {icon:?}"))?;
+                    icon_details.push((resolved, colors, icon_scale));
                 }
                 IconPlacement::Spacer { spacer } => {
                     let millimeters = parse_length_mm(spacer)
@@ -198,7 +206,8 @@ fn compose_icons(
 
         let placed = crate::layout::layout_icons(icon_box, &row)
             .with_context(|| format!("failed to lay out icon box {box_name:?}"))?;
-        for (placement, (resolved, placement_colors)) in placed.iter().zip(icon_details) {
+        for (placement, details) in placed.iter().zip(icon_details) {
+            let (resolved, placement_colors, icon_scale) = details;
             let source = fs::read_to_string(&resolved.path)
                 .with_context(|| format!("failed to read icon {}", resolved.path.display()))?;
             let colors = resolved
@@ -248,6 +257,17 @@ fn compose_icons(
             group
                 .attributes
                 .insert("fill".to_owned(), format!("#{inherited_fill}"));
+            if icon_scale.x != 1.0 || icon_scale.y != 1.0 {
+                let center_x = normalized_width / 2.0;
+                let center_y = normalized_height / 2.0;
+                group.attributes.insert(
+                    "transform".to_owned(),
+                    format!(
+                        "translate({center_x} {center_y}) scale({} {}) translate({} {})",
+                        icon_scale.x, icon_scale.y, -center_x, -center_y
+                    ),
+                );
+            }
             group.children = std::mem::take(&mut normalized_root.children);
 
             let mut nested_svg = svg_element("svg", namespace);
@@ -563,6 +583,9 @@ mod tests {
                     "main".to_owned(),
                     vec![IconPlacement::Icon {
                         icon: "icons/square.svg".to_owned(),
+                        scale: None,
+                        scale_x: None,
+                        scale_y: None,
                         colors: BTreeMap::new(),
                     }],
                 )]),
@@ -572,6 +595,106 @@ mod tests {
 
         let bounds = exported_icon_bounds(&label);
         for (actual, expected) in bounds.into_iter().zip([-28.0, 2.0, -12.0, 18.0]) {
+            assert!((actual - expected).abs() < 1e-5, "{bounds:?}");
+        }
+    }
+
+    #[test]
+    fn per_icon_scaling_can_extend_beyond_the_icon_slot() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
+        fs::create_dir_all(root.join("templates")).unwrap();
+        fs::create_dir_all(root.join("icons")).unwrap();
+        fs::write(
+            root.join("templates/label.svg"),
+            r#"<svg xmlns="http://www.w3.org/2000/svg" width="100mm" height="100mm" viewBox="0 0 100 100"><rect id="icons-main" x="45" y="45" width="10" height="10" fill="none"/></svg>"#,
+        )
+        .unwrap();
+        fs::write(
+            root.join("icons/square.svg"),
+            r#"<svg xmlns="http://www.w3.org/2000/svg" width="10mm" height="10mm" viewBox="0 0 10 10"><path d="M0 0H10V10H0Z"/></svg>"#,
+        )
+        .unwrap();
+        fs::write(
+            root.join("bin.toml"),
+            "kind = \"bin\"\nversion = 2\nsize = [1, 1, 6]\n",
+        )
+        .unwrap();
+        let label = LoadedLabel::from_config(
+            LabelConfig {
+                kind: crate::config::ConfigKind::Label,
+                version: crate::config::LABEL_CONFIG_VERSION,
+                template: "templates/label.svg".to_owned(),
+                bin: "bin.toml".to_owned(),
+                filament: 0,
+                text: BTreeMap::new(),
+                icon: BTreeMap::new(),
+                icons: BTreeMap::from([(
+                    "main".to_owned(),
+                    vec![IconPlacement::Icon {
+                        icon: "icons/square.svg".to_owned(),
+                        scale: Some(2.0),
+                        scale_x: Some(1.5),
+                        scale_y: Some(0.5),
+                        colors: BTreeMap::new(),
+                    }],
+                )]),
+            },
+            root.to_owned(),
+        );
+
+        let bounds = exported_icon_bounds(&label);
+        for (actual, expected) in bounds.into_iter().zip([-15.0, -5.0, 15.0, 5.0]) {
+            assert!((actual - expected).abs() < 1e-5, "{bounds:?}");
+        }
+    }
+
+    #[test]
+    fn per_icon_scaling_is_clipped_to_the_label_viewport() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
+        fs::create_dir_all(root.join("templates")).unwrap();
+        fs::create_dir_all(root.join("icons")).unwrap();
+        fs::write(
+            root.join("templates/label.svg"),
+            r#"<svg xmlns="http://www.w3.org/2000/svg" width="100mm" height="100mm" viewBox="0 0 100 100"><rect id="icons-main" x="0" y="45" width="10" height="10" fill="none"/></svg>"#,
+        )
+        .unwrap();
+        fs::write(
+            root.join("icons/square.svg"),
+            r#"<svg xmlns="http://www.w3.org/2000/svg" width="10mm" height="10mm" viewBox="0 0 10 10"><path d="M0 0H10V10H0Z"/></svg>"#,
+        )
+        .unwrap();
+        fs::write(
+            root.join("bin.toml"),
+            "kind = \"bin\"\nversion = 2\nsize = [1, 1, 6]\n",
+        )
+        .unwrap();
+        let label = LoadedLabel::from_config(
+            LabelConfig {
+                kind: crate::config::ConfigKind::Label,
+                version: crate::config::LABEL_CONFIG_VERSION,
+                template: "templates/label.svg".to_owned(),
+                bin: "bin.toml".to_owned(),
+                filament: 0,
+                text: BTreeMap::new(),
+                icon: BTreeMap::new(),
+                icons: BTreeMap::from([(
+                    "main".to_owned(),
+                    vec![IconPlacement::Icon {
+                        icon: "icons/square.svg".to_owned(),
+                        scale: None,
+                        scale_x: Some(3.0),
+                        scale_y: None,
+                        colors: BTreeMap::new(),
+                    }],
+                )]),
+            },
+            root.to_owned(),
+        );
+
+        let bounds = exported_icon_bounds(&label);
+        for (actual, expected) in bounds.into_iter().zip([-50.0, -5.0, -30.0, 5.0]) {
             assert!((actual - expected).abs() < 1e-5, "{bounds:?}");
         }
     }
@@ -610,6 +733,9 @@ mod tests {
                     "main".to_owned(),
                     vec![IconPlacement::Icon {
                         icon: "icons/dimensioned.svg".to_owned(),
+                        scale: None,
+                        scale_x: None,
+                        scale_y: None,
                         colors: BTreeMap::new(),
                     }],
                 )]),

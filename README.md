@@ -155,6 +155,7 @@ spacer = "1mm"
 
 [[icons.fasteners]]
 icon = "../icons/nut.svg"
+scale = 1.1 # Optionally combine with scale-x and scale-y.
 ```
 
 Templates need physical `width` and `height`, a `viewBox`, `text-NAME`

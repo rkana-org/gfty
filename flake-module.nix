@@ -261,23 +261,29 @@ let
     builtins.isAttrs colors
     && lib.all (value: builtins.isInt value && value >= 0) (builtins.attrValues colors);
 
+  scaleFactorType = value: (builtins.isInt value || builtins.isFloat value) && value > 0;
+
   iconPlacementType = types.either types.path (
     types.addCheck types.attrs (
       value:
       let
         names = builtins.attrNames value;
+        iconNames = [
+          "colors"
+          "icon"
+          "scale"
+          "scaleX"
+          "scaleY"
+        ];
       in
       (
-        (
-          names == [ "icon" ]
-          ||
-            names == [
-              "colors"
-              "icon"
-            ]
-        )
+        (value ? icon)
+        && lib.all (name: builtins.elem name iconNames) names
         && builtins.isPath value.icon
         && (!(value ? colors) || colorOverridesType value.colors)
+        && (!(value ? scale) || scaleFactorType value.scale)
+        && (!(value ? scaleX) || scaleFactorType value.scaleX)
+        && (!(value ? scaleY) || scaleFactorType value.scaleY)
       )
       || (names == [ "spacer" ] && builtins.isString value.spacer)
     )
@@ -338,7 +344,7 @@ let
       icons = mkOption {
         type = types.attrsOf (types.listOf iconPlacementType);
         default = { };
-        description = "Ordered icon paths and explicit spacers for each icon box, keyed without the icons- prefix.";
+        description = "Ordered icon paths, per-icon scaling/color attrsets, and explicit spacers for each icon box, keyed without the icons- prefix.";
       };
       bin = mkOption {
         type = types.str;

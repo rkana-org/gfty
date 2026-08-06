@@ -104,9 +104,11 @@ parsing for retired schemas or implicit kinds.
 - `data-gfty-align` is `left|center|right` horizontally or
   `top|center|bottom` vertically.
 - Icons preserve input order and aspect ratio. There are no implicit gaps;
-  spacers are explicit.
+  spacers are explicit. Per-placement `scale`, `scale-x`, and `scale-y` multiply
+  icon geometry after layout and may extend beyond the icon slot.
 - Icon layout/aspect ratio is based on the icon SVG viewBox, but icon geometry
-  outside the icon SVG canvas/viewBox must remain visible after composition.
+  outside the icon SVG canvas/viewBox or scaled beyond its slot must remain
+  visible after composition unless it leaves the label viewport itself.
 - Keep XML mutable with `xmltree`, then let `usvg` resolve viewport transforms,
   affine transforms, primitives, strokes, and text outlines.
 - Requested fonts must exist. Do not silently substitute missing text fonts.
@@ -214,8 +216,9 @@ Current JSON is version 2:
   font outputs are passed with `--font-dir` and do not rebuild `gfty`.
 - Module labels and plates require a named bin. Module label icon lists accept
   direct SVG paths, `{ icon = PATH; }`, `{ icon = PATH; colors = { ... }; }`,
-  and `{ spacer = "1mm"; }` entries. Plates own the reference, and all child
-  labels must use the same X/Y bin size.
+  `{ icon = PATH; scale = 1.2; scaleX = 1.5; scaleY = 0.8; }`, and
+  `{ spacer = "1mm"; }` entries. Plates own the reference, and all child labels
+  must use the same X/Y bin size.
 - Browser `onshapeUrl` passthru values were removed because they fail around
   5-6 KB. The module generates `export-label-<name>` and
   `export-plate-<name>` apps instead. These perform runtime API exports outside

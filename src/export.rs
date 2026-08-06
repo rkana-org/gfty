@@ -2,7 +2,10 @@ use std::collections::BTreeMap;
 
 use anyhow::{Context, Result, bail};
 use serde::{Serialize, ser::SerializeStruct};
-use usvg::{Node, Paint, tiny_skia_path::PathSegment};
+use usvg::{
+    Node, Paint,
+    tiny_skia_path::{Path, PathSegment, Point},
+};
 
 use crate::{color::PreviewPalette, compose::RenderedLabel};
 
@@ -192,7 +195,7 @@ fn collect_group(
                     .clone()
                     .transform(path.abs_transform())
                     .context("failed to apply resolved SVG path transform")?;
-                let contours = convert_path(transformed.segments(), canvas, size_mm);
+                let contours = convert_visible_path(&transformed, canvas, size_mm);
                 if !contours.is_empty() {
                     result.entry(filament).or_default().push(Shape { contours });
                 }
@@ -204,6 +207,25 @@ fn collect_group(
         }
     }
     Ok(())
+}
+
+fn convert_visible_path(path: &Path, canvas: [f64; 2], size_mm: [f64; 2]) -> Vec<Contour> {
+    if path_fits_canvas(path, canvas) {
+        convert_path(path.segments(), canvas, size_mm)
+    } else {
+        // Export does not interpret SVG clip paths, so enforce the outer label
+        // viewport here. Only paths crossing that boundary are flattened.
+        convert_clipped_path(path.segments(), canvas, size_mm)
+    }
+}
+
+fn path_fits_canvas(path: &Path, canvas: [f64; 2]) -> bool {
+    let bounds = path.bounds();
+    const TOLERANCE: f32 = 1e-5;
+    bounds.left() >= -TOLERANCE
+        && bounds.top() >= -TOLERANCE
+        && bounds.right() <= canvas[0] as f32 + TOLERANCE
+        && bounds.bottom() <= canvas[1] as f32 + TOLERANCE
 }
 
 fn convert_path(
@@ -286,6 +308,209 @@ fn convert_path(
     }
     finish(&mut current_contour, &mut contours);
     contours
+}
+
+fn convert_clipped_path(
+    segments: impl Iterator<Item = PathSegment>,
+    canvas: [f64; 2],
+    size_mm: [f64; 2],
+) -> Vec<Contour> {
+    const CURVE_STEPS: usize = 24;
+
+    let mut contours = Vec::new();
+    let mut current_polygon: Option<Vec<Point>> = None;
+    let mut current = None;
+    let mut subpath_start = None;
+
+    let finish = |polygon: &mut Option<Vec<Point>>, result: &mut Vec<Contour>| {
+        let Some(mut polygon) = polygon.take() else {
+            return;
+        };
+        remove_duplicate_endpoint(&mut polygon);
+        if polygon.len() < 3 {
+            return;
+        }
+        let clipped = clip_polygon_to_canvas(polygon, canvas);
+        if clipped.len() >= 3 {
+            result.push(polygon_to_contour(&clipped, canvas, size_mm));
+        }
+    };
+
+    for segment in segments {
+        match segment {
+            PathSegment::MoveTo(point) => {
+                finish(&mut current_polygon, &mut contours);
+                current_polygon = Some(vec![point]);
+                current = Some(point);
+                subpath_start = Some(point);
+            }
+            PathSegment::LineTo(to) => {
+                if let Some(polygon) = &mut current_polygon {
+                    push_distinct_point(polygon, to);
+                }
+                current = Some(to);
+            }
+            PathSegment::QuadTo(control, to) => {
+                if let (Some(from), Some(polygon)) = (current, &mut current_polygon) {
+                    for step in 1..=CURVE_STEPS {
+                        let t = step as f32 / CURVE_STEPS as f32;
+                        push_distinct_point(polygon, eval_quad(from, control, to, t));
+                    }
+                }
+                current = Some(to);
+            }
+            PathSegment::CubicTo(c1, c2, to) => {
+                if let (Some(from), Some(polygon)) = (current, &mut current_polygon) {
+                    for step in 1..=CURVE_STEPS {
+                        let t = step as f32 / CURVE_STEPS as f32;
+                        push_distinct_point(polygon, eval_cubic(from, c1, c2, to, t));
+                    }
+                }
+                current = Some(to);
+            }
+            PathSegment::Close => {
+                finish(&mut current_polygon, &mut contours);
+                current = subpath_start;
+            }
+        }
+    }
+    finish(&mut current_polygon, &mut contours);
+    contours
+}
+
+fn remove_duplicate_endpoint(points: &mut Vec<Point>) {
+    if points.len() >= 2 && points_close_canvas(points[0], *points.last().expect("non-empty")) {
+        points.pop();
+    }
+}
+
+fn push_distinct_point(points: &mut Vec<Point>, point: Point) {
+    if points
+        .last()
+        .is_none_or(|previous| !points_close_canvas(*previous, point))
+    {
+        points.push(point);
+    }
+}
+
+fn points_close_canvas(first: Point, second: Point) -> bool {
+    (first.x - second.x).abs() < 1e-5 && (first.y - second.y).abs() < 1e-5
+}
+
+fn eval_quad(from: Point, control: Point, to: Point, t: f32) -> Point {
+    let mt = 1.0 - t;
+    Point::from_xy(
+        mt * mt * from.x + 2.0 * mt * t * control.x + t * t * to.x,
+        mt * mt * from.y + 2.0 * mt * t * control.y + t * t * to.y,
+    )
+}
+
+fn eval_cubic(from: Point, c1: Point, c2: Point, to: Point, t: f32) -> Point {
+    let mt = 1.0 - t;
+    Point::from_xy(
+        mt * mt * mt * from.x
+            + 3.0 * mt * mt * t * c1.x
+            + 3.0 * mt * t * t * c2.x
+            + t * t * t * to.x,
+        mt * mt * mt * from.y
+            + 3.0 * mt * mt * t * c1.y
+            + 3.0 * mt * t * t * c2.y
+            + t * t * t * to.y,
+    )
+}
+
+#[derive(Debug, Clone, Copy)]
+enum ClipEdge {
+    Left,
+    Right,
+    Top,
+    Bottom,
+}
+
+fn clip_polygon_to_canvas(mut polygon: Vec<Point>, canvas: [f64; 2]) -> Vec<Point> {
+    for edge in [
+        ClipEdge::Left,
+        ClipEdge::Right,
+        ClipEdge::Top,
+        ClipEdge::Bottom,
+    ] {
+        polygon = clip_polygon_edge(&polygon, edge, canvas);
+        if polygon.is_empty() {
+            break;
+        }
+    }
+    remove_duplicate_endpoint(&mut polygon);
+    polygon
+}
+
+fn clip_polygon_edge(polygon: &[Point], edge: ClipEdge, canvas: [f64; 2]) -> Vec<Point> {
+    let mut result = Vec::new();
+    let Some(&last) = polygon.last() else {
+        return result;
+    };
+    let mut previous = last;
+    let mut previous_inside = point_inside_edge(previous, edge, canvas);
+
+    for &current in polygon {
+        let current_inside = point_inside_edge(current, edge, canvas);
+        if current_inside != previous_inside {
+            push_distinct_point(&mut result, intersect_edge(previous, current, edge, canvas));
+        }
+        if current_inside {
+            push_distinct_point(&mut result, current);
+        }
+        previous = current;
+        previous_inside = current_inside;
+    }
+    result
+}
+
+fn point_inside_edge(point: Point, edge: ClipEdge, canvas: [f64; 2]) -> bool {
+    const TOLERANCE: f32 = 1e-5;
+    match edge {
+        ClipEdge::Left => point.x >= -TOLERANCE,
+        ClipEdge::Right => point.x <= canvas[0] as f32 + TOLERANCE,
+        ClipEdge::Top => point.y >= -TOLERANCE,
+        ClipEdge::Bottom => point.y <= canvas[1] as f32 + TOLERANCE,
+    }
+}
+
+fn intersect_edge(from: Point, to: Point, edge: ClipEdge, canvas: [f64; 2]) -> Point {
+    let (boundary, vertical) = match edge {
+        ClipEdge::Left => (0.0, true),
+        ClipEdge::Right => (canvas[0] as f32, true),
+        ClipEdge::Top => (0.0, false),
+        ClipEdge::Bottom => (canvas[1] as f32, false),
+    };
+    let denominator = if vertical {
+        to.x - from.x
+    } else {
+        to.y - from.y
+    };
+    if denominator.abs() < 1e-12 {
+        return to;
+    }
+    let t = if vertical {
+        (boundary - from.x) / denominator
+    } else {
+        (boundary - from.y) / denominator
+    };
+    Point::from_xy(from.x + (to.x - from.x) * t, from.y + (to.y - from.y) * t)
+}
+
+fn polygon_to_contour(points: &[Point], canvas: [f64; 2], size_mm: [f64; 2]) -> Contour {
+    let start = map_point(points[0], canvas, size_mm);
+    let segments = points[1..]
+        .iter()
+        .map(|point| Segment::Line {
+            to: map_point(*point, canvas, size_mm),
+        })
+        .collect();
+    Contour {
+        start,
+        closed: true,
+        segments,
+    }
 }
 
 fn onshape_cubic(from: [f64; 2], mut c1: [f64; 2], mut c2: [f64; 2], to: [f64; 2]) -> Segment {

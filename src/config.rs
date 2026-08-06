@@ -68,6 +68,18 @@ pub enum IconPlacement {
     Icon {
         icon: String,
 
+        /// Uniform multiplier applied to this icon after layout.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        scale: Option<f64>,
+
+        /// X-axis multiplier applied to this icon after layout.
+        #[serde(default, rename = "scale-x", skip_serializing_if = "Option::is_none")]
+        scale_x: Option<f64>,
+
+        /// Y-axis multiplier applied to this icon after layout.
+        #[serde(default, rename = "scale-y", skip_serializing_if = "Option::is_none")]
+        scale_y: Option<f64>,
+
         /// Keys are either resolved filament indices or exact source hex colors.
         #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
         colors: BTreeMap<String, u32>,
@@ -88,6 +100,12 @@ pub struct LoadedLabel {
 pub struct ResolvedIcon<'a> {
     pub path: PathBuf,
     definition: Option<&'a IconDefinition>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct IconScale {
+    pub x: f64,
+    pub y: f64,
 }
 
 impl ResolvedIcon<'_> {
@@ -227,11 +245,16 @@ impl LoadedLabel {
             let mut row = Vec::new();
             for entry in entries {
                 match entry {
-                    IconPlacement::Icon { icon, colors } => {
-                        validate_color_overrides(
-                            &format!("icon {icon:?} in icon box {box_name:?}"),
-                            colors,
-                        )?;
+                    IconPlacement::Icon {
+                        icon,
+                        scale,
+                        scale_x,
+                        scale_y,
+                        colors,
+                    } => {
+                        let description = format!("icon {icon:?} in icon box {box_name:?}");
+                        validate_icon_scale(&description, *scale, *scale_x, *scale_y)?;
+                        validate_color_overrides(&description, colors)?;
                         let resolved = self.resolve_icon(icon).with_context(|| {
                             format!("invalid icon {icon:?} in icon box {box_name:?}")
                         })?;
@@ -287,6 +310,40 @@ fn validate_color_overrides(description: &str, colors: &BTreeMap<String, u32>) -
         }
     }
     Ok(())
+}
+
+fn validate_icon_scale(
+    description: &str,
+    scale: Option<f64>,
+    scale_x: Option<f64>,
+    scale_y: Option<f64>,
+) -> Result<()> {
+    resolve_icon_scale(scale, scale_x, scale_y)
+        .with_context(|| format!("{description} has invalid scaling"))?;
+    Ok(())
+}
+
+pub fn resolve_icon_scale(
+    scale: Option<f64>,
+    scale_x: Option<f64>,
+    scale_y: Option<f64>,
+) -> Result<IconScale> {
+    let scale = scale.unwrap_or(1.0);
+    let scale_x = scale_x.unwrap_or(1.0);
+    let scale_y = scale_y.unwrap_or(1.0);
+    for (name, value) in [("scale", scale), ("scale-x", scale_x), ("scale-y", scale_y)] {
+        if !value.is_finite() || value <= 0.0 {
+            bail!("{name} must be finite and greater than zero");
+        }
+    }
+    let result = IconScale {
+        x: scale * scale_x,
+        y: scale * scale_y,
+    };
+    if !result.x.is_finite() || !result.y.is_finite() {
+        bail!("combined icon scale must be finite");
+    }
+    Ok(result)
 }
 
 fn ensure_file(path: &Path, description: &str) -> Result<()> {
@@ -422,14 +479,29 @@ bin = "bin.toml"
 
 [[icons.main]]
 icon = "icons/status.svg"
+scale = 2
+scale-x = 1.5
+scale-y = 0.5
 colors = { 0 = 1, 1 = 5, "#ff0000" = 5 }
 "##,
         )
         .unwrap();
-        let [IconPlacement::Icon { icon, colors }] = config.icons["main"].as_slice() else {
+        let [
+            IconPlacement::Icon {
+                icon,
+                scale,
+                scale_x,
+                scale_y,
+                colors,
+            },
+        ] = config.icons["main"].as_slice()
+        else {
             panic!("expected one icon placement");
         };
         assert_eq!(icon, "icons/status.svg");
+        assert_eq!(*scale, Some(2.0));
+        assert_eq!(*scale_x, Some(1.5));
+        assert_eq!(*scale_y, Some(0.5));
         assert_eq!(colors["0"], 1);
         assert_eq!(colors["1"], 5);
         assert_eq!(colors["#ff0000"], 5);
@@ -531,6 +603,16 @@ colors = { 0 = 1, 1 = 5, "#ff0000" = 5 }
                 .to_string()
                 .contains("version")
         );
+    }
+
+    #[test]
+    fn combines_icon_scale_factors() {
+        assert_eq!(
+            resolve_icon_scale(Some(2.0), Some(1.5), Some(0.5)).unwrap(),
+            IconScale { x: 3.0, y: 1.0 }
+        );
+        assert!(resolve_icon_scale(Some(0.0), None, None).is_err());
+        assert!(resolve_icon_scale(None, Some(f64::INFINITY), None).is_err());
     }
 
     #[test]

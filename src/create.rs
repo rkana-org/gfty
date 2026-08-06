@@ -49,6 +49,9 @@ pub fn build_label(
             .or_default()
             .push(IconPlacement::Icon {
                 icon: path_to_toml_string(&source),
+                scale: None,
+                scale_x: None,
+                scale_y: None,
                 colors: BTreeMap::new(),
             });
     }

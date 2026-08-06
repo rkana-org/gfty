@@ -42,7 +42,19 @@ let
   iconItem =
     item:
     if builtins.isAttrs item then
-      if item ? icon then item // { icon = assetPath item.icon; } else item
+      if item ? icon then
+        builtins.removeAttrs item [
+          "icon"
+          "scaleX"
+          "scaleY"
+        ]
+        // {
+          icon = assetPath item.icon;
+        }
+        // lib.optionalAttrs (item ? scaleX) { "scale-x" = item.scaleX; }
+        // lib.optionalAttrs (item ? scaleY) { "scale-y" = item.scaleY; }
+      else
+        item
     else
       { icon = assetPath item; };
 
