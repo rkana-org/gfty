@@ -1,4 +1,4 @@
-/* Small, dependency-free syntax tokenizers for generated code previews. */
+/* Small, dependency-free syntax tokenizers and line diffing for code previews. */
 (function () {
   "use strict";
 
@@ -144,5 +144,63 @@
     return [{ type: "plain", value: text }];
   }
 
-  window.GftySyntax = { tokenize };
+  function lineDiff(previous, current) {
+    const nextLines = String(current == null ? "" : current).split("\n");
+    if (previous == null) return nextLines.map(() => "added");
+    const oldLines = String(previous).split("\n");
+    const table = Array.from(
+      { length: oldLines.length + 1 },
+      () => new Uint32Array(nextLines.length + 1)
+    );
+    for (let oldIndex = oldLines.length - 1; oldIndex >= 0; oldIndex -= 1) {
+      for (let nextIndex = nextLines.length - 1; nextIndex >= 0; nextIndex -= 1) {
+        table[oldIndex][nextIndex] = oldLines[oldIndex] === nextLines[nextIndex]
+          ? table[oldIndex + 1][nextIndex + 1] + 1
+          : Math.max(table[oldIndex + 1][nextIndex], table[oldIndex][nextIndex + 1]);
+      }
+    }
+
+    const highlights = nextLines.map(() => "");
+    let oldIndex = 0;
+    let nextIndex = 0;
+    while (oldIndex < oldLines.length || nextIndex < nextLines.length) {
+      if (oldIndex < oldLines.length && nextIndex < nextLines.length &&
+          oldLines[oldIndex] === nextLines[nextIndex]) {
+        oldIndex += 1;
+        nextIndex += 1;
+        continue;
+      }
+
+      const oldStart = oldIndex;
+      const nextStart = nextIndex;
+      while ((oldIndex < oldLines.length || nextIndex < nextLines.length) &&
+             !(oldIndex < oldLines.length && nextIndex < nextLines.length &&
+               oldLines[oldIndex] === nextLines[nextIndex])) {
+        if (nextIndex >= nextLines.length ||
+            (oldIndex < oldLines.length &&
+             table[oldIndex + 1][nextIndex] >= table[oldIndex][nextIndex + 1])) {
+          oldIndex += 1;
+        } else {
+          nextIndex += 1;
+        }
+      }
+
+      const removed = oldIndex - oldStart;
+      const added = nextIndex - nextStart;
+      const changed = Math.min(removed, added);
+      for (let offset = 0; offset < changed; offset += 1) {
+        highlights[nextStart + offset] = "changed";
+      }
+      for (let offset = changed; offset < added; offset += 1) {
+        highlights[nextStart + offset] = "added";
+      }
+      if (removed > 0 && added === 0 && highlights.length) {
+        const boundary = Math.min(nextStart, highlights.length - 1);
+        highlights[boundary] = "removed";
+      }
+    }
+    return highlights;
+  }
+
+  window.GftySyntax = { tokenize, lineDiff };
 })();

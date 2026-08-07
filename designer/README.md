@@ -11,7 +11,8 @@ swappable labels while producing the canonical JSON accepted by the model's
 2. Configure the model and copy its JSON, typed TOML files, or flake-parts module.
 3. Choose **Open in Onshape** to use the pinned immutable model version.
 
-The browser workflow uploads nothing. Generated TOML can be exported through the
+The browser workflow uploads nothing. Generated code previews briefly mark
+added, removed, and changed lines. Generated TOML can be exported through the
 authenticated `gfty` CLI.
 
 ## Develop

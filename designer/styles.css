@@ -46,6 +46,10 @@
   --code-section: oklch(0.440 0.115 218);
   --code-comment: oklch(0.560 0.020 262);
 
+  --diff-added:   oklch(0.930 0.060 145);
+  --diff-removed: oklch(0.940 0.050 25);
+  --diff-changed: oklch(0.950 0.070 95);
+
   --r-sm: 5px;
   --r-md: 8px;
   --r-lg: 12px;
@@ -537,6 +541,7 @@ button { font-family: inherit; }
 .output-tabs button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
 .json-body { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; padding: 16px 18px; gap: 12px; }
+.json-body[hidden] { display: none; }
 .output-scroll { overflow-y: auto; }
 .code-window-list { display: flex; flex-direction: column; gap: 14px; }
 .code-window {
@@ -571,6 +576,28 @@ button { font-family: inherit; }
 .code-window.fill .syntax-code { flex: 1 1 auto; min-height: 0; }
 .code-window-list .syntax-code { overflow-y: visible; }
 .syntax-code:focus { outline: none; }
+.code-line {
+  display: block; width: max-content; min-width: calc(100% + 28px); min-height: 1.65em;
+  margin: 0 -14px; padding: 0 14px;
+}
+.code-line.diff-added { animation: diff-added 800ms ease-out both; }
+.code-line.diff-removed { animation: diff-removed 800ms ease-out both; }
+.code-line.diff-changed { animation: diff-changed 800ms ease-out both; }
+@keyframes diff-added {
+  0%, 62.5% { background-color: var(--diff-added); }
+  100% { background-color: transparent; }
+}
+@keyframes diff-removed {
+  0%, 62.5% { background-color: var(--diff-removed); }
+  100% { background-color: transparent; }
+}
+@keyframes diff-changed {
+  0%, 62.5% { background-color: var(--diff-changed); }
+  100% { background-color: transparent; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .code-line.diff-added, .code-line.diff-removed, .code-line.diff-changed { animation: none; }
+}
 .tok-property { color: var(--code-key); }
 .tok-string { color: var(--code-string); }
 .tok-number { color: var(--code-number); }
