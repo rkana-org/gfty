@@ -11,6 +11,7 @@ modules and no application server.
 - `index.html`: development entry point and script ordering.
 - `logic.js`: pure configuration defaults, parsing, validation, divider/easy-grab
   geometry, and canonical JSON serialization. Keep React out of this file.
+- `syntax.js`: dependency-free JSON, TOML, and Nix tokenizers for output previews.
 - `ui.jsx`: shared controls and icons.
 - `Controls.jsx`, `DividerEditor.jsx`, `JsonPanel.jsx`, `App.jsx`: UI modules
   exposed through `window.*`.

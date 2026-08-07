@@ -421,6 +421,309 @@
   function toMinified(flat, divider) { return JSON.stringify(serialize(flat, divider)); }
 
   // ============================================================
+  //  Typed CLI TOML + flake-parts Nix output
+  // ============================================================
+  function compactNumber(value, digits) {
+    const factor = Math.pow(10, digits == null ? 9 : digits);
+    const rounded = Math.round((Number(value) + Number.EPSILON) * factor) / factor;
+    return String(Object.is(rounded, -0) ? 0 : rounded);
+  }
+
+  function typedSize(value) {
+    return Math.max(1, Math.round(num(value)));
+  }
+
+  function mm(value, digits) {
+    return compactNumber(num(value), digits == null ? 4 : digits) + 'mm';
+  }
+
+  function quote(value) {
+    return JSON.stringify(String(value));
+  }
+
+  function typedTrack(t, axis, i) {
+    if (t.kind === 'auto') return 'auto';
+    if (t.kind === 'frac')
+      return compactNumber(evalNumber(t.expr, axis + ' ' + (i + 1)), 9) + 'fr';
+    return compactNumber(evalLenMm(t.expr, axis + ' ' + (i + 1)), 6) + 'mm';
+  }
+
+  function typedTracks(tracks, axis) {
+    return tracks.map((t, i) => typedTrack(t, axis, i));
+  }
+
+  function rimMode(flat) {
+    if (!flat.bin_nesting_enable) return 'off';
+    return flat.bin_nesting_swappable_rim_enable ? 'swappable' : 'integrated';
+  }
+
+  function labelMode(flat) {
+    if (!flat.bin_tub_enable || !flat.bin_tub_label_enable) return 'off';
+    return flat.bin_tub_label_is_swappable ? 'swappable' : 'integrated';
+  }
+
+  function enabledOutputs(flat) {
+    const bin = !!flat.bin_enable;
+    const base = !!flat.base_enable;
+    const rim = bin && rimMode(flat) === 'swappable';
+    const swappableLabel = bin && labelMode(flat) === 'swappable';
+    const connectorPin = base && !!flat.base_magnets_enable &&
+      !!flat.base_magnets_connector_cutouts_enable && !!flat.base_magnets_connector_pin_enable;
+    return { bin, base, rim, swappableLabel, connectorPin, binSet: bin };
+  }
+
+  function tomlStringArray(values) {
+    return '[' + values.map(quote).join(', ') + ']';
+  }
+
+  function tomlRange(values) {
+    return '[' + values[0] + ', ' + values[1] + ']';
+  }
+
+  function finish(lines) {
+    return lines.join('\n').replace(/\n+$/, '') + '\n';
+  }
+
+  function binToml(flat, divider) {
+    const columns = typedTracks(divider.columns, 'Column');
+    const rows = typedTracks(divider.rows, 'Row');
+    const lines = [
+      'kind = "bin"',
+      'version = 2',
+      'size = [' + [flat.size_x_units, flat.size_y_units, flat.size_z_units].map(typedSize).join(', ') + ']',
+      'tub = ' + (!!flat.bin_tub_enable),
+      'max-print-overhang = ' + compactNumber(flat.max_print_overhang_deg, 4),
+      '',
+      '[rim-interface]',
+      'mode = ' + quote(rimMode(flat)),
+      '',
+      '[label-interface]',
+      'mode = ' + quote(labelMode(flat)),
+      'depth = ' + quote(mm(flat.bin_tub_label_depth_mm)),
+      'supports = ' + quote(flat.bin_tub_label_supports_mode || 'auto'),
+      '',
+      '[divider]',
+      'columns = ' + tomlStringArray(columns),
+      'rows = ' + tomlStringArray(rows),
+    ];
+    (divider.merges || []).forEach((merge) => {
+      lines.push(
+        '',
+        '[[divider.merges]]',
+        'columns = ' + tomlRange([merge.c0, merge.c1]),
+        'rows = ' + tomlRange([merge.r0, merge.r1])
+      );
+    });
+    lines.push(
+      '',
+      '[easy-grab]',
+      'mode = ' + quote(flat.easygrab_mode || 'none'),
+      'side = ' + quote(flat.easygrab_all_side || 'south'),
+      'radius = ' + quote(mm(flat.easygrab_radius_mm))
+    );
+    if ((flat.easygrab_mode || 'none') === 'custom') {
+      (divider.easygrab || []).forEach((entry) => {
+        lines.push(
+          '',
+          '[[easy-grab.faces]]',
+          'side = ' + quote(entry.side),
+          'columns = ' + tomlRange(entry.cols),
+          'rows = ' + tomlRange(entry.rows)
+        );
+        if (entry.radius != null) lines.push('radius = ' + quote(mm(entry.radius)));
+      });
+    }
+    return finish(lines);
+  }
+
+  function baseToml(flat) {
+    return finish([
+      'kind = "base"',
+      'version = 1',
+      'size = [' + [flat.size_x_units, flat.size_y_units].map(typedSize).join(', ') + ']',
+      'rounded-corners = ' + (!!flat.base_rounded_corners_enable),
+      '',
+      '[magnets]',
+      'enabled = ' + (!!flat.base_magnets_enable),
+      'connector-cutouts = ' + (!!flat.base_magnets_connector_cutouts_enable),
+    ]);
+  }
+
+  function rimToml(flat) {
+    return finish([
+      'kind = "rim"',
+      'version = 1',
+      'size = [' + [flat.size_x_units, flat.size_y_units].map(typedSize).join(', ') + ']',
+      'spring-compensation = ' + (!!flat.bin_nesting_swappable_rim_spring_compensation_enable),
+      'additional-expansion = ' + quote(mm(flat.bin_nesting_swappable_rim_spring_compensation_additional_rim_expansion_mm)),
+    ]);
+  }
+
+  function swappableLabelToml(flat) {
+    return finish([
+      'kind = "swappable-label"',
+      'version = 1',
+      'bin = "bin.toml"',
+      '',
+      '[embossing]',
+      'clearance = ' + quote(mm(flat.bin_tub_label_swappable_embossing_clearance_mm)),
+      'inset = ' + quote(mm(flat.bin_tub_label_swappable_embossing_inset_height_mm)),
+    ]);
+  }
+
+  function binSetToml(parts) {
+    const lines = [
+      'kind = "bin-set"',
+      'version = 1',
+      'bin = "bin.toml"',
+    ];
+    if (parts.base) lines.push('base = "base.toml"');
+    if (parts.rim) lines.push('rim = "rim.toml"');
+    if (parts.swappableLabel) lines.push('swappable-label = "swappable-label.toml"');
+    lines.push('connector-pin = ' + parts.connectorPin);
+    return finish(lines);
+  }
+
+  function toTomlFiles(flat, divider) {
+    const parts = enabledOutputs(flat);
+    const files = [];
+    if (parts.bin) files.push({ name: 'bin.toml', kind: 'bin', text: binToml(flat, divider) });
+    if (parts.base) files.push({ name: 'base.toml', kind: 'base', text: baseToml(flat) });
+    if (parts.rim) files.push({ name: 'rim.toml', kind: 'rim', text: rimToml(flat) });
+    if (parts.swappableLabel)
+      files.push({ name: 'swappable-label.toml', kind: 'swappable-label', text: swappableLabelToml(flat) });
+    if (parts.binSet)
+      files.push({ name: 'bin-set.toml', kind: 'bin-set', text: binSetToml(parts) });
+    return files;
+  }
+
+  function nixStringArray(values) {
+    return '[ ' + values.map(quote).join(' ') + ' ]';
+  }
+
+  function nixRange(values) {
+    return '[ ' + values[0] + ' ' + values[1] + ' ]';
+  }
+
+  function toNix(flat, divider) {
+    const parts = enabledOutputs(flat);
+    if (!parts.bin && !parts.base) {
+      return finish(['{', '  perSystem = {', '    gfty = { };', '  };', '}']);
+    }
+    const columns = parts.bin ? typedTracks(divider.columns, 'Column') : [];
+    const rows = parts.bin ? typedTracks(divider.rows, 'Row') : [];
+    const size3 = [flat.size_x_units, flat.size_y_units, flat.size_z_units].map(typedSize).join(' ');
+    const size2 = [flat.size_x_units, flat.size_y_units].map(typedSize).join(' ');
+    const lines = ['{', '  perSystem = {', '    gfty = {'];
+
+    if (parts.bin) {
+      lines.push(
+        '      bins.designed = {',
+        '        size = [ ' + size3 + ' ];',
+        '        tub = ' + (!!flat.bin_tub_enable) + ';',
+        '        maxPrintOverhang = ' + compactNumber(flat.max_print_overhang_deg, 4) + ';',
+        '        rimInterface.mode = ' + quote(rimMode(flat)) + ';',
+        '        labelInterface = {',
+        '          mode = ' + quote(labelMode(flat)) + ';',
+        '          depth = ' + quote(mm(flat.bin_tub_label_depth_mm)) + ';',
+        '          supports = ' + quote(flat.bin_tub_label_supports_mode || 'auto') + ';',
+        '        };',
+        '        divider = {',
+        '          columns = ' + nixStringArray(columns) + ';',
+        '          rows = ' + nixStringArray(rows) + ';'
+      );
+      if ((divider.merges || []).length) {
+        lines.push('          merges = [');
+        divider.merges.forEach((merge) => {
+          lines.push(
+            '            {',
+            '              columns = ' + nixRange([merge.c0, merge.c1]) + ';',
+            '              rows = ' + nixRange([merge.r0, merge.r1]) + ';',
+            '            }'
+          );
+        });
+        lines.push('          ];');
+      } else {
+        lines.push('          merges = [ ];');
+      }
+      lines.push(
+        '        };',
+        '        easyGrab = {',
+        '          mode = ' + quote(flat.easygrab_mode || 'none') + ';',
+        '          side = ' + quote(flat.easygrab_all_side || 'south') + ';',
+        '          radius = ' + quote(mm(flat.easygrab_radius_mm)) + ';'
+      );
+      const easyGrabFaces = (flat.easygrab_mode || 'none') === 'custom' ? (divider.easygrab || []) : [];
+      if (easyGrabFaces.length) {
+        lines.push('          faces = [');
+        easyGrabFaces.forEach((entry) => {
+          lines.push(
+            '            {',
+            '              side = ' + quote(entry.side) + ';',
+            '              columns = ' + nixRange(entry.cols) + ';',
+            '              rows = ' + nixRange(entry.rows) + ';'
+          );
+          if (entry.radius != null) lines.push('              radius = ' + quote(mm(entry.radius)) + ';');
+          lines.push('            }');
+        });
+        lines.push('          ];');
+      } else {
+        lines.push('          faces = [ ];');
+      }
+      lines.push('        };', '      };');
+    }
+
+    if (parts.base) {
+      lines.push(
+        '      bases.designed = {',
+        '        size = [ ' + size2 + ' ];',
+        '        roundedCorners = ' + (!!flat.base_rounded_corners_enable) + ';',
+        '        magnets = {',
+        '          enabled = ' + (!!flat.base_magnets_enable) + ';',
+        '          connectorCutouts = ' + (!!flat.base_magnets_connector_cutouts_enable) + ';',
+        '        };',
+        '      };'
+      );
+    }
+
+    if (parts.rim) {
+      lines.push(
+        '      rims.designed = {',
+        '        size = [ ' + size2 + ' ];',
+        '        springCompensation = ' + (!!flat.bin_nesting_swappable_rim_spring_compensation_enable) + ';',
+        '        additionalExpansion = ' + quote(mm(flat.bin_nesting_swappable_rim_spring_compensation_additional_rim_expansion_mm)) + ';',
+        '      };'
+      );
+    }
+
+    if (parts.swappableLabel) {
+      lines.push(
+        '      swappableLabels.designed = {',
+        '        bin = "designed";',
+        '        embossing = {',
+        '          clearance = ' + quote(mm(flat.bin_tub_label_swappable_embossing_clearance_mm)) + ';',
+        '          inset = ' + quote(mm(flat.bin_tub_label_swappable_embossing_inset_height_mm)) + ';',
+        '        };',
+        '      };'
+      );
+    }
+
+    if (parts.binSet) {
+      lines.push(
+        '      binSets.designed = {',
+        '        bin = "designed";'
+      );
+      if (parts.base) lines.push('        base = "designed";');
+      if (parts.rim) lines.push('        rim = "designed";');
+      if (parts.swappableLabel) lines.push('        swappableLabel = "designed";');
+      lines.push('        connectorPin = ' + parts.connectorPin + ';', '      };');
+    }
+
+    lines.push('    };', '  };', '}');
+    return finish(lines);
+  }
+
+  // ============================================================
   //  Parse  full CAD config text -> {flat, divider}
   // ============================================================
   function trackFromJson(entry, label) {
@@ -584,7 +887,7 @@
     computeLayout, gridWidthMm, gridDepthMm,
     regions, mergeIndexAt, pruneEasygrab, supportsRecommended, supportsEnabled,
     compartments, faceKey, allFaces, hasFace, computeAllEasygrab, resolveEasygrab,
-    serialize, toPretty, toMinified, parse,
+    serialize, toPretty, toMinified, toTomlFiles, toNix, enabledOutputs, parse,
     evalNumber, evalLenMm, num,
   };
 })();
