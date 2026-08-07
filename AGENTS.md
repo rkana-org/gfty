@@ -68,11 +68,25 @@ is in `../std-library/`.
 
 ## Core behavior and invariants
 
+### Configuration schemas and products
+
+Only current, explicitly typed schemas are supported:
+
+| kind | version | generated product |
+| --- | ---: | --- |
+| `bin` | 2 | exact `Bin` body |
+| `base` | 1 | exact `Base` body |
+| `rim` | 1 | exact `SwappableRim` body |
+| `swappable-label` | 1 | exact `SwappableLabel` body |
+| `bin-set` | 1 | declared compatible Gridfinity bodies |
+| `label` | 1 | overlapping `part-<filament>` artwork-label bodies |
+
+The standard `ConnectorPin` has no TOML schema. It is exported independently or
+included in a bin set. Labels require a bin reference. Do not add compatibility
+parsing for retired schemas or implicit kinds.
+
 ### Paths and discovery
 
-- Bin TOML requires `kind = "bin"` and `version = 2`.
-- Label TOML requires `kind = "label"`, `version = 1`, and a bin reference.
-- Do not add compatibility parsing for retired schemas or implicit kinds.
 - There is no required project marker or directory layout.
 - Absolute paths work everywhere.
 - Paths in saved label TOML resolve relative to that TOML.
@@ -107,7 +121,9 @@ is in `../std-library/`.
   normalized lexical order starting at filament `1`.
 - Present sidecars are exhaustive. Exact hex overrides beat resolved-index
   overrides.
-- Preserve the stable preview/FeatureScript palette documented in `README.md`.
+- Preserve the stable preview and FeatureScript palette: `#EAEAEA`, `#43484D`,
+  `#A7D293`, `#8AAED6`, `#E1927A`, `#F5D578`, `#A795D2`, `#89DAD3`,
+  `#EAB97D`, and `#999487`. Repeat it for higher filament IDs.
 
 ### Export schema
 
@@ -148,6 +164,11 @@ Current JSON is version 2:
 
 ### Onshape geometry
 
+- The label importer model requires one finished blank prototype solid, a mate
+  connector centered on its top artwork surface with +Z pointing outward, and a
+  mate connector on the parallel bottom surface.
+- Filament bodies overlap intentionally. The selected original prototype is
+  deleted after the required copies are generated.
 - Pattern all coincident prototype copies before booleans; use
   `qPatternInstances` to isolate identities.
 - Skip `opBoolean(UNION)` for a one-body query (`BOOLEAN_BAD_INPUT`).
@@ -170,6 +191,8 @@ Current JSON is version 2:
 - Listing commands were intentionally replaced by `inspect FILE`.
 - Previews occur only when explicitly requested, except interactive `render`
   without `--output` and watch mode.
+- `label create` must fully render and validate before writing save, SVG, or
+  export output.
 - Terminal graphics are native through `rasteroid` (Kitty, iTerm2, Sixel, then
   Unicode fallback); do not add a Chafa dependency.
 
@@ -185,6 +208,8 @@ Current JSON is version 2:
   `swappable-labels`, `bin-sets`, `labels`, and `plates`.
 - Label bundles contain `label.svg` and `label.toml`; plate bundles contain
   `plate.svg`. Runtime exporters generate geometry JSON in memory.
+- Nix label builders retain adjacent SVG color sidecars automatically. Additional
+  font outputs are passed with `--font-dir` and do not rebuild `gfty`.
 - Module labels and plates require a named bin. Module label icon lists accept
   direct SVG paths, `{ icon = PATH; }`, and `{ spacer = "1mm"; }` entries.
   Plates own the reference, and all child labels must use the same X/Y bin size.
@@ -225,8 +250,9 @@ a browser URL:
 1. POST `Config` and `GFTYUltimateConfig` in the body of
    `Element/encodeConfigurationMap`.
 2. Pass the returned `encodedId` as `configuration` in the JSON body of
-   `PartStudio/createPartStudioTranslation`, with `formatName = "STEP"` and
-   `storeInDocument = false` for the validated STEP workflow.
+   `PartStudio/createPartStudioTranslation`, with `formatName = "STEP"`,
+   `stepVersionString = "AP242"`, and `storeInDocument = false` for the
+   validated grouped STEP workflow.
 3. Poll the translation with exponential backoff until `DONE` or `FAILED`.
 4. Download `resultExternalDataIds` with `downloadExternalData`, or a stored blob
    via `downloadFileWorkspace`.
