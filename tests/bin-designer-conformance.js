@@ -5,15 +5,18 @@ const fs = require("node:fs");
 const path = require("node:path");
 const vm = require("node:vm");
 
-const [logicPath, fixturePath] = process.argv.slice(2);
-if (!logicPath || !fixturePath) {
-  throw new Error("usage: bin-designer-conformance.js LOGIC.js EXPECTED.json");
+const [logicPath, codecPath, fixturePath] = process.argv.slice(2);
+if (!logicPath || !codecPath || !fixturePath) {
+  throw new Error("usage: bin-designer-conformance.js LOGIC.js CONFIG-CODEC.js EXPECTED.json");
 }
 
 const context = { window: {} };
 vm.createContext(context);
 vm.runInContext(fs.readFileSync(logicPath, "utf8"), context, {
   filename: path.basename(logicPath),
+});
+vm.runInContext(fs.readFileSync(codecPath, "utf8"), context, {
+  filename: path.basename(codecPath),
 });
 
 const actual = JSON.parse(
@@ -101,3 +104,42 @@ assert.equal(
   context.window.GF.toNix(disabled, defaultDivider),
   "{\n  perSystem = {\n    gfty = { };\n  };\n}\n",
 );
+
+const codecs = context.window.GftyConfigCodecs;
+const plain = (value) => JSON.parse(JSON.stringify(value));
+const serialized = (state) => plain(context.window.GF.serialize(state.flat, state.divider));
+assert.deepStrictEqual(serialized(codecs.parseTomlFiles(tomlFiles)), expected);
+assert.deepStrictEqual(serialized(codecs.parseNix(nix)), expected);
+assert.deepStrictEqual(
+  serialized(codecs.parseTomlFiles(context.window.GF.toTomlFiles(custom, customDivider))),
+  plain(context.window.GF.serialize(custom, customDivider)),
+);
+assert.deepStrictEqual(
+  serialized(codecs.parseNix(customNix)),
+  plain(context.window.GF.serialize(custom, customDivider)),
+);
+
+const editedToml = Array.from(tomlFiles, (file) => ({ name: file.name, text: file.text }));
+const editedBin = editedToml.find((file) => file.name === "bin.toml");
+editedBin.text = editedBin.text
+  .replace("size = [2, 2, 6]", "size = [3, 2, 7]")
+  .replace('supports = "auto"', 'supports = "off"');
+const fromEditedToml = codecs.parseTomlFiles(editedToml, "bin.toml");
+assert.equal(fromEditedToml.flat.size_x_units, 3);
+assert.equal(fromEditedToml.flat.size_z_units, 7);
+assert.equal(fromEditedToml.flat.bin_tub_label_supports_mode, "off");
+
+const fromEditedNix = codecs.parseNix(
+  nix.replace("size = [ 2 2 6 ];", "size = [ 4 3 8 ];")
+    .replace("maxPrintOverhang = 60;", "maxPrintOverhang = 55;"),
+);
+assert.equal(fromEditedNix.flat.size_x_units, 4);
+assert.equal(fromEditedNix.flat.size_y_units, 3);
+assert.equal(fromEditedNix.flat.max_print_overhang_deg, 55);
+const fromEditedNixBase = codecs.parseNix(
+  nix.replace("bases.designed = {\n        size = [ 2 2 ];", "bases.designed = {\n        size = [ 5 3 ];"),
+  defaults,
+);
+assert.equal(fromEditedNixBase.flat.size_x_units, 5);
+assert.equal(fromEditedNixBase.flat.size_y_units, 3);
+assert.throws(() => codecs.parseNix("not nix"), /expected/);

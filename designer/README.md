@@ -8,12 +8,13 @@ swappable labels while producing the canonical JSON accepted by the model's
 ## Use
 
 1. Open the hosted [designer](https://rkana-org.github.io/gfty/).
-2. Configure the model and copy its JSON, typed TOML files, or flake-parts module.
+2. Configure the model or edit its JSON, typed TOML files, or flake-parts module.
 3. Choose **Open in Onshape** to use the pinned immutable model version.
 
-The browser workflow uploads nothing. Generated code previews briefly mark
-added, removed, and changed lines. Generated TOML can be exported through the
-authenticated `gfty` CLI.
+The editors accept the generated TOML and Nix subsets and apply valid changes
+back to the designer. The browser workflow uploads nothing. Generated code
+previews briefly mark added, removed, and changed lines. Generated TOML can be
+exported through the authenticated `gfty` CLI.
 
 ## Develop
 

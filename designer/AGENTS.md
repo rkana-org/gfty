@@ -11,6 +11,7 @@ modules and no application server.
 - `index.html`: development entry point and script ordering.
 - `logic.js`: pure configuration defaults, parsing, validation, divider/easy-grab
   geometry, and canonical JSON serialization. Keep React out of this file.
+- `config-codec.js`: editable generated-TOML and generated-Nix subset parsers.
 - `syntax.js`: dependency-free JSON, TOML, and Nix tokenizers plus line-diffing
   for output previews.
 - `ui.jsx`: shared controls and icons.
@@ -36,9 +37,11 @@ nix flake check
 ```
 
 The root flake check compares `logic.js` default serialization with the same JSON
-fixture used by Rust. Update both implementations intentionally when changing
-configuration defaults, units, track sizing, easy-grab behavior, or support
-recommendations.
+fixture used by Rust. It also checks generated TOML/Nix parser round trips.
+Update both implementations intentionally when changing configuration defaults,
+units, track sizing, easy-grab behavior, or support recommendations. The browser
+parsers intentionally accept only the generated TOML and Nix subsets, not either
+complete language.
 
 ## Onshape versions and releases
 

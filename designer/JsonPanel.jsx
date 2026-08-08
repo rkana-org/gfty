@@ -37,20 +37,54 @@ function CopyCodeButton({ active, label, onClick }) {
   );
 }
 
-function CodeWindow({ name, text, language, copyKey, copied, onCopy, animation, fill = false }) {
+function CodeError({ error }) {
+  if (!error) return null;
   return (
-    <section className={"code-window" + (fill ? " fill" : "")}>
-      <header className="code-window-header">
-        <code className="code-filename">{name}</code>
-        <CopyCodeButton active={copied === copyKey} label={"Copy " + name}
-          onClick={() => onCopy(text, copyKey)} />
-      </header>
-      <pre className="syntax-code" tabIndex={0} aria-label={name + " generated code"}>
-        <SyntaxCode text={text} language={language}
-          highlights={animation.highlights} revision={animation.revision} />
-      </pre>
-    </section>
+    <div className="json-error" role="alert">
+      <Icons.warn size={14} />
+      <span>{error}</span>
+    </div>
   );
+}
+
+function CodeWindow({
+  name, text, language, copyKey, copied, onCopy, animation,
+  onChange, onFocus, onBlur, error, fill = false,
+}) {
+  const highlight = useRef(null);
+  const syncScroll = (event) => {
+    if (!highlight.current) return;
+    highlight.current.scrollTop = event.currentTarget.scrollTop;
+    highlight.current.scrollLeft = event.currentTarget.scrollLeft;
+  };
+  const editorHeight = Math.max(86, String(text).split("\n").length * 19.8 + 28);
+  return (
+    <div className={"code-window-group" + (fill ? " fill" : "")}>
+      <section className={"code-window editable-code-window" + (fill ? " fill" : "") + (error ? " bad" : "")}>
+        <header className="code-window-header">
+          <code className="code-filename">{name}</code>
+          <CopyCodeButton active={copied === copyKey} label={"Copy " + name}
+            onClick={() => onCopy(text, copyKey)} />
+        </header>
+        <div className={"code-editor" + (fill ? "" : " code-editor-auto")}
+          style={fill ? null : { height: editorHeight }}>
+          <pre ref={highlight} className="syntax-code code-editor-highlight" aria-hidden="true">
+            <SyntaxCode text={text} language={language}
+              highlights={animation.highlights} revision={animation.revision} />
+          </pre>
+          <textarea className="code-editor-input" spellCheck={false} wrap="off"
+            aria-label={"Editable " + name}
+            value={text} onChange={(event) => onChange(event.target.value)}
+            onScroll={syncScroll} onFocus={onFocus} onBlur={onBlur} />
+        </div>
+      </section>
+      <CodeError error={error} />
+    </div>
+  );
+}
+
+function fileTextMap(files) {
+  return Object.fromEntries(files.map((file) => [file.name, file.text]));
 }
 
 function usePreviewAnimations(json, tomlFiles, nix) {
@@ -91,21 +125,46 @@ function usePreviewAnimations(json, tomlFiles, nix) {
 
 function JsonPanel({ flat, divider, onApply }) {
   const canonical = GF.toPretty(flat, divider);
+  const generatedTomlFiles = GF.toTomlFiles(flat, divider);
+  const generatedNix = GF.toNix(flat, divider);
   const [text, setText] = useState(canonical);
+  const [tomlText, setTomlText] = useState(() => fileTextMap(generatedTomlFiles));
+  const [nixText, setNixText] = useState(generatedNix);
   const [editing, setEditing] = useState(false);
+  const [editingToml, setEditingToml] = useState("");
+  const [editingNix, setEditingNix] = useState(false);
   const [error, setError] = useState("");
+  const [tomlErrors, setTomlErrors] = useState({});
+  const [nixError, setNixError] = useState("");
   const [mode, setMode] = useState("json");
   const [copied, setCopied] = useState("");
   const jsonHighlight = useRef(null);
 
   const outputParts = GF.enabledOutputs(flat);
-  const tomlFiles = GF.toTomlFiles(flat, divider);
-  const nix = GF.toNix(flat, divider);
+  const tomlFiles = generatedTomlFiles.map((file) => ({
+    ...file,
+    text: tomlText[file.name] === undefined ? file.text : tomlText[file.name],
+  }));
+  const nix = nixText;
   const minified = GF.toMinified(flat, divider);
   const previewAnimations = usePreviewAnimations(text, tomlFiles, nix);
+  const tomlSignature = generatedTomlFiles.map((file) => file.name + "\0" + file.text).join("\0");
 
-  // Sync from upstream state when the user isn't actively typing JSON.
+  // Sync generated values unless that format is actively being edited.
   useEffect(() => { if (!editing) { setText(canonical); setError(""); } }, [canonical, editing]);
+  useEffect(() => {
+    setTomlText((current) => Object.fromEntries(generatedTomlFiles.map((file) => [
+      file.name,
+      editingToml === file.name && current[file.name] !== undefined ? current[file.name] : file.text,
+    ])));
+    if (!editingToml) setTomlErrors({});
+  }, [tomlSignature, editingToml]);
+  useEffect(() => {
+    if (!editingNix) {
+      setNixText(generatedNix);
+      setNixError("");
+    }
+  }, [generatedNix, editingNix]);
 
   const onChange = (e) => {
     const val = e.target.value;
@@ -119,18 +178,58 @@ function JsonPanel({ flat, divider, onApply }) {
     }
   };
 
+  const onTomlChange = (name, value) => {
+    const nextText = { ...tomlText, [name]: value };
+    setTomlText(nextText);
+    try {
+      const files = generatedTomlFiles.map((file) => ({
+        ...file,
+        text: nextText[file.name] === undefined ? file.text : nextText[file.name],
+      }));
+      const parsed = GftyConfigCodecs.parseTomlFiles(files, name);
+      setTomlErrors({});
+      onApply(parsed);
+    } catch (err) {
+      setTomlErrors({ [name]: err.message });
+    }
+  };
+
+  const onNixChange = (value) => {
+    setNixText(value);
+    try {
+      const parsed = GftyConfigCodecs.parseNix(value, flat);
+      setNixError("");
+      onApply(parsed);
+    } catch (err) {
+      setNixError(err.message);
+    }
+  };
+
   const chooseMode = (next) => {
     setMode(next);
     setEditing(false);
+    setEditingToml("");
+    setEditingNix(false);
     setCopied("");
   };
 
   const copy = async (value, key) => {
+    setCopied(key);
+    setTimeout(() => setCopied((current) => current === key ? "" : current), 1300);
     try {
+      if (!navigator.clipboard || !navigator.clipboard.writeText)
+        throw new Error("Clipboard API unavailable");
       await navigator.clipboard.writeText(value);
-      setCopied(key);
-      setTimeout(() => setCopied((current) => current === key ? "" : current), 1300);
-    } catch (e) {}
+    } catch (error) {
+      const temporary = document.createElement("textarea");
+      temporary.value = value;
+      temporary.setAttribute("readonly", "");
+      temporary.style.cssText = "position:fixed;left:-10000px;top:0";
+      document.body.appendChild(temporary);
+      temporary.select();
+      document.execCommand("copy");
+      temporary.remove();
+    }
   };
 
   const syncJsonScroll = (event) => {
@@ -199,7 +298,11 @@ function JsonPanel({ flat, divider, onApply }) {
             {tomlFiles.map((file) =>
               <CodeWindow key={file.name} name={file.name} text={file.text} language="toml"
                 copyKey={"toml:" + file.name} copied={copied} onCopy={copy}
-                animation={previewAnimations.toml[file.name]} />
+                animation={previewAnimations.toml[file.name]}
+                onChange={(value) => onTomlChange(file.name, value)}
+                onFocus={() => setEditingToml(file.name)}
+                onBlur={() => setEditingToml("")}
+                error={tomlErrors[file.name] || ""} />
             )}
           </div>
           <p className="output-hint">
@@ -217,7 +320,11 @@ function JsonPanel({ flat, divider, onApply }) {
       <div className="json-body" role="tabpanel" hidden={mode !== "nix"}>
         <CodeWindow name="module.nix" text={nix} language="nix"
           copyKey="nix" copied={copied} onCopy={copy}
-          animation={previewAnimations.nix} fill />
+          animation={previewAnimations.nix}
+          onChange={onNixChange}
+          onFocus={() => setEditingNix(true)}
+          onBlur={() => setEditingNix(false)}
+          error={nixError} fill />
       </div>
     </React.Fragment>
   );

@@ -107,6 +107,7 @@
               ''
                 node ${./tests/bin-designer-conformance.js} \
                   ${./designer/logic.js} \
+                  ${./designer/config-codec.js} \
                   ${./tests/fixtures/bin/default.json}
                 touch "$out"
               '';

@@ -544,6 +544,8 @@ button { font-family: inherit; }
 .json-body[hidden] { display: none; }
 .output-scroll { overflow-y: auto; }
 .code-window-list { display: flex; flex-direction: column; gap: 14px; }
+.code-window-group { min-width: 0; display: flex; flex-direction: column; gap: 7px; }
+.code-window-group.fill { flex: 1 1 auto; min-height: 0; }
 .code-window {
   min-width: 0; display: flex; flex-direction: column; overflow: hidden;
   border: 1px solid var(--line-2); border-radius: var(--r-md); background: var(--panel-2);
@@ -566,7 +568,11 @@ button { font-family: inherit; }
   background: transparent; color: var(--ink-3); font-size: 10.5px; font-weight: 500; cursor: pointer;
 }
 .code-copy:hover { border-color: var(--line-2); background: #fff; color: var(--ink); }
-.code-copy.copied { color: var(--ok); }
+.code-copy:active { border-color: var(--accent-line); background: var(--accent-weak); transform: translateY(1px); }
+.code-copy.copied {
+  color: oklch(0.420 0.105 155); border-color: color-mix(in oklab, var(--ok) 35%, var(--line));
+  background: var(--diff-added);
+}
 .code-copy:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .syntax-code {
   min-width: 0; max-width: 100%; margin: 0; padding: 14px; overflow: auto;
@@ -606,6 +612,8 @@ button { font-family: inherit; }
 .tok-comment { color: var(--code-comment); font-style: italic; }
 .tok-operator { color: var(--ink-3); }
 .code-editor { position: relative; flex: 1 1 auto; min-height: 0; }
+.code-editor-auto { flex: 0 0 auto; }
+.code-editor-auto .code-editor-input { overflow-y: hidden; }
 .code-editor-highlight {
   position: absolute; inset: 0; overflow: hidden; pointer-events: none;
 }
@@ -664,3 +672,38 @@ button { font-family: inherit; }
 .pop .pop-err { color: var(--err); font-size: 11px; margin-top: 6px; min-height: 1em; }
 
 .kbd { font-family: var(--mono); font-size: 10.5px; background: var(--sunk); border: 1px solid var(--line-2); border-bottom-width: 2px; border-radius: 4px; padding: 1px 5px; color: var(--ink-2); }
+
+/* ---------------- Mobile stacking ---------------- */
+@media (max-width: 900px) {
+  html, body, #root { height: auto; min-height: 100%; }
+  body { overflow-x: hidden; }
+  .app {
+    display: flex; flex-direction: column; width: 100%; height: auto; min-height: 100svh;
+  }
+  .col { width: 100%; height: auto; }
+  .col.rail { border-right: 0; border-bottom: 1px solid var(--line-2); }
+  .col.rail .scroll { flex: 0 0 auto; overflow: visible; }
+  .col.center {
+    height: max(620px, 90svh); border-bottom: 1px solid var(--line-2);
+  }
+  .col.json {
+    height: max(680px, 100svh); border-left: 0; border-top: 0;
+  }
+  .editor-toolbar {
+    height: auto; min-height: 56px; flex: 0 0 auto; flex-wrap: wrap;
+    padding: 10px 14px; row-gap: 5px;
+  }
+  .editor-toolbar .spacer { display: none; }
+  .stage { min-height: 390px; }
+  .stage-inner { inset: 14px 8px; }
+  .legend { gap: 10px 14px; padding: 10px 14px; }
+  .json-body { padding: 14px; }
+}
+
+@media (max-width: 420px) {
+  .topbar { padding-inline: 14px; }
+  .output-topbar { padding-right: 10px; }
+  .section-head, .master { padding-inline: 14px; }
+  .section-body { padding-inline: 14px; }
+  .output-tabs button { padding-inline: 8px; }
+}
