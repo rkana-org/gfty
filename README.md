@@ -356,16 +356,19 @@ before changing behavior or public interfaces. It should capture the important
 architectural details.
 
 ```sh
+# enter devshell with all dependencies (cargo commands work in there automatically, no need to install anything else)
 nix develop
+# format files
 nix fmt
+# run tests and clippy
 cargo test
 cargo clippy --all-targets --all-features -- -D warnings
+# run tests and clippy on the production build or the examples
 nix flake check
 nix flake check ./examples
 ```
 
-FeatureScript has no local compiler. FeatureScript changes also need an Onshape
-compile and smoke test.
+If you do FeatureScript changes you will have to fork the onshape model as there is no local compiler.
 
 ## 📜 License
 
