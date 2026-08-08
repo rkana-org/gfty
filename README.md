@@ -1,82 +1,102 @@
-# gfty
-
 <table>
   <tr>
     <td width="50%">
-      <img src="screenshots/web-designer.png" alt="Gridfinity Ultimate web designer" width="100%" />
-      <br /><sub>Web designer</sub>
+      <img src="https://github.com/user-attachments/assets/a2183520-ce9d-46cc-bd11-ca3025361d09" alt="Gridfinity Ultimate web designer" width="100%" />
     </td>
     <td width="50%">
-      <img src="screenshots/plate-preview.png" alt="gfty multi-label plate preview" width="100%" />
-      <br /><sub>Multi-label plate preview</sub>
+      <img src="TODO" alt="gfty multi-label plate preview" width="100%" />
     </td>
   </tr>
   <tr>
     <td width="50%">
-      <img src="screenshots/web-designer-onshape.png" alt="Web designer output in Onshape" width="100%" />
-      <br /><sub>Web designer output in Onshape</sub>
+      <img src="https://github.com/user-attachments/assets/d25a9dd3-07ee-4f18-9891-030337ec78b1" alt="Web designer output in Onshape" width="100%" />
     </td>
     <td width="50%">
-      <img src="screenshots/plate-onshape.png" alt="Generated multi-label plate in Onshape" width="100%" />
-      <br /><sub>Generated plate in Onshape</sub>
+      <img src="TODO" alt="Generated multi-label plate in Onshape" width="100%" />
     </td>
   </tr>
 </table>
 
 [Web designer](https://rkana-org.github.io/gfty/) | [CLI](#usage-cli) | [Nix](#usage-nix) | [Examples](examples/)
 
-## About
+## gfty
 
-`gfty` generates Gridfinity Ultimate parts and multi-color labels from typed
-configuration files. The source of truth is config, not manually edited CAD
-state. Onshape does the CAD work. `gfty` handles the plumbing and validates the
-result.
+`gfty` is a tool to generate fully customizable gridfinity bins with
+compartments, baseplates and detachable labels and rims based on my [Gridfinity Ultimate Onshape model](https://cad.onshape.com/documents/044aa38d921c6673acd89aef/w/ec26a4ac88951ab051a8d0c0/e/47f09ccd9b344504691f98d4).
+The tool itself is CLI-first and designed with automation in mind, allowing you
+to define a library of bins and labels via TOML or Nix that can then be
+automatically generated and downloaded from onshape by the tool. This includes
+multi-colored labels with aritrary SVG artwork and text as one predictably
+named part per color, ready for automatic import in a slicer software of your
+choosing.
 
-- Automation-ready pipeline: Nix definitions -> typed TOML -> FeatureScript JSON
-  -> parameterized Onshape models -> verified STEP downloads. Stable multipart
-  output supports automatic slicer jobs.
-- Reproducible definitions, validation, and SVG previews with Nix.
-- Gridfinity bins, bases, detachable rims, detachable label blanks, connector
-  pins, artwork labels, and multi-label plates.
-- SVG templates, reusable icons, text outlining, and arbitrary filament IDs.
-- Browser designer for quick bin configuration and one-off models.
-- Native terminal previews and dependency-aware label rebuilds.
+Additionally this tool has a web UI (thanks clanker) that can be used to
+quickly test some designs in onshape or to help with the TOML or Nix
+configuration. So the **TL;DR** is:
 
-## Usage: web designer
+- **Model previews and live label previews** for any object using the `gfty` CLI tool
+- **Fully parametric model** that includes bins, bases, detachable rims, detachable label blanks, connector pins, artwork labels, and multi-label plates
+- **Web designer** for quick bin configuration and one-off exports
+- **Declarative and automation-first** Nix definitions → typed TOML → FeatureScript JSON → parameterized Onshape models → automatic STEP file & preview image downloads <sub>(i may or may not have created [over 1000 labels for my shop](TODO-reddit-link), send help)</sub>
+- **Multi-color swappable labels** with reusable templates, arbitrary SVG artwork, multi-color text and artwork
+- **Swappable rims** to allow for re-coloring the top for categorization of parts (or whatever you want to do with it)
 
-Open the hosted [Gridfinity Ultimate designer](https://rkana-org.github.io/gfty/).
-It edits one Gridfinity configuration and opens the pinned model in Onshape.
-The configuration includes bin dimensions, dividers, easy-grab faces, and the
-related base, rim, and blank-label options.
+## But.. Why??
 
-1. Configure the bin.
-2. Copy the generated JSON, typed TOML files, or flake-parts module.
-3. Select **Open in Onshape**.
+Ehh.. because why not. The rundown is that it started out as me wanting a
+parametric gridfinity model with detachable rims, mainly so I can change their
+color for organizational purposes. Then I decided printing labels on a label
+printer sucks and I got focused on detachable 3D-printed labels which came with
+their own problems: Basically onshape and SVG is not a thing (well now it is
+😅), automatic exports require calling the (free) API, and so on. Then I
+noticed that generating over a thousand labels by hand is not gonna happen, so
+I made the whole process controlled via a TOML file and added generation of
+full plates of labels at once. Thanks for coming to my TED talk. Anyhow, have
+fun with it.
 
-The designer runs entirely in the browser. It does not create SVG artwork
-labels or plates containing multiple labels. Use the CLI or Nix for those.
+## Usage: Web Designer
 
-## Usage: CLI
+Open the hosted [Web Designer](https://rkana-org.github.io/gfty/). You can play
+around with the settings on the left, merge compartments (or configure scoops)
+in the middle section and see the resulting JSON config on the right plus a
+button to open that specific config on onshape (no account required). You can
+also view the configuration as TOML for the `gfty` CLI tool or as `nix` code
+for the more powerful reproducible variant [(see below)](#usage-nix).
 
-The CLI reads typed TOML, configures pinned immutable Onshape models, and
-downloads validated STEP files. Validation, SVG rendering, and plate layout run
-locally. Only model export needs Onshape credentials.
+Everything runs locally in the browser or in onshape. Labels and SVG artwork can
+currently only be created in TOML or Nix due to the complexity. Usually you'd
+want to create the SVGs in specialized software like Inkscape anyway. And
+designing 1000 labels in a web ui is no fun, so automate all the things!
+
+## Usage: gfty CLI
+
+The `gfty` CLI reads TOML, configures pinned immutable Onshape models, and
+downloads STEP files. Validation, SVG rendering, and plate layout run locally.
+Only model export needs Onshape credentials. You will need to create a API key
+in your onshape account if you want to do that, it's free and has monthly
+limits (which are huge for this purpose, so no big deal).
 
 ### Install
 
-Install the current version with Cargo:
+Installing via nix is the easiest, just run `nix shell github:rkana-org/gfty`
+and you are put into a shell with the latest version of the tool once it has
+compiled (takes a minute or two). Otherwise, if you don't want nix, you can
+install it via cargo (which you need to get yourself):
 
 ```sh
 cargo install --locked --git https://github.com/rkana-org/gfty
 ```
 
-Text rendering only uses explicitly enabled fonts. Pass `--system-fonts` to use
-host fonts, or repeat `--font-dir PATH` for selected font directories.
+Text rendering only uses explicitly enabled fonts for reproducibiltiy. Pass
+`--system-fonts` to use host fonts, or repeat `--font-dir PATH` for selected
+font directories.
 
 ### Configuration files
 
 Every TOML has an explicit `kind` and `version`. Relative paths resolve from the
-TOML that contains them.
+TOML that contains them. You can find examples in the [`examples/`](examples/) directory.
+If you are still lost, your favourite AI will be able to help you out
+(especially coding CLIs as they can also generate stuff for you).
 
 | Kind | Version | Purpose | Example |
 | --- | ---: | --- | --- |
@@ -87,7 +107,7 @@ TOML that contains them.
 | `bin-set` | 1 | Checked set of compatible bin parts | [`constituent-2x2.toml`](examples/sets/constituent-2x2.toml) |
 | `label` | 1 | SVG artwork tied to a bin prototype | [`hello.toml`](examples/labels/hello.toml) |
 
-A bin definition can be compact:
+A bin definition looks like this (let the Web Designer help you here):
 
 ```toml
 kind = "bin"
@@ -136,21 +156,58 @@ spacer = "1mm"
 icon = "../icons/nut.svg"
 ```
 
-Templates need physical `width` and `height`, a `viewBox`, `text-NAME` elements,
-and `icons-NAME` rectangles. Label TOML uses `NAME` as the field key. Plain text
-uses filament 1. `{}`, `[]`, and `<>` select filaments 2, 3, and 4. `!N{}`
-selects any non-negative filament ID.
+Templates need physical `width` and `height`, a `viewBox`, `text-NAME`
+elements, and `icons-NAME` rectangles. Label TOML uses `NAME` as the field key
+to set the text or SVG contents of the respective item. Plain text uses
+filament 1, the label body will be filament id 0. Text enclosed within `{}`,
+`[]`, and `<>` select filaments 2, 3, and 4. `!N{}` selects any non-negative
+filament ID `N`.
 
-### Validate and preview
+### Export STEP
+
+`gfty export` creates STEP files (and preview images) for things.
+First, store Onshape API credentials in `~/.config/gfty/onshape.toml`:
+
+```toml
+# ~/.config/gfty/onshape.toml
+access-key = "..."
+secret-key = "..."
+```
+
+Use `--onshape-credentials PATH` to select another file. The environment
+variables `GFTY_ONSHAPE_ACCESS_KEY` and `GFTY_ONSHAPE_SECRET_KEY` are also
+supported. A read-only document API key is sufficient.
+
+Label STEP files contain one single part per filament ID. Import them as a
+multi-part object and assign each part to its filament. Stable part names sort
+lower filament IDs first for overlap priority. Multi-label plates also contain
+a 1 mm sacrificial (and sacrilegious) connector layer. Lower the object by 1 mm
+in the slicer to hide it below the build plate, it is just necessary to make
+the object be one part so you don't have to assign a filament to hundreds of objects.
+
+Examples:
 
 ```sh
-gfty bin validate bins/fasteners.toml
-gfty bin inspect bins/fasteners.toml
+gfty export bins/fasteners.toml --output fasteners.step --image fasteners.png
+gfty export bases/2x2.toml --output base.step
+gfty export rims/2x2.toml --output rim.step
+gfty export sets/fasteners.toml --output fastener-set.step
+gfty connector-pin export --output connector-pin.step
 
-gfty --system-fonts label validate labels/m3.toml
-gfty --system-fonts label render labels/m3.toml --output m3.svg
-gfty --system-fonts --preview label inspect labels/m3.toml
-gfty --system-fonts label watch labels/m3.toml --svg m3.svg
+gfty --system-fonts export labels/m3.toml --output m3.step
+gfty --system-fonts label plate export \
+  --bin bins/fasteners.toml \
+  --dimensions 200mm 250mm \
+  --output labels.step \
+  labels/m3.toml labels/m4.toml labels/m5.toml
+```
+
+### Useful commands
+
+For a live-preview when designing a label try this command:
+
+```sh
+gfty --system-fonts label watch your-label.toml
 ```
 
 Create and optionally save a label without writing TOML first:
@@ -175,50 +232,21 @@ gfty --system-fonts label plate create \
   labels/m3.toml labels/m4.toml labels/m5.toml
 ```
 
-### Export STEP
-
-`gfty export` dispatches any supported TOML to the correct exporter:
-
-```sh
-gfty export bins/fasteners.toml --output fasteners.step --image fasteners.png
-gfty export bases/2x2.toml --output base.step
-gfty export rims/2x2.toml --output rim.step
-gfty export sets/fasteners.toml --output fastener-set.step
-gfty connector-pin export --output connector-pin.step
-
-gfty --system-fonts export labels/m3.toml --output m3.step
-gfty --system-fonts label plate export \
-  --bin bins/fasteners.toml \
-  --dimensions 200mm 250mm \
-  --output labels.step \
-  labels/m3.toml labels/m4.toml labels/m5.toml
-```
-
-Label STEP files contain one overlapping part per filament ID. Import them as a
-multi-part object and assign each part to its filament. Stable part names sort
-lower filament IDs first for overlap priority in OrcaSlicer. Multi-label plates
-also contain a 1 mm sacrificial connector layer. Lower the object by 1 mm in the
-slicer to hide it below the build plate.
-
-Store Onshape API credentials in a mode-0600 file:
-
-```toml
-# ~/.config/gfty/onshape.toml
-access-key = "..."
-secret-key = "..."
-```
-
-Use `--onshape-credentials PATH` to select another file. The environment
-variables `GFTY_ONSHAPE_ACCESS_KEY` and `GFTY_ONSHAPE_SECRET_KEY` are also
-supported. A read-only document API key is sufficient.
-
 Run `gfty --help` or `gfty <command> --help` for the complete command reference.
 
 ## Usage: Nix
 
-The flake-parts module defines a library under `perSystem.gfty`. Evaluation
-checks references and compatible dimensions. Builds produce typed TOML and SVG
-previews without contacting Onshape.
+So for more advanced stuff, gfty comes with a flake-parts module that allows
+defining parts super easily (if you know nix i guess), while allowing you to
+use the full power of the nix language to define stuff. As opposed to TOML this
+is also typechecked and also somewhat semantically checked (validates
+references to other things).
+
+Builds produce typed TOML and SVG previews fully locally without requiring
+access to onshape. For convenience it automatically generates export scripts
+that can export all defined items individually or all at once.
+
+An example gfty based parts library could look like this:
 
 ```nix
 {
@@ -289,8 +317,13 @@ nix build .#bins.all
 nix build .#labels.all
 ```
 
-Generated apps build local inputs, call Onshape at runtime, and write the STEP to
-the current directory:
+Generated apps build local inputs, call onshape at runtime, and write the STEP
+to the current directory. I purposefully don't do that in a nix build because I
+cannot guarantee that onshape is reproducible (because it isn't, the same model
+may generate different output tomorrow or even today). Also dealing with the
+FOD hashes is no fun anyway. So instead, the export script for each part is
+formalized as an app and can be run on demand. It will detect previously
+downloaded files and skip exporting it again.
 
 ```sh
 nix run .#export-bin-set-fasteners
@@ -299,19 +332,22 @@ nix run .#export-plate-labels
 nix run .#export-label-m3 -- --output custom.step --force
 ```
 
-Runtime export keeps credentials and remote files outside the Nix store. Remote
-STEP bytes are not assumed to be reproducible. They are cached by normalized
-request and validated before use.
+Runtime export keeps credentials and remote files outside the Nix store. As
+said previously, remote STEP bytes are not assumed to be reproducible. They are
+cached by normalized request and validated before use.
 
-For direct builders, add `inputs.gfty.overlays.default` and use
-`pkgs.gfty.mkBin`, `mkBase`, `mkRim`, `mkSwappableLabel`, `mkBinSet`, `mkLabel`,
-or `mkPlate`. See the buildable [`examples/`](examples/) flake for a complete
-integration.
+For direct builders, add `inputs.gfty.overlays.default` to your pkgs instance
+and use the passthrough functions `mkBin`, `mkBase`, `mkRim`,
+`mkSwappableLabel`, `mkBinSet`, `mkLabel`, or `mkPlate` available on
+`pkgs.gfty` (e.g. `pkgs.gfty.mkBin`). See the buildable
+[`examples/`](examples/) flake for a complete integration.
 
 ## Contributing
 
-Contributions and bug reports are welcome. Read [`AGENTS.md`](AGENTS.md) before
-changing behavior or public interfaces.
+Contributions and bug reports are welcome. I know you may be a human if you are
+reading this, in that case please still refer to [`AGENTS.md`](AGENTS.md)
+before changing behavior or public interfaces. It should capture the important
+architectural details.
 
 ```sh
 nix develop
