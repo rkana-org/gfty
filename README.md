@@ -34,12 +34,12 @@ Additionally this tool has a web UI (thanks clanker) that can be used to
 quickly test some designs in onshape or to help with the TOML or Nix
 configuration. So the **TL;DR** is:
 
-- **Model previews and live label previews** for any object using the `gfty` CLI tool
-- **Fully parametric model** that includes bins, bases, detachable rims, detachable label blanks, connector pins, artwork labels, and multi-label plates
-- **Web designer** for quick bin configuration and one-off exports
-- **Declarative and automation-first** Nix definitions → typed TOML → FeatureScript JSON → parameterized Onshape models → automatic STEP file & preview image downloads <sub>(i may or may not have created [over 1000 labels for my shop](TODO-reddit-link), send help)</sub>
-- **Multi-color swappable labels** with reusable templates, arbitrary SVG artwork, multi-color text and artwork
-- **Swappable rims** to allow for re-coloring the top for categorization of parts (or whatever you want to do with it)
+- ▶️ **Model previews and live label previews** for any object using the `gfty` CLI tool
+- 🧰 **Fully parametric model** that includes bins, bases, detachable rims, detachable label blanks, connector pins, artwork labels, and multi-label plates
+- 🌐 **Web designer** for quick bin configuration and one-off exports
+- ❄️ **Declarative and automation-first** Nix definitions → typed TOML → FeatureScript JSON → parameterized Onshape models → automatic STEP file & preview image downloads <sub>(i may or may not have created [over 1000 labels for my shop](TODO-reddit-link), send help)</sub>
+- 🌈 **Multi-color swappable labels** with reusable templates, arbitrary SVG artwork, multi-color text and artwork
+- 🎩 **Swappable rims** to allow for re-coloring the top for categorization of parts (or whatever you want to do with it)
 
 ## But.. Why??
 
@@ -54,7 +54,7 @@ I made the whole process controlled via a TOML file and added generation of
 full plates of labels at once. Thanks for coming to my TED talk. Anyhow, have
 fun with it.
 
-## Usage: Web Designer
+## 🌐 Usage: Web Designer
 
 Open the hosted [Web Designer](https://rkana-org.github.io/gfty/). You can play
 around with the settings on the left, merge compartments (or configure scoops)
@@ -68,7 +68,9 @@ currently only be created in TOML or Nix due to the complexity. Usually you'd
 want to create the SVGs in specialized software like Inkscape anyway. And
 designing 1000 labels in a web ui is no fun, so automate all the things!
 
-## Usage: gfty CLI
+<a id="usage-cli"></a>
+
+## 💻 Usage: gfty CLI
 
 The `gfty` CLI reads TOML, configures pinned immutable Onshape models, and
 downloads STEP files. Validation, SVG rendering, and plate layout run locally.
@@ -236,7 +238,9 @@ gfty --system-fonts label plate create \
 
 Run `gfty --help` or `gfty <command> --help` for the complete command reference.
 
-## Usage: Nix
+<a id="usage-nix"></a>
+
+## ❄️ Usage: Nix
 
 So for more advanced stuff, gfty comes with a flake-parts module that allows
 defining parts super easily (if you know nix i guess), while allowing you to
@@ -344,7 +348,7 @@ and use the passthrough functions `mkBin`, `mkBase`, `mkRim`,
 `pkgs.gfty` (e.g. `pkgs.gfty.mkBin`). See the buildable
 [`examples/`](examples/) flake for a complete integration.
 
-## Contributing
+## ❤️ Contributing
 
 Contributions and bug reports are welcome. I know you may be a human if you are
 reading this, in that case please still refer to [`AGENTS.md`](AGENTS.md)
@@ -363,7 +367,7 @@ nix flake check ./examples
 FeatureScript has no local compiler. FeatureScript changes also need an Onshape
 compile and smoke test.
 
-## License
+## 📜 License
 
 Licensed under the MIT license. See [`LICENSE`](LICENSE) or
 <https://opensource.org/licenses/MIT>.
