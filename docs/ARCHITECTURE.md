@@ -75,10 +75,10 @@ Configured part IDs are never persisted or hard-coded.
 ### Artwork labels and plates
 
 1. Resolve the SVG template, icons, sidecars, and explicitly available fonts.
-2. Normalize SVG primitives, transforms, text, fills, and strokes through
-   `usvg`.
-3. Compose local label geometry by filament and serialize compact version-2
-   `M`/`L`/`C`/`Z` path JSON in memory.
+2. Normalize SVG primitives, transforms, text, and paint through `usvg`, then
+   expand resolved strokes into closed fill contours with `tiny-skia-path`.
+3. Compose local fill and expanded-stroke geometry by filament and serialize
+   compact version-2 `M`/`L`/`C`/`Z` path JSON in memory.
 4. Send label geometry as `Config` and the referenced bin carrier as
    `GFTYUltimateConfig` to the immutable label model.
 5. Download and validate exactly the expected `part-<filament>` bodies.

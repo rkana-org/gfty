@@ -162,10 +162,10 @@ scale = 1.1 # Optionally combine with scale-x and scale-y.
 
 Templates need physical `width` and `height`, a `viewBox`, `text-NAME`
 elements, and `icons-NAME` rectangles. Label TOML uses `NAME` as the field key
-to set the text or SVG contents of the respective item. Plain text uses
-filament 1, the label body will be filament id 0. Text enclosed within `{}`,
-`[]`, and `<>` select filaments 2, 3, and 4. `!N{}` selects any non-negative
-filament ID `N`.
+to set the text or SVG contents of the respective item. Plain text uses filament
+1, the label body will be filament id 0. Text enclosed within `{}`, `[]`, and
+`<>` select filaments 2, 3, and 4. `!N{}` selects any non-negative filament ID
+`N`.
 
 ### Export STEP
 

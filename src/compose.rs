@@ -600,6 +600,56 @@ mod tests {
     }
 
     #[test]
+    fn stroke_only_icon_geometry_reaches_the_exporter() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
+        fs::create_dir_all(root.join("templates")).unwrap();
+        fs::create_dir_all(root.join("icons")).unwrap();
+        fs::write(
+            root.join("templates/label.svg"),
+            r#"<svg xmlns="http://www.w3.org/2000/svg" width="100mm" height="100mm" viewBox="0 0 100 100"><rect id="icons-main" x="40" y="40" width="20" height="20" fill="none"/></svg>"#,
+        )
+        .unwrap();
+        fs::write(
+            root.join("icons/stroke.svg"),
+            r##"<svg xmlns="http://www.w3.org/2000/svg" width="10mm" height="10mm" viewBox="0 0 10 10"><line x1="0" y1="5" x2="10" y2="5" stroke="#123456" stroke-width="2"/></svg>"##,
+        )
+        .unwrap();
+        fs::write(
+            root.join("bin.toml"),
+            "kind = \"bin\"\nversion = 2\nsize = [1, 1, 6]\n",
+        )
+        .unwrap();
+        let label = LoadedLabel::from_config(
+            LabelConfig {
+                kind: crate::config::ConfigKind::Label,
+                version: crate::config::LABEL_CONFIG_VERSION,
+                template: "templates/label.svg".to_owned(),
+                bin: "bin.toml".to_owned(),
+                filament: 0,
+                text: BTreeMap::new(),
+                icon: BTreeMap::new(),
+                icons: BTreeMap::from([(
+                    "main".to_owned(),
+                    vec![IconPlacement::Icon {
+                        icon: "icons/stroke.svg".to_owned(),
+                        scale: None,
+                        scale_x: None,
+                        scale_y: None,
+                        colors: BTreeMap::new(),
+                    }],
+                )]),
+            },
+            root.to_owned(),
+        );
+
+        let bounds = exported_icon_bounds(&label);
+        for (actual, expected) in bounds.into_iter().zip([-10.0, -2.0, 10.0, 2.0]) {
+            assert!((actual - expected).abs() < 1e-5, "{bounds:?}");
+        }
+    }
+
+    #[test]
     fn per_icon_scaling_can_extend_beyond_the_icon_slot() {
         let temp = tempfile::tempdir().unwrap();
         let root = temp.path();

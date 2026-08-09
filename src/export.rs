@@ -4,7 +4,7 @@ use anyhow::{Context, Result, bail};
 use serde::{Serialize, ser::SerializeStruct};
 use usvg::{
     Node, Paint,
-    tiny_skia_path::{Path, PathSegment, Point},
+    tiny_skia_path::{Path, PathSegment, PathStroker, Point},
 };
 
 use crate::{color::PreviewPalette, compose::RenderedLabel};
@@ -135,7 +135,7 @@ pub fn export_rendered(rendered: &RenderedLabel) -> Result<ExportDocument> {
     )?;
 
     if by_filament.is_empty() {
-        bail!("rendered label contains no filled geometry to export");
+        bail!("rendered label contains no fill or stroke geometry to export");
     }
     let parts: Vec<_> = by_filament
         .into_iter()
@@ -172,32 +172,39 @@ fn collect_group(
                 if !path.is_visible() {
                     continue;
                 }
-                let Some(fill) = path.fill() else {
-                    continue;
-                };
-                let Paint::Color(color) = fill.paint() else {
-                    bail!("gradients and patterns cannot be exported as filament geometry");
-                };
-                let filament = palette
-                    .filament(color.red, color.green, color.blue)
-                    .with_context(|| {
-                        format!(
-                            "rendered color #{:02x}{:02x}{:02x} has no filament mapping",
-                            color.red, color.green, color.blue
-                        )
-                    })?;
-                // usvg has already resolved the complete SVG transform stack,
-                // including viewports and all ancestor transforms. Let
-                // tiny-skia apply that matrix before converting coordinates to
-                // centered physical millimeters.
-                let transformed = path
-                    .data()
-                    .clone()
-                    .transform(path.abs_transform())
-                    .context("failed to apply resolved SVG path transform")?;
-                let contours = convert_visible_path(&transformed, canvas, size_mm);
-                if !contours.is_empty() {
-                    result.entry(filament).or_default().push(Shape { contours });
+
+                // A line has the SVG default black fill even though that fill
+                // cannot cover an area. Avoid treating it as filament geometry;
+                // in particular, source <line> elements do not discover a
+                // spurious black filament before usvg converts them to paths.
+                if let Some(fill) = path.fill()
+                    && path_can_form_filled_region(path.data())
+                {
+                    let transformed = transform_path(path.data(), path.abs_transform(), "fill")?;
+                    collect_painted_path(
+                        fill.paint(),
+                        &transformed,
+                        palette,
+                        canvas,
+                        size_mm,
+                        result,
+                    )?;
+                }
+
+                if let Some(stroke) = path.stroke() {
+                    // SVG strokes are defined in the path's local coordinate
+                    // system and transformed with the path. Expand first so
+                    // non-uniform transforms scale the outline correctly.
+                    let outlined = expand_stroke(path, stroke)?;
+                    let transformed = transform_path(&outlined, path.abs_transform(), "stroke")?;
+                    collect_painted_path(
+                        stroke.paint(),
+                        &transformed,
+                        palette,
+                        canvas,
+                        size_mm,
+                        result,
+                    )?;
                 }
             }
             Node::Image(_) => bail!("raster images cannot be exported as filament geometry"),
@@ -207,6 +214,81 @@ fn collect_group(
         }
     }
     Ok(())
+}
+
+fn transform_path(path: &Path, transform: usvg::Transform, paint: &str) -> Result<Path> {
+    path.clone()
+        .transform(transform)
+        .with_context(|| format!("failed to apply resolved SVG {paint} transform"))
+}
+
+fn expand_stroke(path: &usvg::Path, stroke: &usvg::Stroke) -> Result<Path> {
+    let mut style = stroke.to_tiny_skia();
+    let resolution_scale = PathStroker::compute_resolution_scale(&path.abs_transform());
+
+    // Path::stroke does not apply Stroke::dash itself. Match tiny-skia's
+    // renderer by dashing the centerline before constructing its outline.
+    let dashed = style
+        .dash
+        .take()
+        .map(|dash| {
+            path.data()
+                .dash(&dash, resolution_scale)
+                .context("failed to apply SVG stroke dash pattern")
+        })
+        .transpose()?;
+    let centerline = dashed.as_ref().unwrap_or_else(|| path.data());
+    centerline
+        .stroke(&style, resolution_scale)
+        .context("failed to expand SVG stroke into filled geometry")
+}
+
+fn collect_painted_path(
+    paint: &Paint,
+    path: &Path,
+    palette: &PreviewPalette,
+    canvas: [f64; 2],
+    size_mm: [f64; 2],
+    result: &mut BTreeMap<u32, Vec<Shape>>,
+) -> Result<()> {
+    let contours = convert_visible_path(path, canvas, size_mm);
+    if contours.is_empty() {
+        return Ok(());
+    }
+
+    let Paint::Color(color) = paint else {
+        bail!("gradients and patterns cannot be exported as filament geometry");
+    };
+    let filament = palette
+        .filament(color.red, color.green, color.blue)
+        .with_context(|| {
+            format!(
+                "rendered color #{:02x}{:02x}{:02x} has no filament mapping",
+                color.red, color.green, color.blue
+            )
+        })?;
+    result.entry(filament).or_default().push(Shape { contours });
+    Ok(())
+}
+
+fn path_can_form_filled_region(path: &Path) -> bool {
+    let mut segment_count = 0usize;
+    for segment in path.segments() {
+        match segment {
+            PathSegment::MoveTo(_) => segment_count = 0,
+            PathSegment::LineTo(_) => {
+                segment_count += 1;
+                if segment_count >= 2 {
+                    return true;
+                }
+            }
+            // A single curved segment and its implicit closing line can
+            // enclose an area, unlike a single straight segment.
+            PathSegment::QuadTo(..) | PathSegment::CubicTo(..) => return true,
+            PathSegment::Close => segment_count = 0,
+        }
+    }
+    false
 }
 
 fn convert_visible_path(path: &Path, canvas: [f64; 2], size_mm: [f64; 2]) -> Vec<Contour> {
@@ -595,6 +677,98 @@ mod tests {
     }
 
     #[test]
+    fn exports_stroke_only_lines_as_closed_filled_geometry() {
+        let rendered = RenderedLabel {
+            // SVG gives line elements an implicit black fill, but that fill has
+            // no area and is intentionally absent from this palette.
+            svg: r##"<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><line x1="2" y1="5" x2="8" y2="5" stroke="#8aaed6" stroke-width="2"/></svg>"##.to_owned(),
+            palette: PreviewPalette::new([3]).unwrap(),
+            size_mm: [10.0, 10.0],
+            base_filament: 0,
+        };
+
+        let output = export_rendered(&rendered).unwrap();
+        assert_eq!(output.filaments, [0, 3]);
+        assert_eq!(output.labels[0].parts.len(), 1);
+        let part = &output.labels[0].parts[0];
+        assert_eq!(part.filament, 3);
+        assert_eq!(part.shapes.len(), 1);
+        assert_eq!(part.shapes[0].contours.len(), 1);
+        assert_bounds_close(
+            shape_control_bounds(&part.shapes[0]),
+            [-3.0, -1.0, 3.0, 1.0],
+        );
+
+        let json = serde_json::to_value(&output).unwrap();
+        let path = json["labels"][0]["parts"][0]["shapes"][0]["path"]
+            .as_str()
+            .unwrap();
+        assert!(path.starts_with("M "), "{path}");
+        assert!(path.ends_with(" Z"), "{path}");
+    }
+
+    #[test]
+    fn exports_fill_and_stroke_as_separate_filament_geometry() {
+        let rendered = RenderedLabel {
+            svg: r##"<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><path fill="#a7d293" stroke="#8aaed6" stroke-width="2" d="M3 3L7 3L7 7L3 7Z"/></svg>"##.to_owned(),
+            palette: PreviewPalette::new([2, 3]).unwrap(),
+            size_mm: [10.0, 10.0],
+            base_filament: 0,
+        };
+
+        let output = export_rendered(&rendered).unwrap();
+        assert_eq!(output.filaments, [0, 2, 3]);
+        assert_eq!(output.labels[0].parts.len(), 2);
+        let fill = &output.labels[0].parts[0];
+        assert_eq!(fill.filament, 2);
+        assert_bounds_close(
+            shape_control_bounds(&fill.shapes[0]),
+            [-2.0, -2.0, 2.0, 2.0],
+        );
+        let stroke = &output.labels[0].parts[1];
+        assert_eq!(stroke.filament, 3);
+        assert_eq!(stroke.shapes[0].contours.len(), 2);
+        assert_bounds_close(
+            shape_control_bounds(&stroke.shapes[0]),
+            [-3.0, -3.0, 3.0, 3.0],
+        );
+    }
+
+    #[test]
+    fn expands_dashes_before_stroking() {
+        let rendered = RenderedLabel {
+            svg: r##"<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><path fill="none" stroke="#8aaed6" stroke-width="1" stroke-dasharray="2 2" d="M1 5L9 5"/></svg>"##.to_owned(),
+            palette: PreviewPalette::new([3]).unwrap(),
+            size_mm: [10.0, 10.0],
+            base_filament: 0,
+        };
+
+        let output = export_rendered(&rendered).unwrap();
+        let contours = &output.labels[0].parts[0].shapes[0].contours;
+        assert_eq!(contours.len(), 2);
+        for contour in contours {
+            assert!(contour.closed);
+            assert!(!contour.segments.is_empty());
+        }
+    }
+
+    #[test]
+    fn expands_strokes_before_applying_non_uniform_transforms() {
+        let rendered = RenderedLabel {
+            svg: r##"<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20"><path transform="scale(2 3)" fill="none" stroke="#8aaed6" stroke-width="2" d="M2 2L4 2"/></svg>"##.to_owned(),
+            palette: PreviewPalette::new([3]).unwrap(),
+            size_mm: [20.0, 20.0],
+            base_filament: 0,
+        };
+
+        let output = export_rendered(&rendered).unwrap();
+        assert_bounds_close(
+            shape_control_bounds(&output.labels[0].parts[0].shapes[0]),
+            [-6.0, 1.0, -2.0, 7.0],
+        );
+    }
+
+    #[test]
     fn nudges_endpoint_coincident_bezier_controls_for_onshape_regions() {
         let rendered = RenderedLabel {
             svg: r##"<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><path fill="#8aaed6" d="M0 0 C0 0 10 5 10 5 L10 10 L0 10 Z"/></svg>"##.to_owned(),
@@ -635,6 +809,41 @@ mod tests {
             panic!("expected line");
         };
         assert_point_close(to, [-7.2, 1.8]);
+    }
+
+    fn shape_control_bounds(shape: &Shape) -> [f64; 4] {
+        let mut bounds = [
+            f64::INFINITY,
+            f64::INFINITY,
+            f64::NEG_INFINITY,
+            f64::NEG_INFINITY,
+        ];
+        let mut include = |point: [f64; 2]| {
+            bounds[0] = bounds[0].min(point[0]);
+            bounds[1] = bounds[1].min(point[1]);
+            bounds[2] = bounds[2].max(point[0]);
+            bounds[3] = bounds[3].max(point[1]);
+        };
+        for contour in &shape.contours {
+            include(contour.start);
+            for segment in &contour.segments {
+                match segment {
+                    Segment::Line { to } => include(*to),
+                    Segment::Cubic { c1, c2, to } => {
+                        include(*c1);
+                        include(*c2);
+                        include(*to);
+                    }
+                }
+            }
+        }
+        bounds
+    }
+
+    fn assert_bounds_close(actual: [f64; 4], expected: [f64; 4]) {
+        for (actual, expected) in actual.into_iter().zip(expected) {
+            assert!((actual - expected).abs() < 1e-5, "{actual} != {expected}");
+        }
     }
 
     fn assert_point_close(actual: [f64; 2], expected: [f64; 2]) {

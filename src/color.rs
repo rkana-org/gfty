@@ -249,9 +249,9 @@ pub fn discover_colors(svg: &str) -> Result<BTreeSet<String>> {
             continue;
         }
 
-        // Fill and stroke are both converted to filled paths by usvg. Resolve
-        // inherited paint here so every color that can reach the exporter is
-        // assigned a filament before normalization.
+        // usvg resolves both fill and stroke paint, and the exporter expands
+        // strokes into filled paths. Resolve inherited paint here so every
+        // color that can reach the exporter is assigned a filament.
         if node.tag_name().name() != "line" {
             collect_paint(&node, "fill", Some("#000000"), &mut result)?;
         }
