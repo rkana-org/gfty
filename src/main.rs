@@ -126,8 +126,8 @@ fn create_label(
     font_options: &svg::FontOptions,
     preview_options: terminal_preview::PreviewOptions,
 ) -> Result<()> {
-    if args.svg.is_none() && args.save.is_none() && args.export.is_none() {
-        anyhow::bail!("label create needs at least one of --svg, --save, or --export");
+    if args.svg.is_none() && args.json.is_none() && args.save.is_none() && args.export.is_none() {
+        anyhow::bail!("label create needs at least one of --svg, --json, --save, or --export");
     }
     let loaded = create::build_label(
         &args.template,
@@ -139,6 +139,20 @@ fn create_label(
     .context("failed to create label configuration")?;
     let rendered =
         compose::render_label(&loaded, font_options).context("failed to render label")?;
+    let document = if args.json.is_some() || args.export.is_some() {
+        Some(
+            export::export_rendered(&rendered)
+                .context("failed to generate geometry for created label")?,
+        )
+    } else {
+        None
+    };
+    let geometry_json = args
+        .json
+        .as_ref()
+        .map(|_| serialize_geometry_json(document.as_ref().expect("requested JSON has geometry")))
+        .transpose()?;
+
     try_preview(&rendered.svg, "created label", preview_options, false);
     if let Some(output) = args.save {
         create::save_label(&loaded, &output)?;
@@ -147,10 +161,15 @@ fn create_label(
         std::fs::write(&output, &rendered.svg)
             .with_context(|| format!("failed to write SVG {}", output.display()))?;
     }
+    if let Some(output) = args.json {
+        std::fs::write(
+            &output,
+            geometry_json.expect("requested JSON was serialized"),
+        )
+        .with_context(|| format!("failed to write geometry JSON {}", output.display()))?;
+    }
     if let Some(output) = args.export {
         step::ensure_output_available(&output, args.force)?;
-        let document = export::export_rendered(&rendered)
-            .context("failed to generate geometry for created label")?;
         let remote = RemoteExportArgs {
             output: Some(output.clone()),
             onshape_credentials: args.onshape_credentials,
@@ -158,7 +177,13 @@ fn create_label(
             force: args.force,
         };
         let gridfinity_json = resolve_bin_config(&loaded.bin_path())?;
-        download_document_step(&document, remote, output, "created label", &gridfinity_json)?;
+        download_document_step(
+            document.as_ref().expect("requested export has geometry"),
+            remote,
+            output,
+            "created label",
+            &gridfinity_json,
+        )?;
     }
     Ok(())
 }
@@ -176,14 +201,31 @@ fn create_plate(
         font_options,
     )
     .context("failed to generate label plate")?;
+    let has_output = args.svg.is_some() || args.json.is_some();
+    let geometry_json = args
+        .json
+        .as_ref()
+        .map(|_| serialize_geometry_json(&output.document))
+        .transpose()?;
+
     if let Some(path) = args.svg {
         std::fs::write(&path, &output.svg)
             .with_context(|| format!("failed to write plate SVG {}", path.display()))?;
+    }
+    if let Some(path) = args.json {
+        std::fs::write(&path, geometry_json.expect("requested JSON was serialized"))
+            .with_context(|| format!("failed to write plate geometry JSON {}", path.display()))?;
+    }
+    if has_output {
         try_preview(&output.svg, "label plate", preview_options, false);
         Ok(())
     } else {
         show_required_preview(&output.svg, "label plate", preview_options)
     }
+}
+
+fn serialize_geometry_json(document: &export::ExportDocument) -> Result<String> {
+    serde_json::to_string(document).context("failed to serialize version-2 geometry JSON")
 }
 
 fn show_required_preview(

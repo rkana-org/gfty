@@ -110,7 +110,7 @@ pub struct PlateArgs {
 
 #[derive(Debug, Subcommand)]
 pub enum PlateCommand {
-    /// Create a dimension-constrained plate preview.
+    /// Create a dimension-constrained plate preview or geometry document.
     Create(PlateCreateArgs),
 
     /// Generate a configured plate in Onshape and download a grouped STEP.
@@ -137,6 +137,10 @@ pub struct CreateArgs {
     /// Write the rendered SVG to PATH.
     #[arg(long)]
     pub svg: Option<PathBuf>,
+
+    /// Write compact version-2 Onshape geometry JSON to PATH.
+    #[arg(long, value_name = "PATH")]
+    pub json: Option<PathBuf>,
 
     /// Save this invocation as a reusable label TOML file.
     #[arg(long, value_name = "PATH")]
@@ -175,9 +179,13 @@ pub struct PlateCreateArgs {
     #[arg(long, default_value = "5mm")]
     pub row_gap: String,
 
-    /// Write the rendered SVG to PATH; otherwise preview in the terminal.
+    /// Write the rendered SVG to PATH.
     #[arg(long)]
     pub svg: Option<PathBuf>,
+
+    /// Write compact version-2 Onshape geometry JSON to PATH.
+    #[arg(long, value_name = "PATH")]
+    pub json: Option<PathBuf>,
 
     /// Labels in top-left, row-major order. Repeat a path to repeat a label.
     #[arg(required = true)]
@@ -351,4 +359,59 @@ pub struct BinExportArgs {
     /// Replace an existing output file.
     #[arg(long)]
     pub force: bool,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn label_create_accepts_geometry_json_output() {
+        let cli = Cli::try_parse_from([
+            "gfty",
+            "label",
+            "create",
+            "--template",
+            "template.svg",
+            "--bin",
+            "bin.toml",
+            "--json",
+            "label.json",
+        ])
+        .unwrap();
+        let Command::Label(LabelArgs {
+            command: LabelCommand::Create(args),
+        }) = cli.command
+        else {
+            panic!("expected label create");
+        };
+        assert_eq!(args.json, Some(PathBuf::from("label.json")));
+    }
+
+    #[test]
+    fn plate_create_accepts_geometry_json_output() {
+        let cli = Cli::try_parse_from([
+            "gfty",
+            "label",
+            "plate",
+            "create",
+            "--dimensions",
+            "200mm",
+            "250mm",
+            "--json",
+            "plate.json",
+            "label.toml",
+        ])
+        .unwrap();
+        let Command::Label(LabelArgs {
+            command:
+                LabelCommand::Plate(PlateArgs {
+                    command: PlateCommand::Create(args),
+                }),
+        }) = cli.command
+        else {
+            panic!("expected label plate create");
+        };
+        assert_eq!(args.json, Some(PathBuf::from("plate.json")));
+    }
 }
