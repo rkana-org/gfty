@@ -214,6 +214,15 @@ For a live-preview when designing a label try this command:
 gfty --system-fonts label watch your-label.toml
 ```
 
+Render a label TOML to SVG and/or the exact compact geometry JSON locally,
+without contacting Onshape:
+
+```sh
+gfty --system-fonts label render your-label.toml \
+  --output your-label.svg \
+  --json your-label.json
+```
+
 Create and optionally save a label without writing TOML first:
 
 ```sh

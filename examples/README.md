@@ -18,7 +18,8 @@ module.
 gfty bin validate examples/bins/constituent-2x2.toml
 gfty bin inspect examples/bins/constituent-2x2.toml
 gfty label validate examples/labels/hello.toml
-gfty label render examples/labels/hello.toml --output /tmp/hello.svg
+gfty label render examples/labels/hello.toml \
+  --output /tmp/hello.svg --json /tmp/hello.json
 ```
 
 Constituent exports use configured part discovery and Onshape's `partIds`
@@ -49,7 +50,8 @@ nix build ./examples#labels.all
 ```
 
 A bin contains `bin.toml`, a label contains `label.svg` and `label.toml`, and a
-plate contains `plate.svg`. Geometry JSON remains internal to runtime export.
+plate contains `plate.svg`. Exact geometry JSON can be generated locally with
+`gfty label render LABEL.toml --json OUTPUT.json`.
 
 Every definition that supports remote export has an explicit runtime app:
 

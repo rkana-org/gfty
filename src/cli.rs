@@ -73,12 +73,17 @@ pub enum LabelCommand {
     /// Validate one label, or every label below labels/ when omitted.
     Validate { label: Option<PathBuf> },
 
-    /// Render a label as a preview SVG.
+    /// Render a label as a preview SVG or local geometry document.
     Render {
         label: PathBuf,
-        /// Write SVG to PATH; when omitted, render only in the terminal.
+
+        /// Write SVG to PATH.
         #[arg(short, long)]
         output: Option<PathBuf>,
+
+        /// Write compact version-2 Onshape geometry JSON to PATH.
+        #[arg(long, value_name = "PATH")]
+        json: Option<PathBuf>,
     },
 
     /// Create an unsaved label from command-line values.
@@ -364,6 +369,33 @@ pub struct BinExportArgs {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn label_render_accepts_geometry_json_output() {
+        let cli = Cli::try_parse_from([
+            "gfty",
+            "label",
+            "render",
+            "label.toml",
+            "--json",
+            "label.json",
+        ])
+        .unwrap();
+        let Command::Label(LabelArgs {
+            command:
+                LabelCommand::Render {
+                    label,
+                    output,
+                    json,
+                },
+        }) = cli.command
+        else {
+            panic!("expected label render");
+        };
+        assert_eq!(label, PathBuf::from("label.toml"));
+        assert_eq!(output, None);
+        assert_eq!(json, Some(PathBuf::from("label.json")));
+    }
 
     #[test]
     fn label_create_accepts_geometry_json_output() {

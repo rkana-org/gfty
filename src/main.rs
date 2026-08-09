@@ -86,23 +86,51 @@ fn run_label_command(
 ) -> Result<()> {
     match command {
         LabelCommand::Validate { label } => validate_labels(label.as_deref(), root, font_options),
-        LabelCommand::Render { label, output } => {
+        LabelCommand::Render {
+            label,
+            output: svg_output,
+            json: json_output,
+        } => {
             let loaded = config::LoadedLabel::load(&label)
                 .with_context(|| format!("failed to load label {}", label.display()))?;
-            let svg = compose::render_label_svg(&loaded, font_options)
+            let rendered = compose::render_label(&loaded, font_options)
                 .with_context(|| format!("failed to render label {}", loaded.path.display()))?;
-            if let Some(output) = output {
-                std::fs::write(&output, &svg)
+            let geometry_json = json_output
+                .as_ref()
+                .map(|_| {
+                    let document = export::export_rendered(&rendered).with_context(|| {
+                        format!("failed to generate geometry for {}", loaded.path.display())
+                    })?;
+                    serialize_geometry_json(&document)
+                })
+                .transpose()?;
+            let has_output = svg_output.is_some() || json_output.is_some();
+
+            if let Some(output) = svg_output {
+                std::fs::write(&output, &rendered.svg)
                     .with_context(|| format!("failed to write SVG {}", output.display()))?;
+            }
+            if let Some(output) = json_output {
+                std::fs::write(
+                    &output,
+                    geometry_json.expect("requested JSON was serialized"),
+                )
+                .with_context(|| format!("failed to write geometry JSON {}", output.display()))?;
+            }
+            if has_output {
                 try_preview(
-                    &svg,
+                    &rendered.svg,
                     &loaded.path.display().to_string(),
                     preview_options,
                     false,
                 );
                 Ok(())
             } else {
-                show_required_preview(&svg, &loaded.path.display().to_string(), preview_options)
+                show_required_preview(
+                    &rendered.svg,
+                    &loaded.path.display().to_string(),
+                    preview_options,
+                )
             }
         }
         LabelCommand::Create(args) => create_label(args, font_options, preview_options),

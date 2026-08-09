@@ -4,7 +4,7 @@ use anyhow::{Context, Result, bail};
 use serde::{Serialize, ser::SerializeStruct};
 use usvg::{
     Node, Paint,
-    tiny_skia_path::{Path, PathSegment, PathStroker, Point},
+    tiny_skia_path::{Path, PathBuilder, PathSegment, PathStroker, Point},
 };
 
 use crate::{color::PreviewPalette, compose::RenderedLabel};
@@ -18,6 +18,14 @@ pub const EXPORT_VERSION: u32 = 2;
 // preserving closed SVG holes.
 const ONSHAPE_CONTROL_NUDGE_FRACTION: f64 = 0.001;
 const ONSHAPE_CONTROL_NUDGE_MAX_MM: f64 = 0.001;
+
+// Inkscape can emit redundant vertices that deviate from a straight segment
+// only by floating-point noise. Stroking those almost-collinear joins can
+// create tiny self-intersecting loops which SVG rasterizers tolerate but
+// Onshape cannot extrude. This threshold is far below both the stroke width
+// and printable resolution.
+const STROKE_CENTERLINE_SIMPLIFICATION_RATIO: f32 = 0.0001;
+const STROKE_OUTLINE_LOOP_AREA_RATIO: f64 = 0.01;
 
 #[derive(Debug, Serialize)]
 pub struct ExportDocument {
@@ -187,6 +195,7 @@ fn collect_group(
                         palette,
                         canvas,
                         size_mm,
+                        false,
                         result,
                     )?;
                 }
@@ -203,6 +212,7 @@ fn collect_group(
                         palette,
                         canvas,
                         size_mm,
+                        true,
                         result,
                     )?;
                 }
@@ -225,6 +235,10 @@ fn transform_path(path: &Path, transform: usvg::Transform, paint: &str) -> Resul
 fn expand_stroke(path: &usvg::Path, stroke: &usvg::Stroke) -> Result<Path> {
     let mut style = stroke.to_tiny_skia();
     let resolution_scale = PathStroker::compute_resolution_scale(&path.abs_transform());
+    let centerline = simplify_stroke_centerline(
+        path.data(),
+        style.width * STROKE_CENTERLINE_SIMPLIFICATION_RATIO,
+    );
 
     // Path::stroke does not apply Stroke::dash itself. Match tiny-skia's
     // renderer by dashing the centerline before constructing its outline.
@@ -232,15 +246,147 @@ fn expand_stroke(path: &usvg::Path, stroke: &usvg::Stroke) -> Result<Path> {
         .dash
         .take()
         .map(|dash| {
-            path.data()
+            centerline
                 .dash(&dash, resolution_scale)
                 .context("failed to apply SVG stroke dash pattern")
         })
         .transpose()?;
-    let centerline = dashed.as_ref().unwrap_or_else(|| path.data());
+    let centerline = dashed.as_ref().unwrap_or(&centerline);
     centerline
         .stroke(&style, resolution_scale)
         .context("failed to expand SVG stroke into filled geometry")
+}
+
+fn simplify_stroke_centerline(path: &Path, tolerance: f32) -> Path {
+    let mut builder = PathBuilder::new();
+    let mut subpath = Vec::new();
+
+    for segment in path.segments() {
+        if matches!(segment, PathSegment::MoveTo(_)) && !subpath.is_empty() {
+            append_simplified_subpath(&subpath, tolerance, &mut builder);
+            subpath.clear();
+        }
+        let is_close = matches!(segment, PathSegment::Close);
+        subpath.push(segment);
+        if is_close {
+            append_simplified_subpath(&subpath, tolerance, &mut builder);
+            subpath.clear();
+        }
+    }
+    if !subpath.is_empty() {
+        append_simplified_subpath(&subpath, tolerance, &mut builder);
+    }
+
+    builder.finish().unwrap_or_else(|| path.clone())
+}
+
+fn append_simplified_subpath(segments: &[PathSegment], tolerance: f32, builder: &mut PathBuilder) {
+    let mut points = Vec::new();
+    let mut closed = false;
+    let mut linear = true;
+    for segment in segments {
+        match *segment {
+            PathSegment::MoveTo(point) | PathSegment::LineTo(point) => points.push(point),
+            PathSegment::Close => closed = true,
+            PathSegment::QuadTo(..) | PathSegment::CubicTo(..) => linear = false,
+        }
+    }
+
+    if linear && points.len() >= 2 {
+        simplify_polyline(&mut points, closed, tolerance);
+        builder.move_to(points[0].x, points[0].y);
+        for point in &points[1..] {
+            builder.line_to(point.x, point.y);
+        }
+        if closed {
+            builder.close();
+        }
+        return;
+    }
+
+    for segment in segments {
+        match *segment {
+            PathSegment::MoveTo(point) => builder.move_to(point.x, point.y),
+            PathSegment::LineTo(point) => builder.line_to(point.x, point.y),
+            PathSegment::QuadTo(control, to) => {
+                builder.quad_to(control.x, control.y, to.x, to.y);
+            }
+            PathSegment::CubicTo(c1, c2, to) => {
+                builder.cubic_to(c1.x, c1.y, c2.x, c2.y, to.x, to.y);
+            }
+            PathSegment::Close => builder.close(),
+        }
+    }
+}
+
+fn simplify_polyline(points: &mut Vec<Point>, closed: bool, tolerance: f32) {
+    let tolerance_squared = tolerance * tolerance;
+    let minimum_points = if closed { 3 } else { 2 };
+    let mut distinct = Vec::with_capacity(points.len());
+    for &point in points.iter() {
+        if distinct
+            .last()
+            .is_none_or(|previous| point_distance_squared(*previous, point) > tolerance_squared)
+        {
+            distinct.push(point);
+        }
+    }
+    if closed
+        && distinct.len() > 1
+        && point_distance_squared(distinct[0], *distinct.last().expect("non-empty"))
+            <= tolerance_squared
+    {
+        distinct.pop();
+    }
+    if distinct.len() < minimum_points {
+        return;
+    }
+    *points = distinct;
+
+    while points.len() > minimum_points {
+        let candidate = if closed {
+            (0..points.len()).find(|&index| {
+                let previous = points[(index + points.len() - 1) % points.len()];
+                let next = points[(index + 1) % points.len()];
+                point_near_segment(points[index], previous, next, tolerance_squared)
+            })
+        } else {
+            (1..points.len() - 1).find(|&index| {
+                point_near_segment(
+                    points[index],
+                    points[index - 1],
+                    points[index + 1],
+                    tolerance_squared,
+                )
+            })
+        };
+        let Some(index) = candidate else {
+            break;
+        };
+        points.remove(index);
+    }
+}
+
+fn point_near_segment(point: Point, from: Point, to: Point, tolerance_squared: f32) -> bool {
+    let delta_x = to.x - from.x;
+    let delta_y = to.y - from.y;
+    let length_squared = delta_x * delta_x + delta_y * delta_y;
+    if length_squared <= tolerance_squared {
+        return point_distance_squared(point, from) <= tolerance_squared;
+    }
+
+    let projection = ((point.x - from.x) * delta_x + (point.y - from.y) * delta_y) / length_squared;
+    if !(0.0..=1.0).contains(&projection) {
+        return false;
+    }
+    let nearest = Point::from_xy(from.x + projection * delta_x, from.y + projection * delta_y);
+    point_distance_squared(point, nearest) <= tolerance_squared
+}
+
+fn point_distance_squared(first: Point, second: Point) -> f32 {
+    let delta_x = second.x - first.x;
+    let delta_y = second.y - first.y;
+    delta_x * delta_x + delta_y * delta_y
 }
 
 fn collect_painted_path(
@@ -249,9 +395,15 @@ fn collect_painted_path(
     palette: &PreviewPalette,
     canvas: [f64; 2],
     size_mm: [f64; 2],
+    clean_stroke_intersections: bool,
     result: &mut BTreeMap<u32, Vec<Shape>>,
 ) -> Result<()> {
-    let contours = convert_visible_path(path, canvas, size_mm);
+    let mut contours = convert_visible_path(path, canvas, size_mm);
+    if clean_stroke_intersections {
+        for contour in &mut contours {
+            remove_small_stroke_loops(contour);
+        }
+    }
     if contours.is_empty() {
         return Ok(());
     }
@@ -269,6 +421,135 @@ fn collect_painted_path(
         })?;
     result.entry(filament).or_default().push(Shape { contours });
     Ok(())
+}
+
+fn remove_small_stroke_loops(contour: &mut Contour) {
+    let mut points = vec![contour.start];
+    for segment in &contour.segments {
+        let Segment::Line { to } = segment else {
+            return;
+        };
+        points.push(*to);
+    }
+    if points.len() > 1 && points_close(points[0], *points.last().expect("non-empty")) {
+        points.pop();
+    }
+
+    while let Some((first, second, intersection)) = first_polygon_intersection(&points) {
+        let first_loop = polygon_cycle(&points, first, second, intersection);
+        let second_loop = polygon_cycle(&points, second, first, intersection);
+        let first_area = polygon_area(&first_loop).abs();
+        let second_area = polygon_area(&second_loop).abs();
+        let (small_area, large_area, retained) = if first_area < second_area {
+            (first_area, second_area, second_loop)
+        } else {
+            (second_area, first_area, first_loop)
+        };
+
+        // tiny-skia can produce a small winding-cancellation loop at the
+        // inside of a stroke join. Remove only an unambiguously tiny loop;
+        // leave deliberately self-intersecting artwork unchanged.
+        if large_area == 0.0 || small_area > large_area * STROKE_OUTLINE_LOOP_AREA_RATIO {
+            break;
+        }
+        points = retained;
+    }
+
+    if points.len() >= 3 {
+        contour.start = points[0];
+        contour.segments = points[1..]
+            .iter()
+            .map(|point| Segment::Line { to: *point })
+            .collect();
+    }
+}
+
+fn first_polygon_intersection(points: &[[f64; 2]]) -> Option<(usize, usize, [f64; 2])> {
+    for first in 0..points.len() {
+        let first_end = (first + 1) % points.len();
+        for second in first + 1..points.len() {
+            let second_end = (second + 1) % points.len();
+            if first_end == second || second_end == first {
+                continue;
+            }
+            if let Some(intersection) = line_intersection(
+                points[first],
+                points[first_end],
+                points[second],
+                points[second_end],
+            ) {
+                return Some((first, second, intersection));
+            }
+        }
+    }
+    None
+}
+
+fn line_intersection(
+    first_start: [f64; 2],
+    first_end: [f64; 2],
+    second_start: [f64; 2],
+    second_end: [f64; 2],
+) -> Option<[f64; 2]> {
+    let first_delta = [first_end[0] - first_start[0], first_end[1] - first_start[1]];
+    let second_delta = [
+        second_end[0] - second_start[0],
+        second_end[1] - second_start[1],
+    ];
+    let denominator = cross(first_delta, second_delta);
+    if denominator.abs() < 1e-12 {
+        return None;
+    }
+    let between_starts = [
+        second_start[0] - first_start[0],
+        second_start[1] - first_start[1],
+    ];
+    let first_fraction = cross(between_starts, second_delta) / denominator;
+    let second_fraction = cross(between_starts, first_delta) / denominator;
+    const ENDPOINT_TOLERANCE: f64 = 1e-9;
+    if first_fraction <= ENDPOINT_TOLERANCE
+        || first_fraction >= 1.0 - ENDPOINT_TOLERANCE
+        || second_fraction <= ENDPOINT_TOLERANCE
+        || second_fraction >= 1.0 - ENDPOINT_TOLERANCE
+    {
+        return None;
+    }
+    Some([
+        first_start[0] + first_fraction * first_delta[0],
+        first_start[1] + first_fraction * first_delta[1],
+    ])
+}
+
+fn polygon_cycle(
+    points: &[[f64; 2]],
+    start_segment: usize,
+    end_segment: usize,
+    intersection: [f64; 2],
+) -> Vec<[f64; 2]> {
+    let mut result = vec![intersection];
+    let mut index = (start_segment + 1) % points.len();
+    loop {
+        result.push(points[index]);
+        if index == end_segment {
+            break;
+        }
+        index = (index + 1) % points.len();
+    }
+    result
+}
+
+fn polygon_area(points: &[[f64; 2]]) -> f64 {
+    points
+        .iter()
+        .zip(points.iter().cycle().skip(1))
+        .take(points.len())
+        .map(|(first, second)| first[0] * second[1] - second[0] * first[1])
+        .sum::<f64>()
+        / 2.0
+}
+
+fn cross(first: [f64; 2], second: [f64; 2]) -> f64 {
+    first[0] * second[1] - first[1] * second[0]
 }
 
 fn path_can_form_filled_region(path: &Path) -> bool {
@@ -750,6 +1031,48 @@ mod tests {
             assert!(contour.closed);
             assert!(!contour.segments.is_empty());
         }
+    }
+
+    #[test]
+    fn simplifies_numerically_collinear_vertices_before_stroking() {
+        let source = r##"<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 12 12"><path id="hex" fill="none" stroke="#000000" stroke-width="0.53335396" stroke-linejoin="round" d="m 7.3516239,8.5778622 -1.7389639,-2e-7 -1.7389643,0 L 3.0042139,7.071875 2.1347318,5.5658878 3.0042138,4.0599009 3.873696,2.5539137 l 1.7389639,1e-7 1.7389643,10e-8 0.8694818,1.5059869 0.8694821,1.5059873 -0.869482,1.5059868 z"/></svg>"##;
+        let tree = usvg::Tree::from_str(source, &usvg::Options::default()).unwrap();
+        let Node::Path(path) = tree.node_by_id("hex").unwrap() else {
+            panic!("expected path");
+        };
+        let source_points = path
+            .data()
+            .segments()
+            .filter(|segment| matches!(segment, PathSegment::MoveTo(_) | PathSegment::LineTo(_)))
+            .count();
+        assert_eq!(source_points, 12);
+
+        let stroke = path.stroke().unwrap();
+        let simplified = simplify_stroke_centerline(
+            path.data(),
+            stroke.width().get() * STROKE_CENTERLINE_SIMPLIFICATION_RATIO,
+        );
+        let simplified_points = simplified
+            .segments()
+            .filter(|segment| matches!(segment, PathSegment::MoveTo(_) | PathSegment::LineTo(_)))
+            .count();
+        assert_eq!(simplified_points, 6);
+
+        let outlined = expand_stroke(path, stroke).unwrap();
+        let mut contours = convert_path(outlined.segments(), [12.0, 12.0], [12.0, 12.0]);
+        for contour in &mut contours {
+            remove_small_stroke_loops(contour);
+        }
+        let inner = contours
+            .iter()
+            .find(|contour| {
+                contour
+                    .segments
+                    .iter()
+                    .all(|segment| matches!(segment, Segment::Line { .. }))
+            })
+            .expect("stroke has a linear inner contour");
+        assert!(inner.segments.len() <= 6, "{inner:?}");
     }
 
     #[test]

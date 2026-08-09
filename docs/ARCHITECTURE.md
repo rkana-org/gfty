@@ -77,6 +77,8 @@ Configured part IDs are never persisted or hard-coded.
 1. Resolve the SVG template, icons, sidecars, and explicitly available fonts.
 2. Normalize SVG primitives, transforms, text, and paint through `usvg`, then
    expand resolved strokes into closed fill contours with `tiny-skia-path`.
+   Numerically collinear centerline vertices and tiny stroke-join cancellation
+   loops are removed so raster-oriented outlines remain valid CAD regions.
 3. Compose local fill and expanded-stroke geometry by filament and serialize
    compact version-2 `M`/`L`/`C`/`Z` path JSON in memory.
 4. Send label geometry as `Config` and the referenced bin carrier as
