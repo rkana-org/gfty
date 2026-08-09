@@ -183,6 +183,12 @@ fn combine_svgs(rendered: &[RenderedLabel], layout: &GridLayout) -> Result<Strin
         "viewBox".to_owned(),
         format!("0 0 {} {}", layout.size[0], layout.size[1]),
     );
+    root.children.push(XMLNode::Element(background_rect(
+        root.namespace.clone(),
+        [0.0, 0.0],
+        layout.size,
+        "#000000",
+    )));
 
     let font_options = crate::svg::FontOptions::default();
     for (index, (label, position)) in rendered.iter().zip(&layout.top_left).enumerate() {
@@ -222,6 +228,12 @@ fn combine_svgs(rendered: &[RenderedLabel], layout: &GridLayout) -> Result<Strin
             format!("0 0 {source_width} {source_height}"),
         );
         nested.children = std::mem::take(&mut label_root.children);
+        root.children.push(XMLNode::Element(background_rect(
+            root.namespace.clone(),
+            *position,
+            label.size_mm,
+            "#ffffff",
+        )));
         root.children.push(XMLNode::Element(nested));
     }
 
@@ -235,6 +247,26 @@ fn combine_svgs(rendered: &[RenderedLabel], layout: &GridLayout) -> Result<Strin
     .context("failed to serialize plate SVG")?;
     let source = String::from_utf8(output).context("plate SVG is not UTF-8")?;
     crate::svg::normalize_svg(&source, Path::new("."), &font_options)
+}
+
+fn background_rect(
+    namespace: Option<String>,
+    position: [f64; 2],
+    size: [f64; 2],
+    fill: &str,
+) -> Element {
+    let mut rect = Element::new("rect");
+    rect.namespace = namespace;
+    rect.attributes
+        .insert("x".to_owned(), position[0].to_string());
+    rect.attributes
+        .insert("y".to_owned(), position[1].to_string());
+    rect.attributes
+        .insert("width".to_owned(), size[0].to_string());
+    rect.attributes
+        .insert("height".to_owned(), size[1].to_string());
+    rect.attributes.insert("fill".to_owned(), fill.to_owned());
+    rect
 }
 
 fn same_size(left: [f64; 2], right: [f64; 2]) -> bool {
@@ -264,6 +296,50 @@ mod tests {
     }
 
     #[test]
+    fn plate_preview_draws_black_gaps_between_white_labels() {
+        let rendered = [
+            RenderedLabel {
+                svg: r#"<svg xmlns="http://www.w3.org/2000/svg" width="10" height="5"/>"#
+                    .to_owned(),
+                palette: crate::color::PreviewPalette::new([0]).unwrap(),
+                size_mm: [10.0, 5.0],
+                base_filament: 0,
+            },
+            RenderedLabel {
+                svg: r#"<svg xmlns="http://www.w3.org/2000/svg" width="10" height="5"/>"#
+                    .to_owned(),
+                palette: crate::color::PreviewPalette::new([0]).unwrap(),
+                size_mm: [10.0, 5.0],
+                base_filament: 0,
+            },
+        ];
+        let layout = grid_layout(2, 2, [10.0, 5.0], 2.0, 1.0);
+        let svg = combine_svgs(&rendered, &layout).unwrap();
+        let tree = usvg::Tree::from_str(&svg, &usvg::Options::default()).unwrap();
+        let width = tree.size().width().ceil() as u32;
+        let height = tree.size().height().ceil() as u32;
+        let mut pixmap = resvg::tiny_skia::Pixmap::new(width, height).unwrap();
+        resvg::render(
+            &tree,
+            resvg::tiny_skia::Transform::identity(),
+            &mut pixmap.as_mut(),
+        );
+
+        assert_eq!(
+            sample_plate_pixel(&pixmap, &tree, &layout, [5.0, 2.5]),
+            [255, 255, 255, 255]
+        );
+        assert_eq!(
+            sample_plate_pixel(&pixmap, &tree, &layout, [11.0, 2.5]),
+            [0, 0, 0, 255]
+        );
+        assert_eq!(
+            sample_plate_pixel(&pixmap, &tree, &layout, [17.0, 2.5]),
+            [255, 255, 255, 255]
+        );
+    }
+
+    #[test]
     fn combines_local_label_documents_with_centers_and_filaments() {
         let rendered = [
             RenderedLabel {
@@ -289,5 +365,17 @@ mod tests {
         assert_eq!(document.labels[1].center, [6.0, 0.0]);
         assert_eq!(document.labels[0].parts[0].filament, 0);
         assert_eq!(document.labels[1].parts[0].filament, 2);
+    }
+
+    fn sample_plate_pixel(
+        pixmap: &resvg::tiny_skia::Pixmap,
+        tree: &usvg::Tree,
+        layout: &GridLayout,
+        point: [f64; 2],
+    ) -> [u8; 4] {
+        let x = (point[0] / layout.size[0] * f64::from(tree.size().width())).floor() as u32;
+        let y = (point[1] / layout.size[1] * f64::from(tree.size().height())).floor() as u32;
+        let offset = ((y * pixmap.width() + x) * 4) as usize;
+        pixmap.data()[offset..offset + 4].try_into().unwrap()
     }
 }
