@@ -1,23 +1,6 @@
-<table>
-  <tr>
-    <td width="50%">
-      <img src="https://github.com/user-attachments/assets/a2183520-ce9d-46cc-bd11-ca3025361d09" alt="Gridfinity Ultimate web designer" width="100%" />
-    </td>
-    <td width="50%">
-      <img src="TODO" alt="gfty multi-label plate preview" width="100%" />
-    </td>
-  </tr>
-  <tr>
-    <td width="50%">
-      <img src="https://github.com/user-attachments/assets/d25a9dd3-07ee-4f18-9891-030337ec78b1" alt="Web designer output in Onshape" width="100%" />
-    </td>
-    <td width="50%">
-      <img src="TODO" alt="Generated multi-label plate in Onshape" width="100%" />
-    </td>
-  </tr>
-</table>
+<img width="5041" height="2028" alt="image" src="https://github.com/user-attachments/assets/48da24d9-6c2d-4896-b691-8758da34f7e2" />
 
-[Web designer](https://rkana-org.github.io/gfty/) | [CLI](#usage-cli) | [Nix](#usage-nix) | [Examples](examples/)
+[🌐 Web designer](https://rkana-org.github.io/gfty/) | [<kbd>>_</kbd> CLI](#usage-cli) | [❄️ Nix](#usage-nix) | [🌈 Examples](examples/)
 
 ## gfty
 
@@ -37,7 +20,7 @@ configuration. So the **TL;DR** is:
 - ▶️ **Model previews and live label previews** for any object using the `gfty` CLI tool
 - 🧰 **Fully parametric model** that includes bins, bases, detachable rims, detachable label blanks, connector pins, artwork labels, and multi-label plates
 - 🌐 **Web designer** for quick bin configuration and one-off exports
-- ❄️ **Declarative and automation-first** Nix definitions → typed TOML → FeatureScript JSON → parameterized Onshape models → automatic STEP file & preview image downloads <sub>(i may or may not have created [over 1000 labels for my shop](TODO-reddit-link), send help)</sub>
+- ❄️ **Declarative and automation-first** Nix definitions → typed TOML → FeatureScript JSON → parameterized Onshape models → automatic STEP file & preview image downloads <sub>(i may or may not have created over 1000 labels for my shop, send help)</sub>
 - 🌈 **Multi-color swappable labels** with reusable templates, arbitrary SVG artwork, multi-color text and artwork
 - 🎩 **Swappable rims** to allow for re-coloring the top for categorization of parts (or whatever you want to do with it)
 
